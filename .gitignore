@@ -1,0 +1,12 @@
+
+.stack-work/
+
+.vscode/
+
+stack.yaml.lock
+
+data/.curry/
+
+examples/.curry/
+
+dist-newstyle/

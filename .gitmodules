@@ -1,0 +1,3 @@
+[submodule "curry-frontend"]
+	path = curry-frontend
+	url = https://git.ps.informatik.uni-kiel.de/curry/curry-frontend
