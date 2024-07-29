@@ -1,9 +1,13 @@
 data Peano = O | S Peano
+  deriving Show
 
 add :: Peano -> Peano -> Peano
 add n m = case n of
   O    -> m
   S n' -> S (add n' m)
+
+sub :: Peano -> Peano -> Peano
+sub x y | (add y z =:= x) = z where z free
 
 pred :: Peano -> Peano
 pred O     = O

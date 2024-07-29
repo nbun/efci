@@ -19,7 +19,6 @@ import qualified Data.Map as Map
 import Data.Maybe (mapMaybe)
 import Debug (ctrace)
 
--- import Effect.FlatCurry.Constructor (HNF (Cons))
 
 import Curry.FlatCurry.Annotated.Goodies (argTypes)
 import Effect.FlatCurry.Constructor
@@ -32,6 +31,7 @@ import Effect.General.State
 import Free
 import Signature
 import Type (AEFuncDecl (..), AEProg (..), AERule (..))
+import Effect.General.ND
 
 data FunctionState
 
@@ -41,7 +41,7 @@ instance Identify FunctionState where
 type FunctionArgs = StateF FunctionState [((Scope, TypeExpr), Ptr)]
 
 type Functions sig sigs sigl a =
-  ( '[Declarations sig sigs sigl a, FunctionArgs, ConsF, Err, IOAction] :.: sig
+  ( '[Declarations sig sigs sigl a, FunctionArgs, ConsF, Err, IOAction, ConstraintStore, ND] :.: sig
   , '[Partial, CaseScope] :.: sigs
   , Let sig sigl a
   , () :<<<: a
@@ -76,6 +76,8 @@ callExternal fdecl args = case (externalName fdecl, args) of
   ("Prelude.plusInt", [px, py]) -> arithInt (+) px py
   ("Prelude.minusInt", [px, py]) -> arithInt (-) px py
   ("Prelude.timesInt", [px, py]) -> arithInt (*) px py
+  ("Prelude.divInt", [px, py]) -> arithInt div px py
+  ("Prelude.modInt", [px, py]) -> arithInt mod px py
   ("Prelude.eqInt", [px, py]) -> compInt (==) px py
   ("Prelude.ltEqInt", [px, py]) -> compInt (<=) px py
   ("Prelude.eqChar", [px, py]) -> compChar (==) px py
@@ -92,6 +94,7 @@ callExternal fdecl args = case (externalName fdecl, args) of
   ("Prelude.$!", [pf, px]) -> apply' pf px
   ("Prelude.$##", [pf, px]) -> apply' pf (normalform px)
   ("Prelude.prim_error", [p]) -> err p
+  ("Prelude.=:=", [px, py]) -> unify px py
   _ ->
     error $
       "Missing definition for "
@@ -246,3 +249,53 @@ newtype ClosureL l a = ClosureL {unClosureL :: Closure (l a)}
 
 instance (Functor sig, Functor sigs) => Pointed (T sig sigs sigl l) where
   point x = T $ return $ Other x
+
+-- unification --
+
+unify :: forall sig sigs sigl m a. ( ConsF :<: sig
+         , Functions sig sigs sigl a
+         , ND :<: sig
+         , ConstraintStore :<: sig)
+      => Prog (Sig sig sigs sigl Id) a
+      -> Prog (Sig sig sigs sigl Id) a
+      -> Prog (Sig sig sigs sigl Id) a
+unify e1 e2 = ctrace "unify"
+  $ injectS (Unify (fmap return e1) (fmap return e2) (return . cnt))
+  where
+    cnt :: (Value (), Value ()) -> Prog (Sig sig sigs sigl Id) a
+    cnt (HNF qn1 args1, HNF qn2 args2)
+      | qn1 == qn2 = ctrace ("unify: " ++ show qn1 ++ " " ++ show qn2)
+        $ do
+          let args1' = map force args1
+          let args2' = map force args2
+          ands $ zipWith unify args1' args2'
+    cnt (Free i, Free j) = do
+      modify @CStore (addC i (VarC j))
+      cons ("Prelude", "True") []
+    cnt (Free i, HNF qn args) = ctrace ("unify: " ++ show i ++ " " ++ show qn)
+      $ do
+        let args' = map force args
+        cs <- get @CStore
+        scope <- currentScope
+        vs <- freshNames scope (length args)
+        let fvs = map (fvar scope) vs
+        put @CStore (addC i (ConsC qn vs) cs)
+        ands $ zipWith unify fvs args'
+    cnt (HNF qn args, Free i) = cnt (Free i, HNF qn args)
+    cnt (Lit l1, Lit l2)
+      | l1 == l2 = cons ("Prelude", "True") []
+    cnt (Free i, Lit l) = ctrace ("unify: " ++ show i ++ " " ++ show l)
+      $ do
+        modify @CStore (addC i (LitC l))
+        cons ("Prelude", "True") []
+    cnt (Lit l, Free i) = cnt (Free i, Lit l)
+    cnt args = ctrace ("unify: fail: " ++ show args) failed
+
+ands :: (Functions sig sigs sigl a)
+     => [Prog (Sig sig sigs sigl Id) a]
+     -> Prog (Sig sig sigs sigl Id) a
+ands [] = cons ("Prelude", "True") []
+ands [x] = x
+ands (x:xs) = do
+  scope <- newScope
+  fun scope ("Prelude", "&&") (Left [x, ands xs])

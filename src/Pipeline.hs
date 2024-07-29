@@ -3,14 +3,13 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
-{-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 {-# HLINT ignore "Avoid lambda using `infix`" #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
 module Pipeline where
 
-import Curry.FlatCurry (Literal (..), QName)
+import Curry.FlatCurry (Literal (..), QName, VarIndex)
 import qualified Data.IntMap as IntMap
 import Data.List (intercalate)
 import Effect.FlatCurry.Constructor
@@ -36,6 +35,7 @@ runCurryEffects ps =
   runIO
     . runError
     . runND
+    . runState @CStore IntMap.empty
     . runState @FunctionState []
     . runState @Rename ((0, 0), [])
     . runState @LocalBindings IntMap.empty
@@ -64,6 +64,7 @@ data Result
   | Unevaluated
   | RClosure QName CombType
   | RError String
+  | RFree VarIndex
   | ROther String
   deriving (Show, Eq)
 
@@ -75,6 +76,7 @@ declutterHNF :: (Show a) => Value (Closure a) -> Result
 declutterHNF (Cons qn args) = RCons qn (map declutterHNF args)
 declutterHNF (HNF qn ptrs) = RCons qn (replicate (length ptrs) Unevaluated)
 declutterHNF (Lit l) = RLit l
+declutterHNF (Free i) = RFree i
 declutterHNF (ValOther c) = case c of
   Closure qn ct _ -> RClosure qn ct
   Other x -> ROther (show x)
@@ -97,6 +99,7 @@ instance Pretty Result where
   pretty (RClosure qn ct) =
     snd qn ++ " " ++ unwords (replicate (missingArgs ct) "_")
   pretty (RError s) = "Error: " ++ s
+  pretty (RFree i) = "_" ++ show i
   pretty (ROther s) = s
 
 prettyList :: Result -> String

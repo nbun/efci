@@ -36,11 +36,14 @@ progs
     , ("Peano.curry", "p2i (Peano.pred (i2p 4))", [RLit (Intc 3)])
     , ("Peano.curry", "p2i (mult (S (S O)) (S (S O)))", [RLit (Intc 4)])
     , ("Peano.curry", "p2i (fac (i2p 4))", [RLit (Intc 24)])
+    , ("Peano.curry", "sub (S (S O)) (S O)", [RCons ("Peano", "S") [RCons ("Peano", "O") []]])
    
     , ("Arith.curry", "fac 5", [RLit (Intc 120)])
    
     , ("Binary.curry", "run", [RCons ("Binary","O") [RCons ("Binary","O") [RCons ("Binary","O") [RCons ("Binary","I") [RCons ("Binary","IHi") []]]]]])
 
-   
     , ("PermSort.curry", "sort [5,4,3,2,1::Int]", [RCons ("Prelude", ":") [RLit (Intc 1), RCons ("Prelude", ":") [RLit (Intc 2), RCons ("Prelude", ":") [RLit (Intc 3), RCons ("Prelude", ":") [RLit (Intc 4), RCons ("Prelude", ":") [RLit (Intc 5), RCons ("Prelude", "[]") []]]]]]])
+
+    , ("Uni.curry", "last [1..8::Int]", [RLit (Intc 8)])
+    , ("Uni.curry", "(sort intMerge [3,2,1] xs, xs) where xs free", [RCons ("Prelude","(,)") [RCons ("Prelude","True") [],RCons ("Prelude",":") [RLit (Intc 1),RCons ("Prelude",":") [RLit (Intc 2),RCons ("Prelude",":") [RLit (Intc 3),RCons ("Prelude","[]") []]]]]])
     ]

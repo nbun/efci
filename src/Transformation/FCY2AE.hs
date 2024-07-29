@@ -66,6 +66,7 @@ type AEF (f :: (* -> *) -> * -> *) v =
       :+: StateF LocalBindings (IntMap Ptr)
       :+: Renaming
       :+: FunctionArgs
+      :+: ConstraintStore
       :+: ND
       :+: Err
       :+: IOAction
@@ -109,7 +110,7 @@ fcyExpr2ae m expr = do
         case k of
           CombVar -> return $ lvar scope i
           LetVar -> return $ lvar scope i
-          FreeVar -> return $ lvar scope i
+          FreeVar -> return $ fvar scope i
           CaseVar -> return $ lvar scope i
       Nothing -> error $ "FCY2AE.fcyExpr2ae: Variable without kind: " ++ show i
     ALit _ l -> return $ lit l
@@ -145,7 +146,7 @@ fcyExpr2ae m expr = do
       let m' = insertBinds FreeVar m bs
       e' <- fcyExpr2ae m' e
       scope <- currentScope
-      free scope bs e'
+      return (rename scope (map fst bs) >> e') 
     AOr _ e1 e2 -> do
       liftM2 (?) (fcyExpr2ae m e1) (fcyExpr2ae m e2)
     ACase _ ct e brs -> do

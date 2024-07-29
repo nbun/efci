@@ -16,11 +16,12 @@
 
 module Effect.General.State where
 
-import Curry.FlatCurry.Annotated.Type (VarIndex)
+import Curry.FlatCurry.Annotated.Type (VarIndex, QName, Literal)
 import Data.Kind (Type)
 import Debug (ctrace)
 import Free
 import Signature
+import qualified Data.IntMap as IntMap
 
 data StateF (tag :: Type) s a
   = Get (s -> a)
@@ -105,6 +106,18 @@ fresh scope vs = do
     ("rename " ++ show scope ++ " " ++ show vs ++ " to " ++ show vs')
     (return ())
   return ((nextScope, end + 1), addScope scope vs vs')
+
+freshNames :: (Renaming :<: sig, Functor sigs)
+           => Scope
+           -> Int
+           -> Prog (Sig sig sigs sigl Id) [VarIndex]
+freshNames scope n = do
+  ((nextScope :: Scope, nextVar), renaming) <- get @Rename
+  let end = nextVar + n - 1
+  let vs' = [nextVar .. end]
+  ctrace ("fresh " ++ show scope ++ " " ++ show vs') (return ())
+  put @Rename ((nextScope, end + 1), addScope scope vs' vs' ++ renaming)
+  return vs'
 
 newScope
   :: (Functor sig, Functor sigs, Renaming :<: sig)
@@ -196,3 +209,25 @@ newtype StateL s l a = StateL {unStateL :: (s, l a)} deriving (Show)
 
 instance (Functor l) => Functor (StateL s l) where
   fmap f (StateL (s, la)) = StateL (s, fmap f la)
+
+-- constraint store --
+
+data CValue = VarC VarIndex
+            | ConsC QName [VarIndex]
+            | LitC Literal
+  deriving (Show, Eq)
+
+type Constraints = IntMap.IntMap CValue
+
+lookupC :: VarIndex -> Constraints -> Maybe CValue
+lookupC = IntMap.lookup
+
+addC :: VarIndex -> CValue -> Constraints -> Constraints
+addC = IntMap.insert
+
+data CStore
+
+instance Identify CStore where
+  identify = "CStore"
+
+type ConstraintStore = StateF CStore Constraints

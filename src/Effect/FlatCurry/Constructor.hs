@@ -4,12 +4,13 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 
 module Effect.FlatCurry.Constructor where
 
 import Control.Monad (void)
-import Curry.FlatCurry.Annotated.Type (APattern (..), Literal (..))
+import Curry.FlatCurry.Annotated.Type (APattern (..), Literal (..), VarIndex)
 import Curry.FlatCurry.Type (CaseType (..), QName)
 import Data.Functor ((<&>))
 import Data.Maybe (mapMaybe)
@@ -17,7 +18,7 @@ import Debug (ctrace)
 import Effect.FlatCurry.Let
 import Effect.General.Error (Err (..))
 import Effect.General.Memoization (Ptr, Thunking, force, thunk)
-import Effect.General.ND (ND, failed)
+import Effect.General.ND (ND, choose, failed)
 import Effect.General.State
 import Free
 import Signature
@@ -26,12 +27,14 @@ data ConsF a
   = FCons QName [Ptr]
   | FStrictCons QName [a]
   | FLit Literal
+  | FFree VarIndex
   deriving (Functor)
 
 data CaseScope a
   = Case a (Value () -> a)
   | Normalize a ((QName, [Ptr]) -> a)
   | External [a] ([Value ()] -> a)
+  | Unify a a ((Value (), Value ()) -> a)
   deriving (Functor)
 
 data Mode
@@ -92,7 +95,7 @@ instance Identify CaseState where
 
 case'
   :: forall sig sigs sigl a
-   . (Let sig sigl a, CaseScope :<: sigs, ND :<: sig)
+   . (Let sig sigl a, CaseScope :<: sigs, ND :<: sig, ConstraintStore :<: sig, ConsF :<: sig)
   => Scope
   -> Prog (Sig sig sigs sigl Id) a
   -> [(APattern (), Prog (Sig sig sigs sigl Id) a)]
@@ -103,8 +106,9 @@ case' scope cp brs =
  where
   cnt :: Value () -> Prog (Sig sig sigs sigl Id) a
   cnt hnf = case mapMaybe (match hnf) brs of
+    [] -> failed
     [x] -> x
-    _ -> failed
+    xs -> choose xs
    where
     match (HNF qn args) (APattern _ (pqn, _) argVars, e)
       | pqn == qn =
@@ -119,6 +123,18 @@ case' scope cp brs =
     match (Lit l) (ALPattern _ lp, e)
       | l == lp = Just e
       | otherwise = Nothing
+    match (Free i) pat = Just $ do
+      case pat of
+        (APattern _ (pqn, _) argVars, e) -> do
+          cs <- get @CStore
+          vs <- freshNames scope (length argVars)
+          let fvs = map (fvar scope) vs
+          put @CStore (addC i (ConsC pqn vs) cs)
+          let' scope (zip (map fst argVars) fvs) e
+        (ALPattern _ lp, e) -> do
+          cs <- get @CStore
+          put @CStore (addC i (LitC lp) cs)
+          e
     match v ps =
       error $
         "Pattern match not implemented for " ++ show v ++ show (fst ps)
@@ -127,6 +143,7 @@ data Value a
   = Cons QName [Value a]
   | HNF QName [Ptr]
   | Lit Literal
+  | Free VarIndex
   | ValOther a
   deriving (Functor, Show)
 
@@ -144,6 +161,7 @@ runCons = ctrace "runCons" . unC . fold point (asalg algCa algCs)
   algCa (FCons qn args) = C $ return (HNF qn args)
   algCa (FStrictCons qn args) = C (mapM unC args <&> Cons qn)
   algCa (FLit l) = C $ return (Lit l)
+  algCa (FFree i) = C $ return (Free i)
 
   algCs :: CaseScope (C sig sigs sigl l (C sig sigs sigl l x)) -> C sig sigs sigl l x
   algCs (Case ce k) = C $
@@ -161,12 +179,19 @@ runCons = ctrace "runCons" . unC . fold point (asalg algCa algCs)
             Lit l -> return $ Lit l
             _ -> undefined
         Lit l -> return $ Lit l
+        Free i -> return $ Free i
         Cons qn args -> mapM lift' args <&> Cons qn
         ValOther x -> unC x
   algCs (External ps k) = C $
     do
       hnfs <- mapM unC ps
       hnf <- unC $ k (map void hnfs)
+      lift' hnf
+  algCs (Unify e1 e2 k) = C $
+    do
+      hnf1 <- unC e1
+      hnf2 <- unC e2
+      hnf <- unC (k (void hnf1, void hnf2))
       lift' hnf
 
   lift'
@@ -189,11 +214,13 @@ instance Lift ValueL Value where
   lift (Cons qn args) = mapM lift args <&> Cons qn
   lift (HNF qn ptrs) = return $ HNF qn ptrs
   lift (Lit l) = return $ Lit l
+  lift (Free i) = return $ Free i
   lift (ValOther x) = x
 
   lift2 (Cons qn args) = mapM lift2 args <&> ValueL . Cons qn . map unValueL
   lift2 (HNF qn ptrs) = return $ ValueL $ HNF qn ptrs
   lift2 (Lit l) = return $ ValueL $ Lit l
+  lift2 (Free i) = return $ ValueL $ Free i
   lift2 (ValOther x) = x
 
 instance (Functor sig, Functor sigs) => Pointed (C sig sigs sigl l) where
@@ -276,3 +303,28 @@ str2prog
   -> Prog (Sig sig sigs sigl Id) a
 str2prog [] = cons ("Prelude", "[]") []
 str2prog (c : cs) = cons ("Prelude", ":") [lit (Charc c), str2prog cs]
+
+-- free variables --
+
+fvar
+  :: ( ConsF :<: sig
+     , Thunking a :<<<<: sigl
+     , ConstraintStore :<: sig
+     , Renaming :<: sig
+     , Functor sigs
+     )
+  => Scope
+  -> VarIndex
+  -> Prog (Sig sig sigs sigl Id) a
+fvar scope i = ctrace ("free " ++ show scope ++ " " ++ show i) $ do
+  cs <- get @CStore
+  ctrace (show cs) return ()
+  i' <- lookupRenaming scope i
+  applyC cs i'
+ where
+  applyC store n = case lookupC n store of
+    Just (ConsC qn vs) -> ctrace "consc" $ do
+      cons qn (map (applyC store) vs)
+    Just (VarC j) -> ctrace "varc" $ applyC store j
+    Just (LitC l) -> ctrace "litc" $ lit l
+    _ -> ctrace "freec" $ injectA $ FFree n
