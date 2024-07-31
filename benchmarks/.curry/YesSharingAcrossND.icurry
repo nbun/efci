@@ -1,0 +1,18 @@
+interface YesSharingAcrossND where {
+import Prelude;
+at 2 :: [Prelude.Int] -> Prelude.Int -> Prelude.Int;
+isdivs 2 :: Prelude.Int -> Prelude.Int -> Prelude.Bool;
+main 0 :: Prelude.Int;
+myfilter
+2
+::
+(Prelude.Int -> Prelude.Bool) -> [Prelude.Int] -> [Prelude.Int];
+myhead 1 :: [Prelude.Int] -> Prelude.Int;
+myiterate 2 :: (a -> a) -> a -> [a];
+mymap 2 :: (a -> b) -> [a] -> [b];
+primes 0 :: [Prelude.Int];
+suCC 1 :: Prelude.Int -> Prelude.Int;
+the_filter 1 :: [Prelude.Int] -> [Prelude.Int];
+hiding data Prelude.Int;
+hiding data Prelude.Bool
+}

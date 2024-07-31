@@ -1,0 +1,20 @@
+interface AddNum where {
+import Prelude;
+addNum_1 0 :: Prelude.Bool;
+addNum_10 0 :: Prelude.Bool;
+addNum_2 0 :: Prelude.Bool;
+addNum_3 0 :: Prelude.Bool;
+addNum_4 0 :: Prelude.Bool;
+addNum_5 0 :: Prelude.Bool;
+addSomeNum1 1 :: Prelude.Int -> Prelude.Int;
+addSomeNum10 1 :: Prelude.Int -> Prelude.Int;
+addSomeNum2 1 :: Prelude.Int -> Prelude.Int;
+addSomeNum3 1 :: Prelude.Int -> Prelude.Int;
+addSomeNum4 1 :: Prelude.Int -> Prelude.Int;
+addSomeNum5 1 :: Prelude.Int -> Prelude.Int;
+isZero 1 :: Prelude.Int -> Prelude.Bool;
+main 0 :: Prelude.Bool;
+someNum 1 :: Prelude.Int -> Prelude.Int;
+hiding data Prelude.Bool;
+hiding data Prelude.Int
+}

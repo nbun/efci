@@ -1,0 +1,202 @@
+interface Queens where {
+import Prelude;
+data Nat = O | S Nat;
+add 2 :: Nat -> Nat -> Nat;
+gen 2 :: Nat -> Nat -> [[Nat]];
+main 0 :: Prelude.Int;
+queens 1 :: Nat -> Prelude.Int;
+queens_10 0 :: Prelude.Int;
+queens_11 0 :: Prelude.Int;
+safe 3 :: Nat -> Nat -> [Nat] -> Prelude.Bool;
+sub 2 :: Nat -> Nat -> Prelude.Maybe Nat;
+instance Prelude.Data Nat {
+  (===) 2;
+  aValue 0
+};
+instance Prelude.Enum Nat {
+  toEnum 1;
+  fromEnum 1;
+  pred 1;
+  succ 0
+};
+instance Prelude.Eq Nat {
+  (==) 2
+};
+hiding data Prelude.Int;
+hiding data Prelude.Bool;
+hiding data Prelude.Maybe a;
+hiding class Prelude.Data a;
+hiding class Prelude.Enum a;
+hiding class Prelude.Eq a;
+instance Prelude.Data () {
+  aValue 0;
+  (===) 2
+} {-# MODULE Prelude #-};
+instance (Prelude.Data a, Prelude.Data b) => Prelude.Data (a, b) {
+  aValue 0;
+  (===) 2
+} {-# MODULE Prelude #-};
+instance (Prelude.Data a, Prelude.Data b,
+          Prelude.Data c) => Prelude.Data (a, b, c) {
+  aValue 0;
+  (===) 2
+} {-# MODULE Prelude #-};
+instance (Prelude.Data a, Prelude.Data b, Prelude.Data c,
+          Prelude.Data d) => Prelude.Data (a, b, c, d) {
+  aValue 0;
+  (===) 2
+} {-# MODULE Prelude #-};
+instance (Prelude.Data a, Prelude.Data b, Prelude.Data c,
+          Prelude.Data d, Prelude.Data e) => Prelude.Data (a, b, c, d, e) {
+  aValue 0;
+  (===) 2
+} {-# MODULE Prelude #-};
+instance (Prelude.Data a, Prelude.Data b, Prelude.Data c,
+          Prelude.Data d, Prelude.Data e, Prelude.Data f) => Prelude.Data (a,
+                                                                           b, c, d, e, f) {
+  aValue 0;
+  (===) 2
+} {-# MODULE Prelude #-};
+instance (Prelude.Data a, Prelude.Data b, Prelude.Data c,
+          Prelude.Data d, Prelude.Data e, Prelude.Data f,
+          Prelude.Data g) => Prelude.Data (a, b, c, d, e, f, g) {
+  aValue 0;
+  (===) 2
+} {-# MODULE Prelude #-};
+instance Prelude.Data a => Prelude.Data [a] {
+  aValue 0;
+  (===) 2
+} {-# MODULE Prelude #-};
+instance Prelude.Data Prelude.Bool {
+  (===) 2;
+  aValue 0
+} {-# MODULE Prelude #-};
+instance Prelude.Data Prelude.Char {
+  aValue 0;
+  (===) 0
+} {-# MODULE Prelude #-};
+instance (Prelude.Data a,
+          Prelude.Data b) => Prelude.Data (Prelude.Either a b) {
+  (===) 2;
+  aValue 0
+} {-# MODULE Prelude #-};
+instance Prelude.Data Prelude.Float {
+  aValue 0;
+  (===) 0
+} {-# MODULE Prelude #-};
+instance Prelude.Data Prelude.IOError {
+  (===) 2;
+  aValue 0
+} {-# MODULE Prelude #-};
+instance Prelude.Data Prelude.Int {
+  aValue 0;
+  (===) 0
+} {-# MODULE Prelude #-};
+instance Prelude.Data a => Prelude.Data (Prelude.Maybe a) {
+  (===) 2;
+  aValue 0
+} {-# MODULE Prelude #-};
+instance Prelude.Data Prelude.Ordering {
+  (===) 2;
+  aValue 0
+} {-# MODULE Prelude #-};
+instance Prelude.Enum () {
+  enumFromThenTo 3;
+  enumFromTo 2;
+  enumFromThen 2;
+  enumFrom 1;
+  fromEnum 1;
+  toEnum 1;
+  pred 1;
+  succ 1
+} {-# MODULE Prelude #-};
+instance Prelude.Enum Prelude.Bool {
+  enumFromThen 2;
+  enumFrom 1;
+  fromEnum 1;
+  toEnum 1;
+  pred 1;
+  succ 1
+} {-# MODULE Prelude #-};
+instance Prelude.Enum Prelude.Char {
+  enumFromThen 2;
+  enumFrom 1;
+  fromEnum 0;
+  toEnum 0;
+  pred 1;
+  succ 1
+} {-# MODULE Prelude #-};
+instance Prelude.Enum Prelude.Int {
+  enumFromThenTo 3;
+  enumFromThen 2;
+  enumFromTo 2;
+  enumFrom 1;
+  fromEnum 1;
+  toEnum 1;
+  pred 1;
+  succ 1
+} {-# MODULE Prelude #-};
+instance Prelude.Enum Prelude.Ordering {
+  enumFromThen 2;
+  enumFrom 1;
+  fromEnum 1;
+  toEnum 1;
+  pred 1;
+  succ 1
+} {-# MODULE Prelude #-};
+instance Prelude.Eq () {
+  (==) 2
+} {-# MODULE Prelude #-};
+instance (Prelude.Eq a, Prelude.Eq b) => Prelude.Eq (a, b) {
+  (==) 2
+} {-# MODULE Prelude #-};
+instance (Prelude.Eq a, Prelude.Eq b,
+          Prelude.Eq c) => Prelude.Eq (a, b, c) {
+  (==) 2
+} {-# MODULE Prelude #-};
+instance (Prelude.Eq a, Prelude.Eq b, Prelude.Eq c,
+          Prelude.Eq d) => Prelude.Eq (a, b, c, d) {
+  (==) 2
+} {-# MODULE Prelude #-};
+instance (Prelude.Eq a, Prelude.Eq b, Prelude.Eq c, Prelude.Eq d,
+          Prelude.Eq e) => Prelude.Eq (a, b, c, d, e) {
+  (==) 2
+} {-# MODULE Prelude #-};
+instance (Prelude.Eq a, Prelude.Eq b, Prelude.Eq c, Prelude.Eq d,
+          Prelude.Eq e, Prelude.Eq f) => Prelude.Eq (a, b, c, d, e, f) {
+  (==) 2
+} {-# MODULE Prelude #-};
+instance Prelude.Eq a => Prelude.Eq [a] {
+  (==) 2
+} {-# MODULE Prelude #-};
+instance Prelude.Eq Prelude.Bool {
+  (==) 2
+} {-# MODULE Prelude #-};
+instance Prelude.Eq Prelude.Char {
+  (==) 2
+} {-# MODULE Prelude #-};
+instance (Prelude.Eq a,
+          Prelude.Eq b) => Prelude.Eq (Prelude.Either a b) {
+  (==) 2
+} {-# MODULE Prelude #-};
+instance Prelude.Eq Prelude.Float {
+  (==) 2
+} {-# MODULE Prelude #-};
+instance Prelude.Eq Prelude.IOError {
+  (==) 2
+} {-# MODULE Prelude #-};
+instance Prelude.Eq Prelude.Int {
+  (==) 2
+} {-# MODULE Prelude #-};
+instance Prelude.Eq a => Prelude.Eq (Prelude.Maybe a) {
+  (==) 2
+} {-# MODULE Prelude #-};
+instance Prelude.Eq Prelude.Ordering {
+  (==) 2
+} {-# MODULE Prelude #-};
+hiding data Prelude.Char;
+hiding data Prelude.Either a b;
+hiding data Prelude.Float;
+hiding data Prelude.IOError;
+hiding data Prelude.Ordering
+}
