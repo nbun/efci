@@ -1,3 +1,4 @@
+{-# LANGUAGE TypeApplications #-}
 module App where
 
 import Base.Messages (Message, putErrLn)
@@ -60,10 +61,10 @@ import Transformation.FCY2AE (CurryEffects, fcyProg2ae, fcyRunner2ae)
 import Transformations (qual)
 import Type (AEProg)
 
-newtype ToolOpts = ToolOpts {showFlatCurryExpr :: Bool}
+data ToolOpts = ToolOpts { showFlatCurryExpr :: Bool, optimize :: Bool}
 
 defaultToolOpts :: ToolOpts
-defaultToolOpts = ToolOpts{showFlatCurryExpr = False}
+defaultToolOpts = ToolOpts { showFlatCurryExpr = False, optimize = True}
 
 main :: IO ()
 main = do
@@ -82,7 +83,9 @@ loop topts prelude file = do
   input <- getLine
   case input of
     ":q" -> return ()
-    ":fcy" -> loop (ToolOpts (not (showFlatCurryExpr topts))) prelude file
+    ":fcy" -> loop (topts {showFlatCurryExpr = not $ showFlatCurryExpr topts}) prelude file
+    ":o" -> loop (topts {optimize = not $ optimize topts}) prelude file
+
     _ -> do
       let query = case input :: String of
             "" -> "main"
@@ -153,9 +156,15 @@ execRun topts (prelude, preludeDir) file = do
   -- load modules
   progs <- genTAFCY (opts True True dirs) file
   let fcyrunner = findRunner (last progs)
-      aprogs' = map fcyProg2ae progs :: [AEProg (Prog (CurryEffects ()) ())]
-      runner = fcyRunner2ae (fdclRule fcyrunner) :: Prog (CurryEffects ()) ()
-  res <- runCurryEffects aprogs' runner
+  res <- case optimize topts of
+           True -> do
+             let aprogs' = map fcyProg2ae progs
+                 runner = fcyRunner2ae (fdclRule fcyrunner)
+             runCurryEffectsC @() aprogs' runner
+           False -> do
+             let aprogs' = map fcyProg2ae progs
+                 runner = fcyRunner2ae (fdclRule fcyrunner)
+             runCurryEffects @() aprogs' runner
   -- when (showFlatCurryExpr topts) $ print fcyrunner
   return (declutter res)
 

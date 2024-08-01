@@ -10,3 +10,5 @@ data/.curry/
 examples/.curry/
 
 dist-newstyle/
+
+benchmarks/.curry/

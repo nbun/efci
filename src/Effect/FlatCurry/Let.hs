@@ -29,47 +29,40 @@ type Let sig sigl a =
   (StateF LocalBindings Ptrs :<: sig, Renaming :<: sig, Thunking a :<<<<: sigl)
 
 lvar
-  :: (Let sig sigl a, Functor sig, Functor sigs)
+  :: (Let sig sigl a, EffectMonad m sig sigs sigl Id)
   => Scope
   -> VarIndex
-  -> Prog (Sig sig sigs sigl Id) a
+  -> m a
 lvar scope i = do
   s <- get @LocalBindings
   i' <- lookupRenaming scope i
   case IntMap.lookup i' s of
     Nothing -> error $ "Unbound variable " ++ show i
     Just ptr -> force ptr
+{-# INLINE lvar #-}
 
 let'
-  :: ( StateF LocalBindings Ptrs :<: sig
-     , Thunking a :<<<<: sigl
-     , Functor sig
-     , Functor sigs
-     , Renaming :<: sig
-     )
+  :: (EffectMonad m sig sigs sigl Id, Let sig sigl a)
   => Scope
-  -> [(VarIndex, Prog (Sig sig sigs sigl Id) a)]
-  -> Prog (Sig sig sigs sigl Id) a
-  -> Prog (Sig sig sigs sigl Id) a
+  -> [(VarIndex, m a)]
+  -> m a
+  -> m a
 let' scope bs e = do
   let (vs, ps) = unzip bs
   ptrs <- mapM thunk ps
   letThunked scope (zip vs ptrs) e
+{-# INLINE let' #-}
 
 letThunked
-  :: ( StateF LocalBindings Ptrs :<: sig
-     , Thunking a :<<<<: sigl
-     , Functor sig
-     , Functor sigs
-     , Renaming :<: sig
-     )
+  :: (EffectMonad m sig sigs sigl Id, Let sig sigl a)
   => Scope
   -> [(VarIndex, Ptr)]
-  -> Prog (Sig sig sigs sigl Id) a
-  -> Prog (Sig sig sigs sigl Id) a
+  -> m a
+  -> m a
 letThunked scope bs e = do
   let (vs, ptrs) = unzip bs
   vs' <- rename scope vs
   s <- get @LocalBindings
   put @LocalBindings (foldr (uncurry IntMap.insert) s (zip vs' ptrs))
   e
+{-# INLINE letThunked #-}

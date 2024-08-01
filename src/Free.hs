@@ -12,6 +12,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE FunctionalDependencies #-}
 
 module Free where
 
@@ -55,3 +56,60 @@ instance Pointed [] where
 
 instance (HFunctor k) => Pointed (Prog k) where
   point = Return
+
+-- fusion for free --
+
+class HFunctor f => TermAlgebra h f | h -> f where
+  var :: a -> h a
+  con :: f h (h a) -> h a
+
+instance HFunctor sig => TermAlgebra (Prog sig) sig where
+  var = Return
+  {-# INLINE var #-}
+  con = Call
+  {-# INLINE con #-}
+
+class (Monad m, TermAlgebra m f, Pointed m) => TermMonad m f | m -> f
+
+instance (Monad m, TermAlgebra m f, Pointed m) => TermMonad m f
+
+-- codensity --
+
+newtype Cod h a = Cod { unCod :: forall x. (a -> h x) -> h x}
+
+instance Functor (Cod h) where
+  fmap f m = Cod (\k -> unCod m (k . f))
+  {-# INLINE fmap #-}
+
+instance Applicative (Cod h) where
+  pure x = Cod ($ x)
+  {-# INLINE pure #-}
+  Cod m <*> Cod n = Cod (\k -> m (\f -> n (k . f)))
+  {-# INLINE (<*>) #-}
+
+instance Monad (Cod h) where
+  Cod m >>= f = Cod (\k -> m (\a -> unCod (f a) k))
+  {-# INLINE (>>=) #-}
+
+instance (Pointed h, TermAlgebra h f) => TermAlgebra (Cod h) f where
+  var = return
+  {-# INLINE var #-}
+  con = algCod con
+  {-# INLINE con #-}
+
+instance Pointed (Cod h) where
+  point = pure
+  {-# INLINE point #-}
+
+
+algCod :: forall f h a. (HFunctor f, Pointed h) => (forall x. f h (h x) -> h x) -> (f (Cod h) (Cod h a) -> Cod h a)
+algCod alg op = Cod (\k -> alg (hmap (\(Cod m) -> m point) (fmap (\(Cod m) -> m k) op)))
+{-# INLINE algCod #-}
+
+runCod :: (a -> f x) -> Cod f a -> f x
+runCod g m = unCod m g
+{-# INLINE runCod #-}
+
+finish :: TermAlgebra h f => Cod h x -> h x
+finish m = unCod m var
+{-# INLINE finish #-}

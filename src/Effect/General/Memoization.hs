@@ -1,6 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# HLINT ignore "Use newtype instead of data" #-}
-{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE EmptyCase #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# HLINT ignore "Use >=>" #-}
@@ -13,10 +12,10 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators #-}
+{-# HLINT ignore "Avoid lambda using `infix`" #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
-
-{-# HLINT ignore "Avoid lambda using `infix`" #-}
 
 module Effect.General.Memoization where
 
@@ -24,6 +23,7 @@ import Debug (ctrace)
 import Free
 
 import Data.Bifunctor (second)
+import Data.Either (rights)
 import Data.IntMap (IntMap, (!))
 import qualified Data.IntMap as IntMap
 import Data.Kind (Type)
@@ -35,65 +35,77 @@ data Thunking v :: Type -> (Type -> Type) -> Type where
    Force :: Ptr -> Thunking v v NoSub
 
 thunk
-   :: forall sig sigs sigl v
-    . (Thunking v :<<<<: sigl, Functor sig, Functor sigs)
-   => Prog (Sig sig sigs sigl Id) v
-   -> Prog (Sig sig sigs sigl Id) Ptr
-thunk t = ctrace "thunk" $ injectL (Thunk :: Thunking v Ptr (OneSub v)) (Id ()) (\One _ -> fmap Id t) (Return . unId)
+   :: forall m sig sigs sigl v
+    . (EffectMonad m sig sigs sigl Id, Thunking v :<<<<: sigl)
+   => m v
+   -> m Ptr
+thunk t = ctrace "thunk" $ injectL (Thunk :: Thunking v Ptr (OneSub v)) (Id ()) (\One _ -> fmap Id t) (return . unId)
+{-# INLINE thunk #-}
 
-force :: (Thunking v :<<<<: sigl) => Ptr -> Prog (Sig sig sigs sigl Id) v
-force p = ctrace ("force " ++ show p) $ injectL (Force p) (Id ()) (\x -> case x of {}) (Return . unId)
+force :: (EffectMonad m sig sigs sigl Id, Thunking v :<<<<: sigl) => Ptr -> m v
+force p = ctrace ("force " ++ show p) $ injectL (Force p) (Id ()) (\x -> case x of {}) (return . unId)
+{-# INLINE force #-}
 
 type Ptr = Int
-type Thunk sig sigs sigl l v = Either (l () -> H v sig sigs sigl l (l v)) (l v)
-type ThunkStore sig sigs sigl l v = (Int, IntMap (Thunk sig sigs sigl l v))
 
-runLazy :: (Functor sig, Functor sigs, Functor l, Show (l v), Show (l ())) => ThunkStore sig sigs sigl l v -> Prog (Sig sig sigs (Thunking v :+++: sigl) l) b -> Prog (Sig sig sigs sigl (StateL (ThunkStore sig sigs sigl l v) l)) b
+runLazy :: (Functor sig, Functor sigs, Functor l, Show (l v), Show (l ()), m ~ Prog (Sig sig sigs sigl (StateL (ThunkStore n l v) l)), n ~ Prog (Sig sig sigs sigl l), Monad m) => ThunkStore m l v -> Prog (Sig sig sigs (Thunking v :+++: sigl) l) b -> m b
 runLazy s = fmap snd . \p -> hLazy p s
+{-# INLINE runLazy #-}
 
 hLazy
-   :: forall sig sigs sigl l v a
-    . (Functor sig, Functor sigs, Functor l, Show (l v), Show (l ()))
+   :: forall m n sig sigs sigl l v a
+    . (Functor sig, Functor sigs, Functor l, Show (l v), Show (l ()), m ~ Prog (Sig sig sigs sigl (StateL (ThunkStore n l v) l)), n ~ Prog (Sig sig sigs sigl l), Monad m)
    => Prog (Sig sig sigs (Thunking v :+++: sigl) l) a
-   -> ThunkStore sig sigs sigl l v
-   -> Prog (Sig sig sigs sigl (StateL (ThunkStore sig sigs sigl l v) l)) (ThunkStore sig sigs sigl l v, a)
-hLazy = ctrace "runMemo" . unH . fold point (lalg algM)
-  where
-   algM
-      :: Thunking v p c
-      -> l ()
-      -> (forall x. c x -> l () -> H v sig sigs sigl l (l x))
-      -> (l p -> H v sig sigs sigl l b)
-      -> H v sig sigs sigl l b
-   algM Thunk l st k = H $ \(fresh, im) -> ctrace ("thunked " ++ show fresh) $ unH (k (fresh <$ l)) (fresh + 1, IntMap.insert fresh (Left (st One)) im)
-   algM (Force p) l _ k = H $ \th -> ctrace ("forcelookup " ++ show (IntMap.keys $ snd th)) $ case snd th ! p of
-      Left t -> ctrace ("evaluate " ++ show p ++ ": " ++ show l) $ do
-         (th', lv) <- unH (t l) th
-         unH (k lv) (second (IntMap.insert p (Right lv)) th')
-      Right lv -> ctrace ("memoized " ++ show p ++ ": " ++ show lv ++ show l) $ unH (k lv) th
+   -> ThunkStore m l v
+   -> m (ThunkStore m l v, a)
+hLazy = ctrace "runMemo" . unMC . fold point con
+{-# INLINE hLazy #-}
 
-data H v sig sigs sigl l a = H
-   { unH
-      :: ThunkStore sig sigs sigl l v
-      -> Prog (Sig sig sigs sigl (StateL (ThunkStore sig sigs sigl l v) l)) (ThunkStore sig sigs sigl l v, a)
-   }
-   deriving (Functor)
-
-instance (Functor sig, Functor sigs) => Pointed (H v sig sigs sigl l) where
-   point x = H $ \th -> return (th, x)
-
-instance Forward (H v) where
-   afwd op = H $ \th -> Call $ A $ Algebraic $ fmap (\x -> unH x th) op
-   sfwd op = H $ \th -> Call $ S $ Enter $ fmap (go th) op
+instance (Functor l, EffectMonad n sig sigs sigl l, EffectMonad m sig sigs sigl (StateL (ThunkStore n l v) l), Show (l v)) => TermAlgebra (MC m l v) (Sig sig sigs (Thunking v :+++: sigl) l) where
+   con (A (Algebraic op)) = MC $ \th -> con $ A $ Algebraic $ fmap (\x -> unMC x th) op
+   con (S (Enter op)) = MC $ \th -> con $ S $ Enter $ fmap (go th) op
      where
       go th hhx = do
-         (th', hx) <- unH hhx th
-         return (unH hx th')
-   lfwd op l st k = H $ \th ->
-      Call $
-         L $
-            Node
-               op
-               (StateL (th, l))
-               (\c (StateL (th', lv)) -> StateL <$> unH (st c lv) th')
-               (\(StateL (th', lv)) -> unH (k lv) th')
+         (th', hx) <- unMC hhx th
+         return (unMC hx th')
+   con (L (Node (Inl3 Thunk) l st k)) = MC $ \(fresh, im) -> ctrace ("thunked " ++ show fresh) $ unMC (k (fresh <$ l)) (fresh + 1, IntMap.insert fresh (Left (st One)) im)
+   con (L (Node (Inl3 (Force p)) l _ k)) = MC $ \th -> ctrace ("forcelookup " ++ show (IntMap.keys $ snd th)) $ case snd th ! p of
+      Left t -> do
+         (th', lv) <- unMC (t l) th
+         unMC (k lv) (ctrace ("evaluate " ++ show p ++ show lv) $ (second (IntMap.insert p (Right lv)) th'))
+      Right lv -> ctrace ("memoized " ++ show p ++ show lv) $ unMC (k lv) th
+   -- con (L (Node (Inr3 op) l st k)) = MC $ \th ->
+   --    con $
+   --       L $
+   --          Node
+   --             op
+   --             (StateL (th, l))
+   --             (\c (StateL (th', lv)) -> StateL <$> unMC (st c lv) th')
+   --             (\(StateL (th', lv)) -> unMC (k lv) th')
+   {-# INLINE con #-}
+   var = MC . gen'Memo
+     where
+      gen'Memo x th = return (th, x)
+   {-# INLINE var #-}
+
+runLazyC :: (EffectMonad n sig sigs sigl l, EffectMonad m sig sigs sigl (StateL (ThunkStore n l v) l), Functor l, Show (l v)) => ThunkStore m l v -> Cod (MC m l v) a -> m a
+runLazyC th p = (\(s, r) -> ctrace (showTS s) r) <$> unMC (runCod var p) th
+-- runLazyC th p = snd <$> unMC (runCod var p) th
+{-# INLINE runLazyC #-}
+
+instance (Monad m) => Pointed (MC m l v) where
+   point x = MC $ \th -> return (th, x)
+   {-# INLINE point #-}
+
+type Thunk m l v = Either (l () -> MC m l v (l v)) (l v)
+
+type ThunkStore m l v = (Int, IntMap (Thunk m l v))
+
+newtype MC m l v a = MC {unMC :: ThunkStore m l v -> m (ThunkStore m l v, a)}
+
+instance (Functor m) => Functor (MC m l v) where
+   fmap f (MC x) = MC $ \th -> fmap (fmap f) (x th)
+   {-# INLINE fmap #-}
+
+showTS :: (Show (l v)) => ThunkStore m l v -> String
+showTS (i, m) = show i ++ " " ++ show (rights $ map snd (IntMap.toList m))

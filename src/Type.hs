@@ -30,6 +30,12 @@ data AEProg a
 data AEFuncDecl a = AEFunc QName Int Visibility TypeExpr (AERule a)
   deriving (Functor, Show)
 
+fdclBody :: AEFuncDecl a -> a
+fdclBody (AEFunc _ _ _ _ (AERule _ a)) = a
+
+fdclVars :: AEFuncDecl a -> [VarIndex]
+fdclVars (AEFunc _ _ _ _ (AERule vs _)) = vs
+
 data AERule a
   = AERule [VarIndex] a
   | AEExternal String

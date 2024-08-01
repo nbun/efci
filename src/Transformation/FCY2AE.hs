@@ -31,7 +31,6 @@ import Data.Bifunctor (first)
 import Data.IntMap (IntMap)
 import qualified Data.Map as Map
 import Effect.FlatCurry.Constructor
-import Effect.FlatCurry.Free (free)
 import Effect.FlatCurry.Function (
   FunctionArgs,
   Partial,
@@ -50,6 +49,7 @@ import Effect.General.State hiding (get, put)
 import Free
 import Signature
 import Type (AEFuncDecl (..), AEProg (..), AERule (..))
+import Effect.FlatCurry.Declarations (DeclF)
 
 data VarKind
   = CombVar
@@ -60,9 +60,8 @@ data VarKind
 
 type VarKindMap = Map.Map VarIndex VarKind
 
-type AEF (f :: (* -> *) -> * -> *) v =
-  ( ReaderF FunctionReader [AEProg (Prog f v)]
-      :+: ConsF
+type AEffects =
+  ( ConsF
       :+: StateF LocalBindings (IntMap Ptr)
       :+: Renaming
       :+: FunctionArgs
@@ -72,36 +71,24 @@ type AEF (f :: (* -> *) -> * -> *) v =
       :+: IOAction
   )
 
-newtype AEffects v a = AEffects (AEF (CurryEffects v) v a)
-  deriving (Functor)
-
-instance
-  (Functor sig, sig :<: AEF (CurryEffects v) v)
-  => (:<:) sig (AEffects v)
-  where
-  inj = AEffects . inj
-
-  prj (AEffects e) = prj e
-
-type LEffects v = Thunking v :+++: LVoid
+type LEffects v = DeclF v :+++: (Thunking v :+++: LVoid)
 
 type SEffects = Partial :+: CaseScope :+: Void
 
-type CurryEffects v = Sig (AEffects v) SEffects (LEffects v) Id
+type CurryEffects v = Sig AEffects SEffects (LEffects v) Id
 
 -- normalform = id
-fcyRunner2ae :: (() :<<<: v) => ARule TypeExpr -> Prog (CurryEffects v) v
+fcyRunner2ae :: (() :<<<: v, TermMonad m (CurryEffects v)) => ARule TypeExpr -> m v
 fcyRunner2ae (AExternal _ _) = undefined
 fcyRunner2ae (ARule _ vars e) =
   let m = insertBinds CombVar Map.empty vars
    in normalform (join $ fcyExpr2ae m e) -- normalform
 
-fcyExpr2ae
-  :: forall v
-   . (() :<<<: v)
-  => VarKindMap
-  -> AExpr TypeExpr
-  -> Prog (CurryEffects v) (Prog (CurryEffects v) v)
+fcyExpr2ae :: forall m v.
+           (() :<<<: v, TermMonad m (CurryEffects v))
+           => VarKindMap
+           -> AExpr TypeExpr
+           -> m (m v)
 fcyExpr2ae m expr = do
   case expr of
     AVar _ i -> case Map.lookup i m of
@@ -172,8 +159,7 @@ patVars :: APattern ann -> [(VarIndex, ann)]
 patVars (ALPattern _ _) = []
 patVars (APattern _ _ bs) = bs
 
-fcyProg2ae
-  :: (() :<<<: v) => AProg TypeExpr -> AEProg (Prog (CurryEffects v) v)
+fcyProg2ae :: (() :<<<: v, TermMonad m (CurryEffects v)) => AProg TypeExpr -> AEProg (m v)
 fcyProg2ae (AProg name imports tdecls fdecls opdecls) =
   let fdecls' = map fcyFDecl2ae fdecls
       fdeclmap =
@@ -183,11 +169,10 @@ fcyProg2ae (AProg name imports tdecls fdecls opdecls) =
    in AEProg name imports tdeclmap fdeclmap opdecls
 
 fcyFDecl2ae
-  :: (() :<<<: v) => AFuncDecl TypeExpr -> AEFuncDecl (Prog (CurryEffects v) v)
+  :: (() :<<<: v, TermMonad m (CurryEffects v)) => AFuncDecl TypeExpr -> AEFuncDecl (m v)
 fcyFDecl2ae (AFunc qn arity vis ty r) = AEFunc qn arity vis ty (fcyRule2ae r)
 
-fcyRule2ae
-  :: (() :<<<: v) => ARule TypeExpr -> AERule (Prog (CurryEffects v) v)
+fcyRule2ae :: (() :<<<: v, TermMonad m (CurryEffects v)) => ARule TypeExpr -> AERule (m v)
 fcyRule2ae (ARule _ vars e) =
   let (vs, _) = unzip vars
       m = insertBinds CombVar Map.empty vars

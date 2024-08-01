@@ -3,6 +3,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -11,6 +12,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Effect.FlatCurry.Function where
 
@@ -19,19 +21,19 @@ import qualified Data.Map as Map
 import Data.Maybe (mapMaybe)
 import Debug (ctrace)
 
-
 import Curry.FlatCurry.Annotated.Goodies (argTypes)
 import Effect.FlatCurry.Constructor
 import Effect.FlatCurry.IO
 import Effect.FlatCurry.Let
 import Effect.General.Error
 import Effect.General.Memoization
+import Effect.General.ND
 import Effect.General.Reader
 import Effect.General.State
 import Free
 import Signature
 import Type (AEFuncDecl (..), AEProg (..), AERule (..))
-import Effect.General.ND
+import Effect.FlatCurry.Declarations (DeclF, getInfo, getBody)
 
 data FunctionState
 
@@ -41,37 +43,37 @@ instance Identify FunctionState where
 type FunctionArgs = StateF FunctionState [((Scope, TypeExpr), Ptr)]
 
 type Functions sig sigs sigl a =
-  ( '[Declarations sig sigs sigl a, FunctionArgs, ConsF, Err, IOAction, ConstraintStore, ND] :.: sig
+  ( '[FunctionArgs, ConsF, Err, IOAction, ConstraintStore, ND] :.: sig
   , '[Partial, CaseScope] :.: sigs
   , Let sig sigl a
+  , DeclF a :<<<<: sigl
   , () :<<<: a
   )
 
 fun
-  :: (Functions sig sigs sigl a)
+  :: forall sig sigs sigl m a
+   . (EffectMonad m sig sigs sigl Id, Functions sig sigs sigl a)
   => Scope
   -> QName
-  -> Either [Prog (Sig sig sigs sigl Id) a] [Ptr]
-  -> Prog (Sig sig sigs sigl Id) a
+  -> Either [m a] [Ptr]
+  -> m a
 fun scope qn ps = do
-  ptrs <- case ps of
-    Left exprs -> mapM thunk exprs
-    Right ptrs -> return ptrs
-  progs <- ask @FunctionReader
-  let fdecl = findModule progs qn
+  ptrs <- either (mapM thunk) return ps
+  (ar, vis, ty, r) <- getInfo @a qn
+  let fdecl = AEFunc qn ar vis ty r
   if isExternal fdecl
     then callExternal fdecl (map force ptrs)
     else do
-      let (vs, ts, body) = fdclRule fdecl
+      let (vs, ts, _) = fdclRule fdecl
           pds = findPolyDicts scope (zip ts ptrs)
       modify @FunctionState (pds ++)
-      letThunked scope (zip vs ptrs) body
+      letThunked scope (zip vs ptrs) (getBody qn)
 
 callExternal
-  :: (Functions sig sigs sigl a)
+  :: (EffectMonad m sig sigs sigl Id, Functions sig sigs sigl a)
   => AEFuncDecl v
-  -> [Prog (Sig sig sigs sigl Id) a]
-  -> Prog (Sig sig sigs sigl Id) a
+  -> [m a]
+  -> m a
 callExternal fdecl args = case (externalName fdecl, args) of
   ("Prelude.plusInt", [px, py]) -> arithInt (+) px py
   ("Prelude.minusInt", [px, py]) -> arithInt (-) px py
@@ -162,24 +164,33 @@ data CombType
 data Partial a
   = PartCall QName CombType [Ptr]
   | FApply a ((QName, CombType, [Ptr]) -> a)
-  deriving (Functor)
+
+instance Functor Partial where
+  fmap _ (PartCall qn ct ptrs) = PartCall qn ct ptrs
+  fmap f (FApply x k) = FApply (f x) (f . k)
+  {-# INLINE fmap #-}
 
 data Closure a
   = Closure QName CombType [Ptr]
   | Other a
-  deriving (Show, Functor)
+  deriving (Show)
+
+instance Functor Closure where
+  fmap _ (Closure qn ct ptrs) = Closure qn ct ptrs
+  fmap f (Other x) = Other (f x)
+  {-# INLINE fmap #-}
 
 partial
-  :: (Functor sig, Functor sigs, Thunking a :<<<<: sigl, Partial :<: sigs)
+  :: (EffectMonad m sig sigs sigl Id, Thunking a :<<<<: sigl, Partial :<: sigs)
   => QName
   -> CombType
-  -> [Prog (Sig sig sigs sigl Id) a]
-  -> Prog (Sig sig sigs sigl Id) a
+  -> [m a]
+  -> m a
 partial qn combtype args = ctrace
   ("partial " ++ show qn ++ " " ++ show (missingArgs combtype))
   $ do
     ptrs <- mapM thunk args
-    Call $ S $ Enter $ inj $ PartCall qn combtype ptrs
+    injectS $ PartCall qn combtype ptrs
 
 missingArgs :: CombType -> Int
 missingArgs (FuncPartCall i) = i
@@ -190,10 +201,10 @@ decArgs (FuncPartCall i) = FuncPartCall (i - 1)
 decArgs (ConsPartCall i) = ConsPartCall (i - 1)
 
 apply'
-  :: (Functions sig sigs sigl a, Thunking a :<<<<: sigl)
-  => Prog (Sig sig sigs sigl Id) a
-  -> Prog (Sig sig sigs sigl Id) a
-  -> Prog (Sig sig sigs sigl Id) a
+  :: (EffectMonad m sig sigs sigl Id, Functions sig sigs sigl a)
+  => m a
+  -> m a
+  -> m a
 apply' f x = ctrace "apply" $
   do
     ptr <- thunk x
@@ -213,29 +224,52 @@ runPartial
    . (Functor sig, Functor sigs)
   => Prog (Sig sig (Partial :+: sigs) sigl l) a
   -> Prog (Sig sig sigs sigl (ClosureL l)) (Closure a)
-runPartial = unT . fold point (salg algP)
- where
-  algP :: Partial (T sig sigs sigl l (T sig sigs sigl l x)) -> T sig sigs sigl l x
-  algP (PartCall qn combtype args) = T $ return $ Closure qn combtype args
-  algP (FApply f k) = T $
-    do
-      t <- unT f
-      case t of
-        Other x -> unT x
-        (Closure qn missing ptrs) -> do
-          t' <- unT $ k (qn, missing, ptrs)
-          (lift . fmap unT) t'
+runPartial = unPC . fold point con
 
-newtype T sig sigs sigl l a = T {unT :: Prog (Sig sig sigs sigl (ClosureL l)) (Closure a)}
-  deriving (Functor)
-
-instance Forward T where
-  afwd op = T $ Call $ A $ Algebraic $ fmap unT op
-  sfwd op = T $ Call $ S $ Enter $ fmap (fmap lift . unT . fmap unT) op
-  lfwd op l st k = T $ Call $ L $ Node op (ClosureL $ Other l) (st' st) k'
+instance
+  (EffectMonad m sig sigs sigl (ClosureL l))
+  => TermAlgebra (PC m) (Sig sig (Partial :+: sigs) sigl l)
+  where
+  con (A (Algebraic op)) = PC $ con (A (Algebraic (fmap unPC op)))
+  con (S (Enter op)) = (algP # sfwd) op
    where
-    st' st2 c l' = lift2 (fmap (\x -> ClosureL <$> unT (st2 c x)) (unClosureL l'))
-    k' = lift . fmap (unT . k) . unClosureL
+    algP (PartCall qn combtype args) = PC $ return $ Closure qn combtype args
+    algP (FApply f k) = PC $
+      do
+        t <- unPC f
+        case t of
+          Other x -> unPC x
+          (Closure qn missing ptrs) -> do
+            t' <- unPC $ k (qn, missing, ptrs)
+            (lift . fmap unPC) t'
+
+    sfwd op = PC $ con $ S $ Enter $ fmap (fmap lift . unPC . fmap unPC) op
+  con (L (Node op l st k)) = PC $ con $ L $ Node op (ClosureL $ Other l) (st' st) k'
+   where
+    st' st2 c l' = lift2 (fmap (\x -> ClosureL <$> unPC (st2 c x)) (unClosureL l'))
+    k' = lift . fmap (unPC . k) . unClosureL
+  {-# INLINEABLE con #-}
+  var = PC . gen'Reader
+   where
+    gen'Reader x = return (Other x)
+  {-# INLINE var #-}
+
+runPartialC
+  :: (EffectMonad m sig sigs sigl (ClosureL l))
+  => Cod (PC m) a
+  -> m (Closure a)
+runPartialC = unPC . runCod var
+{-# INLINE runPartialC #-}
+
+instance (Monad m) => Pointed (PC m) where
+  point x = PC $ return (Other x)
+  {-# INLINE point #-}
+
+newtype PC m a = PC {unPC :: m (Closure a)}
+
+instance (Functor m) => Functor (PC m) where
+  fmap f (PC x) = PC (fmap (fmap f) x)
+  {-# INLINE fmap #-}
 
 instance Lift ClosureL Closure where
   lift (Closure qn ct ptrs) = return $ Closure qn ct ptrs
@@ -247,55 +281,58 @@ instance Lift ClosureL Closure where
 newtype ClosureL l a = ClosureL {unClosureL :: Closure (l a)}
   deriving (Functor, Show)
 
-instance (Functor sig, Functor sigs) => Pointed (T sig sigs sigl l) where
-  point x = T $ return $ Other x
-
 -- unification --
 
-unify :: forall sig sigs sigl m a. ( ConsF :<: sig
-         , Functions sig sigs sigl a
-         , ND :<: sig
-         , ConstraintStore :<: sig)
-      => Prog (Sig sig sigs sigl Id) a
-      -> Prog (Sig sig sigs sigl Id) a
-      -> Prog (Sig sig sigs sigl Id) a
-unify e1 e2 = ctrace "unify"
-  $ injectS (Unify (fmap return e1) (fmap return e2) (return . cnt))
-  where
-    cnt :: (Value (), Value ()) -> Prog (Sig sig sigs sigl Id) a
-    cnt (HNF qn1 args1, HNF qn2 args2)
-      | qn1 == qn2 = ctrace ("unify: " ++ show qn1 ++ " " ++ show qn2)
-        $ do
+unify
+  :: forall sig sigs sigl m a
+   . ( EffectMonad m sig sigs sigl Id
+     , ConsF :<: sig
+     , Functions sig sigs sigl a
+     , ND :<: sig
+     , ConstraintStore :<: sig
+     )
+  => m a
+  -> m a
+  -> m a
+unify e1 e2 =
+  ctrace "unify" $
+    injectS (Unify (fmap return e1) (fmap return e2) (return . cnt))
+ where
+  cnt :: (Value (), Value ()) -> m a
+  cnt (HNF qn1 args1, HNF qn2 args2)
+    | qn1 == qn2 = ctrace ("unify: " ++ show qn1 ++ " " ++ show qn2) $
+        do
           let args1' = map force args1
           let args2' = map force args2
           ands $ zipWith unify args1' args2'
-    cnt (Free i, Free j) = do
-      modify @CStore (addC i (VarC j))
+  cnt (Free i, Free j) = do
+    modify @CStore (addC i (VarC j))
+    cons ("Prelude", "True") []
+  cnt (Free i, HNF qn args) = ctrace ("unify: " ++ show i ++ " " ++ show qn) $
+    do
+      let args' = map force args
+      cs <- get @CStore
+      scope <- currentScope
+      vs <- freshNames scope (length args)
+      let fvs = map (fvar scope) vs
+      put @CStore (addC i (ConsC qn vs) cs)
+      ands $ zipWith unify fvs args'
+  cnt (HNF qn args, Free i) = cnt (Free i, HNF qn args)
+  cnt (Lit l1, Lit l2)
+    | l1 == l2 = cons ("Prelude", "True") []
+  cnt (Free i, Lit l) = ctrace ("unify: " ++ show i ++ " " ++ show l) $
+    do
+      modify @CStore (addC i (LitC l))
       cons ("Prelude", "True") []
-    cnt (Free i, HNF qn args) = ctrace ("unify: " ++ show i ++ " " ++ show qn)
-      $ do
-        let args' = map force args
-        cs <- get @CStore
-        scope <- currentScope
-        vs <- freshNames scope (length args)
-        let fvs = map (fvar scope) vs
-        put @CStore (addC i (ConsC qn vs) cs)
-        ands $ zipWith unify fvs args'
-    cnt (HNF qn args, Free i) = cnt (Free i, HNF qn args)
-    cnt (Lit l1, Lit l2)
-      | l1 == l2 = cons ("Prelude", "True") []
-    cnt (Free i, Lit l) = ctrace ("unify: " ++ show i ++ " " ++ show l)
-      $ do
-        modify @CStore (addC i (LitC l))
-        cons ("Prelude", "True") []
-    cnt (Lit l, Free i) = cnt (Free i, Lit l)
-    cnt args = ctrace ("unify: fail: " ++ show args) failed
+  cnt (Lit l, Free i) = cnt (Free i, Lit l)
+  cnt args = ctrace ("unify: fail: " ++ show args) failed
 
-ands :: (Functions sig sigs sigl a)
-     => [Prog (Sig sig sigs sigl Id) a]
-     -> Prog (Sig sig sigs sigl Id) a
+ands
+  :: (EffectMonad m sig sigs sigl Id, Functions sig sigs sigl a)
+  => [m a]
+  -> m a
 ands [] = cons ("Prelude", "True") []
 ands [x] = x
-ands (x:xs) = do
+ands (x : xs) = do
   scope <- newScope
   fun scope ("Prelude", "&&") (Left [x, ands xs])

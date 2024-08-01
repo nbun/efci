@@ -1,11 +1,13 @@
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Effect.FlatCurry.Constructor where
 
@@ -28,14 +30,26 @@ data ConsF a
   | FStrictCons QName [a]
   | FLit Literal
   | FFree VarIndex
-  deriving (Functor)
+
+instance Functor ConsF where
+  fmap _ (FCons qn args) = FCons qn args
+  fmap f (FStrictCons qn args) = FStrictCons qn (map f args)
+  fmap _ (FLit l) = FLit l
+  fmap _ (FFree i) = FFree i
+  {-# INLINE fmap #-}
 
 data CaseScope a
   = Case a (Value () -> a)
   | Normalize a ((QName, [Ptr]) -> a)
   | External [a] ([Value ()] -> a)
   | Unify a a ((Value (), Value ()) -> a)
-  deriving (Functor)
+
+instance Functor CaseScope where
+  fmap f (Case a k) = Case (f a) (f . k)
+  fmap f (Normalize a k) = Normalize (f a) (f . k)
+  fmap f (External as k) = External (map f as) (f . k)
+  fmap f (Unify a1 a2 k) = Unify (f a1) (f a2) (f . k)
+  {-# INLINE fmap #-}
 
 data Mode
   = Strict
@@ -46,47 +60,43 @@ normalform
   :: ( ConsF :<: sig
      , Thunking a :<<<<: sigl
      , CaseScope :<: sigs
-     , Functor sig
-     , Functor sigs
+     , EffectMonad m sig sigs sigl Id
      )
-  => Prog (Sig sig sigs sigl Id) a
-  -> Prog (Sig sig sigs sigl Id) a
-normalform (Return x) = Return x
+  => m a
+  -> m a
 normalform p = ctrace "normalform" $
   do
-    Call $ S $ Enter $ inj (Normalize (fmap return p) (fmap return . f))
+    injectS (Normalize (fmap return p) (fmap return . f))
  where
   f (qn, ptrs) = do
     let args = map (normalform . force) ptrs
-    Call $ A $ Algebraic $ inj (FStrictCons qn args)
+    injectA (FStrictCons qn args)
+{-# INLINE normalform #-}
 
 cons
-  :: (Functor sig, Functor sigs, Thunking a :<<<<: sigl, ConsF :<: sig)
+  :: (EffectMonad m sig sigs sigl Id, Thunking a :<<<<: sigl, ConsF :<: sig)
   => QName
-  -> [Prog (Sig sig sigs sigl Id) a]
-  -> Prog (Sig sig sigs sigl Id) a
+  -> [m a]
+  -> m a
 cons qn ps = do
   args <- mapM thunk ps
   ctrace ("cons " ++ show qn ++ " with " ++ show args) $
-    Call $
-      A $
-        Algebraic $
-          inj (FCons qn args)
+    injectA (FCons qn args)
+{-# INLINE cons #-}
 
 thunkedCons
-  :: (Functor sig, Functor sigs, Thunking a :<<<<: sigl, ConsF :<: sig)
+  :: (EffectMonad m sig sigs sigl Id, Thunking a :<<<<: sigl, ConsF :<: sig)
   => QName
   -> [Ptr]
-  -> Prog (Sig sig sigs sigl Id) a
+  -> m a
 thunkedCons qn args = do
   ctrace ("thunkedCons " ++ show qn ++ " with " ++ show args) $
-    Call $
-      A $
-        Algebraic $
-          inj (FCons qn args)
+    injectA (FCons qn args)
+{-# INLINE thunkedCons #-}
 
-lit :: (ConsF :<: sig) => Literal -> Prog (Sig sig sigs sigl l) v
-lit l = Call (A (Algebraic (inj (FLit l))))
+lit :: (EffectMonad m sig sigs sigl l, ConsF :<: sig) => Literal -> m a
+lit l = injectA (FLit l)
+{-# INLINE lit #-}
 
 data CaseState
 
@@ -94,17 +104,17 @@ instance Identify CaseState where
   identify = "CaseState"
 
 case'
-  :: forall sig sigs sigl a
-   . (Let sig sigl a, CaseScope :<: sigs, ND :<: sig, ConstraintStore :<: sig, ConsF :<: sig)
+  :: forall m sig sigs sigl a
+   . (EffectMonad m sig sigs sigl Id, Let sig sigl a, CaseScope :<: sigs, ND :<: sig, ConstraintStore :<: sig, ConsF :<: sig)
   => Scope
-  -> Prog (Sig sig sigs sigl Id) a
-  -> [(APattern (), Prog (Sig sig sigs sigl Id) a)]
-  -> Prog (Sig sig sigs sigl Id) a
+  -> m a
+  -> [(APattern (), m a)]
+  -> m a
 case' scope cp brs =
   ctrace "case" $
     injectS (Case (fmap return cp) (return . cnt))
  where
-  cnt :: Value () -> Prog (Sig sig sigs sigl Id) a
+  cnt :: Value () -> m a
   cnt hnf = case mapMaybe (match hnf) brs of
     [] -> failed
     [x] -> x
@@ -145,70 +155,96 @@ data Value a
   | Lit Literal
   | Free VarIndex
   | ValOther a
-  deriving (Functor, Show)
+  deriving (Show)
+
+instance Functor Value where
+  fmap f (Cons qn args) = Cons qn (map (fmap f) args)
+  fmap _ (HNF qn ptrs) = HNF qn ptrs
+  fmap _ (Lit l) = Lit l
+  fmap _ (Free i) = Free i
+  fmap f (ValOther x) = ValOther (f x)
+  {-# INLINE fmap #-}
 
 newtype ValueL l a = ValueL {unValueL :: Value (l a)}
-  deriving (Functor, Show)
+  deriving (Show)
+
+instance Functor l => Functor (ValueL l) where
+  fmap f (ValueL x) = ValueL (fmap (fmap f) x)
+  {-# INLINE fmap #-}
 
 runCons
   :: forall sig sigs sigl l a
    . (Functor sig, Functor sigs)
   => Prog (Sig (ConsF :+: sig) (CaseScope :+: sigs) sigl l) a
   -> Prog (Sig sig sigs sigl (ValueL l)) (Value a)
-runCons = ctrace "runCons" . unC . fold point (asalg algCa algCs)
- where
-  algCa :: ConsF (C sig sigs sigl l x) -> C sig sigs sigl l x
-  algCa (FCons qn args) = C $ return (HNF qn args)
-  algCa (FStrictCons qn args) = C (mapM unC args <&> Cons qn)
-  algCa (FLit l) = C $ return (Lit l)
-  algCa (FFree i) = C $ return (Free i)
+runCons = ctrace "runCons" . unCC . fold point con
+{-# INLINE runCons #-}
 
-  algCs :: CaseScope (C sig sigs sigl l (C sig sigs sigl l x)) -> C sig sigs sigl l x
-  algCs (Case ce k) = C $
-    do
-      hnf <- unC ce
-      unC (k (void hnf)) >>= lift'
-  algCs (Normalize ce k) = C $
-    do
-      hnf <- unC ce
-      case hnf of
-        HNF qn args -> do
-          hnf <- unC (k (qn, args))
-          case hnf of
-            Cons qn args -> mapM lift' args <&> Cons qn
-            Lit l -> return $ Lit l
-            _ -> undefined
-        Lit l -> return $ Lit l
-        Free i -> return $ Free i
-        Cons qn args -> mapM lift' args <&> Cons qn
-        ValOther x -> unC x
-  algCs (External ps k) = C $
-    do
-      hnfs <- mapM unC ps
-      hnf <- unC $ k (map void hnfs)
-      lift' hnf
-  algCs (Unify e1 e2 k) = C $
-    do
-      hnf1 <- unC e1
-      hnf2 <- unC e2
-      hnf <- unC (k (void hnf1, void hnf2))
-      lift' hnf
+instance
+  (EffectMonad m sig sigs sigl (ValueL l))
+  => TermAlgebra (CC m) (Sig (ConsF :+: sig) (CaseScope :+: sigs) sigl l)
+  where
+  con (A (Algebraic op)) = CC . (algCa # afwd) . fmap unCC $ op
+   where
+    algCa (FCons qn args) = return (HNF qn args)
+    algCa (FStrictCons qn args) = sequence args <&> Cons qn
+    algCa (FLit l) = return (Lit l)
+    algCa (FFree i) = return (Free i)
 
-  lift'
-    :: Value (C sig sigs sigl l x)
-    -> Prog (Sig sig sigs sigl (ValueL l)) (Value x)
-  lift' = lift . fmap unC
+    afwd = con . A . Algebraic
+  con (S (Enter op)) = (algCs # sfwd) op
+   where
+    algCs (Case ce k) = CC $ do
+      hnf <- unCC ce
+      unCC (k (void hnf)) >>= lift'
+    algCs (Normalize ce k) = CC $
+      do
+        hnf <- unCC ce
+        case hnf of
+          HNF qn args -> do
+            hnf <- unCC (k (qn, args))
+            case hnf of
+              Cons qn args -> mapM lift' args <&> Cons qn
+              Lit l -> return $ Lit l
+              _ -> undefined
+          Lit l -> return $ Lit l
+          Free i -> return $ Free i
+          Cons qn args -> mapM lift' args <&> Cons qn
+          ValOther x -> unCC x
+    algCs (External ps k) = CC $
+      do
+        hnfs <- mapM unCC ps
+        hnf <- unCC $ k (map void hnfs)
+        lift' hnf
+    algCs (Unify e1 e2 k) = CC $
+      do
+        hnf1 <- unCC e1
+        hnf2 <- unCC e2
+        hnf <- unCC (k (void hnf1, void hnf2))
+        lift' hnf
 
-newtype C sig sigs sigl l a = C {unC :: Prog (Sig sig sigs sigl (ValueL l)) (Value a)}
+    lift' = lift . fmap unCC
+    sfwd op = CC $ con $ S $ Enter $ fmap (fmap lift . unCC . fmap unCC) op
+  con (L (Node op l st k)) = CC $ con $ L $ Node op (ValueL $ ValOther l) (st' st) k'
+   where
+    st' st2 c l' = lift2 (fmap (\x -> ValueL <$> unCC (st2 c x)) (unValueL l'))
+    k' = lift . fmap (unCC . k) . unValueL
+  {-# INLINE con #-}
+  var = CC . gen'Error
+   where
+    gen'Error x = return (ValOther x)
+  {-# INLINE var #-}
+
+runConsC :: (EffectMonad m sig sigs sigl (ValueL l)) => Cod (CC m) a -> m (Value a)
+runConsC = unCC . runCod var
+{-# INLINE runConsC #-}
+
+newtype CC m a = CC {unCC :: m (Value a)}
   deriving (Functor)
 
-instance Forward C where
-  afwd op = C $ Call $ A $ Algebraic $ fmap unC op
-  sfwd op = C $ Call $ S $ Enter $ fmap (fmap lift . unC . fmap unC) op
-  lfwd op l st k = C $ Call $ L $ Node op (ValueL $ ValOther l) (st' st) k'
-   where
-    st' st2 c l' = lift2 (fmap (\x -> ValueL <$> unC (st2 c x)) (unValueL l'))
-    k' = lift . fmap (unC . k) . unValueL
+instance (Monad m) => Pointed (CC m) where
+  point x = CC $ return (ValOther x)
+  {-# INLINE point #-}
 
 instance Lift ValueL Value where
   lift (Cons qn args) = mapM lift args <&> Cons qn
@@ -223,86 +259,72 @@ instance Lift ValueL Value where
   lift2 (Free i) = return $ ValueL $ Free i
   lift2 (ValOther x) = x
 
-instance (Functor sig, Functor sigs) => Pointed (C sig sigs sigl l) where
-  point x = C $ return (ValOther x)
+arithInt :: (ConsF :<: sig, CaseScope :<: sigs, TermMonad m (Sig sig sigs sigl l))
+         => (Integer -> Integer -> Integer)
+         -> m a 
+         -> m a 
+         -> m a 
+arithInt op x y = injectS (External [fmap return x, fmap return y] (return . f))
+  where
+    f [Lit (Intc x), Lit (Intc y)] = lit (Intc (x `op` y))
+{-# INLINE arithInt #-}
 
-arithInt
-  :: (ConsF :<: sig, CaseScope :<: sigs, Functor sig, Functor sigs)
-  => (Integer -> Integer -> Integer)
-  -> Prog (Sig sig sigs sigl l) v
-  -> Prog (Sig sig sigs sigl l) v
-  -> Prog (Sig sig sigs sigl l) v
-arithInt op x y =
-  Call
-    (S (Enter (inj (External [fmap return x, fmap return y] (return . f)))))
- where
-  f [Lit (Intc x), Lit (Intc y)] = lit (Intc (x `op` y))
+compInt :: ( ConsF :<: sig
+           , Thunking v :<<<<: sigl
+           , ConsF :<: sig
+           , CaseScope :<: sigs
+           , EffectMonad m sig sigs sigl Id)
+        => (Integer -> Integer -> Bool)
+        -> m v
+        -> m v
+        -> m v
+compInt op x y = injectS (External [fmap return x, fmap return y] (return . f))
+  where
+    f [Lit (Intc x), Lit (Intc y)]
+      | x `op` y = cons ("Prelude", "True") []
+      | otherwise = cons ("Prelude", "False") []
+{-# INLINE compInt #-}
 
-compInt
-  :: ( ConsF :<: sig
-     , Functor sig
-     , Functor sigs
-     , Thunking v :<<<<: sigl
-     , ConsF :<: sig
-     , CaseScope :<: sigs
-     )
-  => (Integer -> Integer -> Bool)
-  -> Prog (Sig sig sigs sigl Id) v
-  -> Prog (Sig sig sigs sigl Id) v
-  -> Prog (Sig sig sigs sigl Id) v
-compInt op x y =
-  Call
-    (S (Enter (inj (External [fmap return x, fmap return y] (return . f)))))
- where
-  f [Lit (Intc x), Lit (Intc y)]
-    | x `op` y = cons ("Prelude", "True") []
-    | otherwise = cons ("Prelude", "False") []
+compChar :: ( ConsF :<: sig
+            , Thunking v :<<<<: sigl
+            , ConsF :<: sig
+            , CaseScope :<: sigs
+            , EffectMonad m sig sigs sigl Id)
+         => (Char -> Char -> Bool)
+         -> m v
+         -> m v
+         -> m v
+compChar op x y = 
+  injectS (External [fmap return x, fmap return y] (return . f))
+  where
+    f [Lit (Charc x), Lit (Charc y)]
+      | x `op` y = cons ("Prelude", "True") []
+      | otherwise = cons ("Prelude", "False") []
+{-# INLINE compChar #-}
 
-compChar
-  :: ( ConsF :<: sig
-     , Functor sig
-     , Functor sigs
-     , Thunking v :<<<<: sigl
-     , ConsF :<: sig
-     , CaseScope :<: sigs
-     )
-  => (Char -> Char -> Bool)
-  -> Prog (Sig sig sigs sigl Id) v
-  -> Prog (Sig sig sigs sigl Id) v
-  -> Prog (Sig sig sigs sigl Id) v
-compChar op x y =
-  Call
-    (S (Enter (inj (External [fmap return x, fmap return y] (return . f)))))
- where
-  f [Lit (Charc x), Lit (Charc y)]
-    | x `op` y = cons ("Prelude", "True") []
-    | otherwise = cons ("Prelude", "False") []
-
-err
-  :: ( CaseScope :<: sigs
-     , Err :<: sig
-     , Functor sig
-     , Functor sigs
-     , Thunking a :<<<<: sigl
-     )
-  => Prog (Sig sig sigs sigl Id) a
-  -> Prog (Sig sig sigs sigl Id) a
+err :: forall sig sigs sigl m v. ( CaseScope :<: sigs
+       , Err :<: sig
+       , Thunking v :<<<<: sigl
+       , EffectMonad m sig sigs sigl Id)
+    => m v
+    -> m v
 err p = do
-  Call $ S $ Enter $ inj (External [fmap return p] (return . f))
- where
-  f [hnf] = Call $ A $ Algebraic $ inj (Err (val2str hnf))
+  injectS (External [fmap return p] (return . f))
+  where
+    f :: [Value ()] -> m v
+    f [hnf] = injectA (Err (val2str hnf))
+{-# INLINE err #-}
 
-val2str :: (Show a) => Value a -> [Char]
+val2str :: Show a => Value a -> [Char]
 val2str (Cons ("Prelude", "[]") []) = ""
-val2str (Cons ("Prelude", ":") [Lit (Charc c), xs]) = c : val2str xs
+val2str (Cons ("Prelude", ":") [Lit (Charc c), xs]) = c:val2str xs
 val2str hnf = error $ "hnf2str: " ++ show hnf
 
-str2prog
-  :: (Functor sig, Functor sigs, Thunking a :<<<<: sigl, ConsF :<: sig)
-  => String
-  -> Prog (Sig sig sigs sigl Id) a
+str2prog :: (Thunking a :<<<<: sigl, ConsF :<: sig, EffectMonad m sig sigs sigl Id)
+         => String
+         -> m a
 str2prog [] = cons ("Prelude", "[]") []
-str2prog (c : cs) = cons ("Prelude", ":") [lit (Charc c), str2prog cs]
+str2prog (c:cs) = cons ("Prelude", ":") [lit (Charc c), str2prog cs]
 
 -- free variables --
 
@@ -311,11 +333,11 @@ fvar
      , Thunking a :<<<<: sigl
      , ConstraintStore :<: sig
      , Renaming :<: sig
-     , Functor sigs
+     , EffectMonad m sig sigs sigl Id
      )
   => Scope
   -> VarIndex
-  -> Prog (Sig sig sigs sigl Id) a
+  -> m a
 fvar scope i = ctrace ("free " ++ show scope ++ " " ++ show i) $ do
   cs <- get @CStore
   ctrace (show cs) return ()

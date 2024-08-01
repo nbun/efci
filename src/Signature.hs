@@ -14,6 +14,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE ConstraintKinds #-}
 
 module Signature where
 
@@ -134,106 +135,97 @@ data LVoid p c deriving (Functor)
 
 data Sig sig sigs sigl l f a = A (Algebraic sig f a) | S (Scoped sigs f a) | L (Latent sigl l f a) deriving (Functor)
 
-injectS
-  :: (eff :<: sigs)
-  => eff (Prog (Sig sig sigs sigl l) (Prog (Sig sig sigs sigl l) a))
-  -> Prog (Sig sig sigs sigl l) a
-injectS = Call . S . Enter . inj
+injectS :: forall sig sigs sigl l m a eff. (eff :<: sigs, TermMonad m (Sig sig sigs sigl l), Functor eff) => eff (m (m a)) -> m a
+injectS = con . S . Enter . inj
+{-# INLINE injectS #-}
 
-injectA
-  :: (eff :<: sig)
-  => eff (Prog (Sig sig sigs sigl l) a)
-  -> Prog (Sig sig sigs sigl l) a
-injectA = Call . A . Algebraic . inj
+injectA :: (eff :<: sig, TermMonad m (Sig sig sigs sigl l), Functor eff)
+       => eff (m a) -> m a
+injectA = con . A . Algebraic . inj
+{-# INLINE injectA #-}
 
-injectL
-  :: (eff :<<<<: sigl)
-  => eff p c
-  -> l ()
-  -> ( forall x
-        . c x
-       -> l ()
-       -> Prog (Sig sig sigs sigl l) (l x)
-     )
-  -> ( l p
-       -> Prog (Sig sig sigs sigl l) a
-     )
-  -> Prog (Sig sig sigs sigl l) a
-injectL op l st k = Call $ L $ Node (inj3 op) l st k
+injectL :: (eff :<<<<: sigl, TermMonad m (Sig sig sigs sigl l)) => eff p c -> l () -> (forall x. c x
+                                -> l () -> m (l x)) -> (l p
+                                -> m a) -> m a
+injectL op l st k = con $ L $ Node (inj3 op) l st k
+{-# INLINE injectL #-}
 
 instance (Functor sig, Functor sigs) => HFunctor (Sig sig sigs sigl l) where
   hmap f (A a) = A (hmap f a)
   hmap f (S s) = S (hmap f s)
   hmap f (L l) = L (hmap f l)
 
-class Forward f where
-  afwd :: (Functor sig, Functor sigs) => sig (f sig sigs sigl l a) -> f sig sigs sigl l a
 
-  sfwd
-    :: (Functor sig, Functor sigs)
-    => sigs (f sig sigs sigl l (f sig sigs sigl l a))
-    -> f sig sigs sigl l a
+-- class Forward f m where
+--   afwd :: (TermMonad m (Sig sig sigs sigl l), Functor sig) => sig (f m a) -> f m a
 
-  lfwd
-    :: (Functor sig, Functor sigs)
-    => sigl p c
-    -> l ()
-    -> (forall x. c x -> l () -> f sig sigs sigl l (l x))
-    -> (l p -> f sig sigs sigl l a)
-    -> f sig sigs sigl l a
+--   sfwd
+--     :: (TermMonad m (Sig sig sigs sigl l), Functor sigs)
+--     => sigs (f m (f m a))
+--     -> f m a
+
+--   lfwd
+--     :: (TermMonad m (Sig sig sigs sigl l), Functor sig, Functor sigs) => sigl p c
+--     -> l ()
+--     -> (forall x. c x -> l () -> f m (l x))
+--     -> (l p -> f m a)
+--     -> f m a
 
 class Lift g h | g -> h, h -> g where
   lift
-    :: (Functor sig, Functor sigs)
-    => h (Prog (Sig sig sigs sigl (g l)) (h a))
-    -> Prog (Sig sig sigs sigl (g l)) (h a)
+    :: (TermMonad m (Sig sig sigs sigl (g l)))
+    => h (m (h a))
+    -> m (h a)
 
   lift2
-    :: (Functor sig, Functor sigs)
-    => h (Prog (Sig sig sigs sigl (g l)) (g l x))
-    -> Prog (Sig sig sigs sigl (g l)) (g l x)
+    :: (TermMonad m (Sig sig sigs sigl (g l)))
+    => h (m (g l x))
+    -> m (g l x)
 
-aalg
-  :: (Forward f, Functor sig, Functor sigs)
-  => (eff (f sig sigs sigl l a) -> f sig sigs sigl l a)
-  -> Sig (eff :+: sig) sigs sigl l (f sig sigs sigl l) (f sig sigs sigl l a)
-  -> f sig sigs sigl l a
-aalg alg (A (Algebraic op)) = (alg # afwd) op
-aalg _ (S (Enter op)) = sfwd op
-aalg _ (L (Node op l st k)) = lfwd op l st k
+-- aalg
+--   :: (Forward f l, Functor sig, Functor sigs, TermMonad m (Sig sig sigs sigl l))
+--   => (eff (f m a) -> f m a)
+--   -> Sig (eff :+: sig) sigs sigl l (f m) (f m a)
+--   -> f m a
+-- aalg alg (A (Algebraic op)) = (alg # afwd) op
+-- aalg _ (S (Enter op)) = sfwd op
+-- aalg _ (L (Node op l st k)) = lfwd op l st k
 
-salg
-  :: (Forward f, Functor sig, Functor sigs)
-  => (eff (f sig sigs sigl l (f sig sigs sigl l a)) -> f sig sigs sigl l a)
-  -> Sig sig (eff :+: sigs) sigl l (f sig sigs sigl l) (f sig sigs sigl l a)
-  -> f sig sigs sigl l a
-salg _ (A (Algebraic op)) = afwd op
-salg alg (S (Enter op)) = (alg # sfwd) op
-salg _ (L (Node op l st k)) = lfwd op l st k
+-- salg
+--   :: (Forward f l, Functor sig, Functor sigs, TermMonad m (Sig sig sigs sigl l))
+--   => (eff (f m (f m a)) -> f m a)
+--   -> Sig sig (eff :+: sigs) sigl l (f m) (f m a)
+--   -> f m a
+-- salg _ (A (Algebraic op)) = afwd op
+-- salg alg (S (Enter op)) = (alg # sfwd) op
+-- salg _ (L (Node op l st k)) = lfwd op l st k
 
-asalg
-  :: (Forward f, Functor sig, Functor sigs)
-  => (aeff (f sig sigs sigl l a) -> f sig sigs sigl l a)
-  -> (seff (f sig sigs sigl l (f sig sigs sigl l a)) -> f sig sigs sigl l a)
-  -> Sig (aeff :+: sig) (seff :+: sigs) sigl l (f sig sigs sigl l) (f sig sigs sigl l a)
-  -> f sig sigs sigl l a
-asalg alga _ (A (Algebraic op)) = (alga # afwd) op
-asalg _ algs (S (Enter op)) = (algs # sfwd) op
-asalg _ _ (L (Node op l st k)) = lfwd op l st k
+-- asalg
+--   :: (Forward f l, Functor sig, Functor sigs, TermMonad m (Sig sig sigs sigl l))
+--   => (aeff (f m a) -> f m a)
+--   -> (seff (f m (f m a)) -> f m a)
+--   -> Sig (aeff :+: sig) (seff :+: sigs) sigl l (f m) (f m a)
+--   -> f m a
+-- asalg alga _ (A (Algebraic op)) = (alga # afwd) op
+-- asalg _ algs (S (Enter op)) = (algs # sfwd) op
+-- asalg _ _ (L (Node op l st k)) = lfwd op l st k
 
-lalg
-  :: forall f sig sigs sigl eff l a
-   . (Forward f, Functor sig, Functor sigs)
-  => ( forall p c
-        . eff p c
-       -> l ()
-       -> (forall x. c x -> l () -> f sig sigs sigl l (l x))
-       -> (l p -> f sig sigs sigl l a)
-       -> f sig sigs sigl l a
-     )
-  -> Sig sig sigs (eff :+++: sigl) l (f sig sigs sigl l) (f sig sigs sigl l a)
-  -> f sig sigs sigl l a
-lalg _ (A (Algebraic op)) = afwd op
-lalg _ (S (Enter op)) = sfwd op
-lalg alg (L (Node (Inl3 op) l st k)) = alg op l st k
-lalg _ (L (Node (Inr3 op) l st k)) = lfwd op l st k
+-- lalg
+--   :: forall f m sig sigs sigl eff l a
+--    . (Forward f l, Functor sig, Functor sigs, TermMonad m (Sig sig sigs sigl l))
+--   => ( forall p c
+--         . eff p c
+--        -> l ()
+--        -> (forall x. c x -> l () -> f m (l x))
+--        -> (l p -> f m a)
+--        -> f m a
+--      )
+--   -> Sig sig sigs (eff :+++: sigl) l (f m) (f m a)
+--   -> f m a
+-- lalg _ (A (Algebraic op)) = afwd op
+-- lalg _ (S (Enter op)) = sfwd op
+-- lalg alg (L (Node (Inl3 op) l st k)) = alg op l st k
+-- lalg _ (L (Node (Inr3 op) l st k)) = lfwd op l st k
+-- {-# INLINE lalg #-}
+
+type EffectMonad m sig sigs sigl l = (TermMonad m (Sig sig sigs sigl l), Functor sig, Functor sigs)

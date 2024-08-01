@@ -19,15 +19,14 @@ library
                    , Type
                    , Transformation.FCY2AE
                    , Effect.FlatCurry.Constructor
-                   , Effect.FlatCurry.Free
                    , Effect.FlatCurry.Function
                    , Effect.FlatCurry.Let
-                   , Effect.FlatCurry.Literal
                    , Effect.General.ND
                    , Paths_algebraic_effect_curry_interpreter
                    , Effect.General.Memoization
                    , Effect.General.State
                    , Effect.General.Reader
+                   , Effect.FlatCurry.Declarations
                    , Effect.FlatCurry.IO
                    , Effect.General.Error
                    , Debug
@@ -69,3 +68,14 @@ test-suite tests
                             , effective-curry-interpreter
                             , curry-frontend
                             , directory
+
+benchmark benchmark-prac-haskell-bench
+  type:           exitcode-stdio-1.0
+  hs-source-dirs: benchmarks
+  main-is:        Main.hs
+  ghc-options:    -O2 -fspecialise -fcross-module-specialise -flate-specialise
+  build-depends:  base
+                , criterion
+                , effective-curry-interpreter
+                , curry-frontend
+                , directory

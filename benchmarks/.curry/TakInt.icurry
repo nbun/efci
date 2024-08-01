@@ -1,9 +1,0 @@
-interface TakInt where {
-import Prelude;
-main 0 :: Prelude.Int;
-tak 3 :: Prelude.Int -> Prelude.Int -> Prelude.Int -> Prelude.Int;
-takInt_24_16_8 0 :: Prelude.Int;
-takInt_27_16_8 0 :: Prelude.Int;
-takInt_33_17_8 0 :: Prelude.Int;
-hiding data Prelude.Int
-}
