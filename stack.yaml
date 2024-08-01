@@ -9,7 +9,7 @@
 # to be used for project dependencies. For example:
 #
 # resolver: lts-20.22
-resolver: lts-20.26
+resolver: lts-22.31
 # resolver: nightly-2015-09-21
 # resolver: ghc-7.10.2
 #
@@ -41,7 +41,7 @@ packages: [., curry-frontend]
 #   commit: e7b331f14bcffb8367cd58fbfc8b40ec7642100a
 #
 extra-deps:
-  - set-extra-1.4.1
+  - set-extra-1.4.2
   # - template-haskell-2.17.0.0
   # - parsec-3.1.15.1
   # - text-1.2.5.0
@@ -82,7 +82,13 @@ extra-deps:
 
 apply-ghc-options: everything
 rebuild-ghc-options: true
+allow-newer: true
 
-# build:
-#   library-profiling: false
-#   executable-profiling: true
+
+build:
+  library-profiling: false
+  executable-profiling: false
+
+ghc-options:
+  curry-frontend: -O2
+  effective-curry-interpreter: -O2 -fprof-late

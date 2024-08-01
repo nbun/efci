@@ -101,7 +101,6 @@ instance Pointed (Cod h) where
   point = pure
   {-# INLINE point #-}
 
-
 algCod :: forall f h a. (HFunctor f, Pointed h) => (forall x. f h (h x) -> h x) -> (f (Cod h) (Cod h a) -> Cod h a)
 algCod alg op = Cod (\k -> alg (hmap (\(Cod m) -> m point) (fmap (\(Cod m) -> m k) op)))
 {-# INLINE algCod #-}

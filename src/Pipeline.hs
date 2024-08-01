@@ -73,6 +73,10 @@ data Result = RLit Literal
             | RBindings Constraints Result
   deriving (Show, Eq)
 
+withoutBindings :: Result -> Result
+withoutBindings (RBindings _ r) = withoutBindings r
+withoutBindings r = r
+
 class Pretty a where
   pretty :: a -> String
 

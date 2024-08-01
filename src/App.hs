@@ -47,7 +47,7 @@ import Modules (
   transModule,
   writeInterface,
  )
-import Paths_algebraic_effect_curry_interpreter (getDataFileName)
+import Paths_effective_curry_interpreter (getDataFileName)
 import Pipeline
 import System.Directory (getCurrentDirectory, removeFile)
 import System.FilePath (
@@ -69,40 +69,37 @@ defaultToolOpts = ToolOpts { showFlatCurryExpr = False, optimize = True}
 main :: IO ()
 main = do
   (_, _, files, _) <- getCompilerOpts
-  prelude <- prepare
   let file =
         if null files
           then "Prelude.curry"
           else head files
-  loop defaultToolOpts prelude file
+  loop defaultToolOpts file
 
-loop :: ToolOpts -> (AProg TypeExpr, FilePath) -> FilePath -> IO ()
-loop topts prelude file = do
+loop :: ToolOpts -> FilePath -> IO ()
+loop topts file = do
   putStr "λ> "
   flushAll
   input <- getLine
   case input of
     ":q" -> return ()
-    ":fcy" -> loop (topts {showFlatCurryExpr = not $ showFlatCurryExpr topts}) prelude file
-    ":o" -> loop (topts {optimize = not $ optimize topts}) prelude file
+    ":fcy" -> loop (topts {showFlatCurryExpr = not $ showFlatCurryExpr topts}) file
+    ":o" -> loop (topts {optimize = not $ optimize topts}) file
 
     _ -> do
       let query = case input :: String of
             "" -> "main"
             _ -> input
-      res <- execute topts prelude file query
+      res <- execute topts (Left (file, query))
       putStrLn ""
       mapM_ (putStrLn . pretty) res
-      loop topts prelude file
+      loop topts file
 
 execute
-  :: ToolOpts -> (AProg TypeExpr, FilePath) -> String -> String -> IO [Result]
-execute topts prelude file query = do
-  let runmod = "Run"
-      runmodfn = runmod ++ ".curry"
-  writeFile runmodfn (genRun (showFlatCurryExpr topts) runmod query [file])
-  safeRes <- try $ timeout 100000000 $ execRun topts prelude runmod
-  removeFile runmodfn
+  :: ToolOpts -> Either (FilePath, String) ([AProg TypeExpr], AFuncDecl TypeExpr) -> IO [Result]
+execute topts preloaded = do
+  safeRes <- try $ timeout 100000000 $ case preloaded of
+                                         Left (file, query) -> loadProg topts file query >>= uncurry (run topts)
+                                         Right (progs, fcyrunner) -> run topts progs fcyrunner
   case safeRes of
     Left e -> putStrLn "" >> print (e :: SomeException) >> return []
     Right (Just res) -> return res
@@ -110,10 +107,14 @@ execute topts prelude file query = do
 
 prepare :: IO (AProg TypeExpr, FilePath)
 prepare = do
-  fn <- getDataFileName "Prelude.curry"
-  let dir = normalise (addTrailingPathSeparator (takeDirectory fn))
+  dir <- preludeDir
   [p] <- genTAFCY (opts False False [dir]) "Prelude.curry"
   return (p, dir)
+
+preludeDir :: IO FilePath
+preludeDir = do
+  fn <- getDataFileName "Prelude.curry"
+  return (normalise (addTrailingPathSeparator (takeDirectory fn)))
 
 opts :: Bool -> Bool -> [FilePath] -> Options
 opts warn dump dirs =
@@ -141,9 +142,13 @@ opts warn dump dirs =
         (optOptimizations defaultOptions){optAddFailed = True}
     }
 
-execRun :: ToolOpts -> (AProg TypeExpr, FilePath) -> FilePath -> IO [Result]
-execRun topts (prelude, preludeDir) file = do
+loadProg :: ToolOpts -> FilePath -> String -> IO ([AProg TypeExpr], AFuncDecl TypeExpr)
+loadProg topts file query = do
+  let runmod = "Run"
+      runmodfn = runmod ++ ".curry"
+  writeFile runmodfn (genRun (showFlatCurryExpr topts) runmod query [file])
   currentDir <- getCurrentDirectory
+  preludeDir <- preludeDir
   let dirs =
         preludeDir
           : [ ( normalise
@@ -151,11 +156,17 @@ execRun topts (prelude, preludeDir) file = do
                   . takeDirectory
                   . ((currentDir ++ [pathSeparator]) ++)
               )
-                file
+                runmod
             ]
   -- load modules
-  progs <- genTAFCY (opts True True dirs) file
+  progs <- genTAFCY (opts True True dirs) runmod
+  removeFile runmodfn
   let fcyrunner = findRunner (last progs)
+  
+  return (progs, fcyrunner)
+
+run :: ToolOpts -> [AProg TypeExpr] -> AFuncDecl TypeExpr -> IO [Result]
+run topts progs fcyrunner = do
   res <- case optimize topts of
            True -> do
              let aprogs' = map fcyProg2ae progs

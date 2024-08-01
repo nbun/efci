@@ -1,6 +1,6 @@
 module Main where
 
-import           App                  ( execute, prepare, defaultToolOpts)
+import           App                  ( execute, defaultToolOpts)
 import           Curry.FlatCurry.Type
 import           Pipeline
 import           Test.Hspec
@@ -13,10 +13,9 @@ import System.Directory (setCurrentDirectory)
 main :: IO ()
 main = do
   setCurrentDirectory "examples"
-  prelude <- prepare
-  res <- mapM (\(mod, expr, expected) -> execute defaultToolOpts prelude mod expr) progs
+  res <- mapM (\(mod, expr, expected) -> execute defaultToolOpts (Left (mod, expr))) progs
   let tests = zipWith (\(imp, expr, expected) result -> (imp, expr, expected, result)) progs res
-  hspec $ mapM_ (\(_, expr, expected, result) -> parallel $ it expr $ assertEqual "" expected result) tests
+  hspec $ mapM_ (\(_, expr, expected, result) -> parallel $ it expr $ assertEqual "" expected (map withoutBindings result)) tests
 
 progs :: [(String, String, [Result])]
 progs

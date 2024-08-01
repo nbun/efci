@@ -12,3 +12,7 @@ examples/.curry/
 dist-newstyle/
 
 benchmarks/.curry/
+
+*.prof
+
+*.html
