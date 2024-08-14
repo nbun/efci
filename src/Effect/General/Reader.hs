@@ -14,19 +14,19 @@
 
 module Effect.General.Reader where
 
-import Debug (ctrace)
 import Free
 import Signature
 import Type (AEProg)
+import Effect.General.State (EffectCons, logCall)
 
 newtype ReaderF tag r a = Ask (r -> a)
     deriving (Functor)
 
 ask
     :: forall tag r sig sigs sigl l m
-     . (ReaderF tag r :<: sig, TermMonad m (Sig sig sigs sigl l))
+     . (ReaderF tag r :<: sig, EffectCons m sig sigs sigl l)
     => m r
-ask = ctrace "ask" $ injectA (Ask @tag return)
+ask = logCall >> injectA (Ask @tag return)
 {-# INLINE ask #-}
 
 runReader
@@ -43,7 +43,7 @@ runReaderC r p = unRC (runCod var p) r
 hReader
     :: Prog (Sig (ReaderF tag r :+: sig) sigs sigl l) a
     -> (r -> Prog (Sig sig sigs sigl l) a)
-hReader = ctrace "runReader" . unRC . fold point con
+hReader = unRC . fold point con
 
 instance (EffectMonad m sig sigs sigl l) => TermAlgebra (RC tag r m) (Sig (ReaderF tag r :+: sig) sigs sigl l) where
     con (A (Algebraic op)) = RC . (algR # afwd) . fmap unRC $ op
@@ -73,8 +73,3 @@ instance (Functor m) => Functor (RC tag r m) where
 instance (Monad m) => Pointed (RC tag r m) where
     point x = RC $ const (return x)
     {-# INLINE point #-}
-
-data FunctionReader
-
-type Declarations m a =
-    ReaderF FunctionReader [AEProg (m a)]

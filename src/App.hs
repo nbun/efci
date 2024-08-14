@@ -60,6 +60,7 @@ import System.Timeout (timeout)
 import Transformation.FCY2AE (CurryEffects, fcyProg2ae, fcyRunner2ae)
 import Transformations (qual)
 import Type (AEProg)
+import Effect.General.State (statistics)
 
 data ToolOpts = ToolOpts { showFlatCurryExpr :: Bool, optimize :: Bool}
 
@@ -176,8 +177,10 @@ run topts progs fcyrunner = do
              let aprogs' = map fcyProg2ae progs
                  runner = fcyRunner2ae (fdclRule fcyrunner)
              runCurryEffects @() aprogs' runner
-  -- when (showFlatCurryExpr topts) $ print fcyrunner
-  return (declutter res)
+  -- when (showFlatCurryExpr topts) $ print fcyrunner\
+  let (ti, values) = declutter res
+  mapM_ print (statistics ti)
+  return values
 
 genRun :: Bool -> String -> String -> [String] -> String
 genRun dump name expr imports =

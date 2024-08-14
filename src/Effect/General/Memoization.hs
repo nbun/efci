@@ -19,7 +19,6 @@
 
 module Effect.General.Memoization where
 
-import Debug (ctrace)
 import Free
 
 import Data.Bifunctor (second)
@@ -27,8 +26,9 @@ import Data.Either (rights)
 import Data.IntMap (IntMap, (!))
 import qualified Data.IntMap as IntMap
 import Data.Kind (Type)
-import Effect.General.State (StateL (..))
+import Effect.General.State (StateL (..), EffectCons, logCall)
 import Signature
+import Debug (ctrace)
 
 data Thunking v :: Type -> (Type -> Type) -> Type where
    Thunk :: Thunking v Ptr (OneSub v)
@@ -36,14 +36,14 @@ data Thunking v :: Type -> (Type -> Type) -> Type where
 
 thunk
    :: forall m sig sigs sigl v
-    . (EffectMonad m sig sigs sigl Id, Thunking v :<<<<: sigl)
+    . (EffectCons m sig sigs sigl Id, Thunking v :<<<<: sigl)
    => m v
    -> m Ptr
-thunk t = ctrace "thunk" $ injectL (Thunk :: Thunking v Ptr (OneSub v)) (Id ()) (\One _ -> fmap Id t) (return . unId)
+thunk t = logCall >> injectL (Thunk :: Thunking v Ptr (OneSub v)) (Id ()) (\One _ -> fmap Id t) (return . unId)
 {-# INLINE thunk #-}
 
-force :: (EffectMonad m sig sigs sigl Id, Thunking v :<<<<: sigl) => Ptr -> m v
-force p = ctrace ("force " ++ show p) $ injectL (Force p) (Id ()) (\x -> case x of {}) (return . unId)
+force :: (EffectCons m sig sigs sigl Id, Thunking v :<<<<: sigl) => Ptr -> m v
+force p = logCall >> injectL (Force p) (Id ()) (\x -> case x of {}) (return . unId)
 {-# INLINE force #-}
 
 type Ptr = Int
@@ -58,7 +58,7 @@ hLazy
    => Prog (Sig sig sigs (Thunking v :+++: sigl) l) a
    -> ThunkStore m l v
    -> m (ThunkStore m l v, a)
-hLazy = ctrace "runMemo" . unMC . fold point con
+hLazy = unMC . fold point con
 {-# INLINE hLazy #-}
 
 instance (Functor l, EffectMonad n sig sigs sigl l, EffectMonad m sig sigs sigl (StateL (ThunkStore n l v) l), Show (l v)) => TermAlgebra (MC m l v) (Sig sig sigs (Thunking v :+++: sigl) l) where

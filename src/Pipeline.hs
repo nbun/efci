@@ -30,15 +30,15 @@ import Effect.FlatCurry.Declarations
 runCurryEffects :: (Show a)
                 => [AEProg (Prog (CurryEffects a) a)]
                 -> Prog (CurryEffects a) a
-                -> IO (Error [(Constraints, Value (Closure a))])
+                -> IO ([TraceInfo], Error [(Constraints, Value (Closure a))])
 runCurryEffects ps e = pipeline e'
   where
     e' = initDecls ps >> e
     pipeline = runIO
+      . (\x -> hState @Trace x ([] :: [TraceInfo]))
       . runError
       . runND
       . (\x -> hState @CStore x IntMap.empty)
-      . runState @FunctionState []
       . runState @Rename ((0, 0), [])
       . runState @LocalBindings IntMap.empty
       . runLazy (0, IntMap.empty)
@@ -46,9 +46,9 @@ runCurryEffects ps e = pipeline e'
       . runPartial
       . runDecl []
 
-declutter :: Show a => Error [(Constraints, Value (Closure a))] -> [Result]
-declutter (Error s) = [RError s]
-declutter (EOther xs) = map addBindings xs
+declutter :: Show a => ([TraceInfo], Error [(Constraints, Value (Closure a))]) -> ([TraceInfo], [Result])
+declutter (ti, Error s) = (ti, [RError s])
+declutter (ti, EOther xs) = (ti, map addBindings xs)
   where
     addBindings (bs, v)
       | IntMap.null bs || all (> 999) (IntMap.keys bs) = declutterHNF v
@@ -118,12 +118,11 @@ parOnce "" = ""
 parOnce s@('(':_) = s
 parOnce s = '(':s ++ ")"
 
-type L c a = ErrorL
+type L c a = StateL [TraceInfo] 
+                      (ErrorL
                          (ListL
                             (StateL
                                Constraints
-                               (StateL
-                                  [((Scope, TypeExpr), Ptr)]
                                   (StateL
                                      ((Scope, VarIndex), [((Scope, VarIndex), VarIndex)])
                                      (StateL
@@ -134,23 +133,21 @@ type L c a = ErrorL
 
 type Co = (Cod (STC LocalBindings (IntMap.IntMap Ptr)
             (Cod (STC Rename ((Scope, VarIndex), [((Scope, VarIndex), VarIndex)])
-              (Cod (STC FunctionState [((Scope, TypeExpr), Ptr)]
                 (Cod (STC CStore Constraints
                   (Cod (NDC
-                    (Cod (EC
-                      (Cod (IOC T2))))))))))))))
+                    (Cod (EC 
+                      (Cod (STC Trace [TraceInfo] 
+                        (Cod (IOC T2))))))))))))))
 
-type T2 = ErrorL
+type T2 = StateL [TraceInfo] (ErrorL
                          (ListL
                             (StateL
                                Constraints
-                               (StateL
-                                  [((Scope, TypeExpr), Ptr)]
                                   (StateL
                                      ((Scope, VarIndex), [((Scope, VarIndex), VarIndex)])
                                      (StateL (IntMap.IntMap Ptr) (ValueL (ClosureL Id)))))))
 
-type M a = Cod
+type M a =           Cod
                          (H (Cod
                                (PC
                                   (Cod
@@ -166,10 +163,6 @@ type M a = Cod
                                                           Rename
                                                           ((Scope, VarIndex),
                                                            [((Scope, VarIndex), VarIndex)])
-                                                          (Cod
-                                                             (STC
-                                                                FunctionState
-                                                                [((Scope, TypeExpr), Ptr)]
                                                                 (Cod
                                                                    (STC
                                                                       CStore
@@ -179,9 +172,11 @@ type M a = Cod
                                                                             (Cod
                                                                                (EC
                                                                                   (Cod
-                                                                                     (IOC
-                                                                                        (L Co
-                                                                                           a)))))))))))))))
+                                                                                    (STC Trace [TraceInfo]
+                                                                                      (Cod
+                                                                                        (IOC
+                                                                                          (L Co
+                                                                                             a)))))))))))))))
                                               (ValueL (ClosureL Id))
                                               a))))))
                             Id
@@ -195,15 +190,15 @@ runCurryEffectsC :: forall a.
                  (Show a)
                  => [AEProg ((M a) a)]
                  -> (M a) a
-                 -> IO (Error [(Constraints, Value (Closure a))])
-runCurryEffectsC ps e = unIOC (pipeline e' :: IOC (L Co a) (Error [(Constraints, Value (Closure a))]))
+                 -> IO ([TraceInfo], Error [(Constraints, Value (Closure a))])
+runCurryEffectsC ps e = unIOC (pipeline e' ) -- :: IOC (L Co a) ([TraceInfo], Error [(Constraints, Value (Closure a))]))
   where
     e' = initDecls ps >> e
     pipeline = finish
+      . runStateC @Trace []
       . runErrorC
       . runNDC
       . runStateC @CStore IntMap.empty
-      . runStateC' @FunctionState []
       . runStateC' @Rename ((0, 0), [])
       . runStateC' @LocalBindings IntMap.empty
       . runLazyC (0, IntMap.empty)

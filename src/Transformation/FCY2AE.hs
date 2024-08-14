@@ -34,7 +34,6 @@ import qualified Data.Map as Map
 import Effect.FlatCurry.Constructor
 import Effect.FlatCurry.Declarations (DeclF)
 import Effect.FlatCurry.Function (
-    FunctionArgs,
     Partial,
     apply',
     fun,
@@ -62,7 +61,7 @@ data VarKind
 
 type VarKindMap = Map.Map VarIndex VarKind
 
-type AEffects = '[ConsF, StateF LocalBindings (IntMap Ptr), Renaming, FunctionArgs, ConstraintStore, ND, Err, IOAction]
+type AEffects = '[ConsF, StateF LocalBindings (IntMap Ptr), Renaming, ConstraintStore, ND, Err, StateF Trace [TraceInfo], IOAction]
 type SEffects = '[Partial, CaseScope]
 type LEffects v = DeclF v :+++: (Thunking v :+++: LVoid)
 

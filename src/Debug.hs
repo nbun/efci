@@ -5,6 +5,9 @@ import Debug.HTrace (htrace)
 debug :: Bool
 debug = False
 
+tracingActive :: Bool
+tracingActive = True
+
 ctrace :: String -> a -> a
 ctrace s =
     if debug

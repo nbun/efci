@@ -15,6 +15,7 @@ module Effect.General.ND where
 import Control.Monad (liftM2)
 import Free
 import Signature
+import Effect.General.State (logCall, EffectCons)
 
 data ND a = Fail | Or a a
 
@@ -24,20 +25,20 @@ instance Functor ND where
     {-# INLINE fmap #-}
 
 (?)
-    :: (ND :<: sig, EffectMonad m sig sigs sigl l)
+    :: (ND :<: sig, EffectCons m sig sigs sigl l)
     => m a
     -> m a
     -> m a
-(?) p1 p2 = injectA (Or p1 p2)
+(?) p1 p2 = logCall >> injectA (Or p1 p2)
 {-# INLINE (?) #-}
 
 failed
-    :: (ND :<: sig, EffectMonad m sig sigs sigl l) => m a
-failed = injectA Fail
+    :: (ND :<: sig, EffectCons m sig sigs sigl l) => m a
+failed = logCall >> injectA Fail
 {-# INLINE failed #-}
 
 choose
-    :: (ND :<: sig, EffectMonad m sig sigs sigl l)
+    :: (ND :<: sig, EffectCons m sig sigs sigl l)
     => [m a]
     -> m a
 choose [] = failed

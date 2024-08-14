@@ -19,7 +19,6 @@ module Effect.FlatCurry.Function where
 import Curry.FlatCurry.Type (QName, TypeExpr (..), VarIndex)
 import qualified Data.Map as Map
 import Data.Maybe (mapMaybe)
-import Debug (ctrace)
 
 import Curry.FlatCurry.Annotated.Goodies (argTypes)
 import Effect.FlatCurry.Constructor
@@ -35,15 +34,9 @@ import Free
 import Signature
 import Type (AEFuncDecl (..), AEProg (..), AERule (..))
 
-data FunctionState
-
-instance Identify FunctionState where
-    identify = "FunctionState"
-
-type FunctionArgs = StateF FunctionState [((Scope, TypeExpr), Ptr)]
 
 type Functions sig sigs sigl a =
-    ( '[FunctionArgs, ConsF, Err, IOAction, ConstraintStore, ND] :.: sig
+    ( '[ConsF, Err, IOAction, ConstraintStore, ND] :.: sig
     , '[Partial, CaseScope] :.: sigs
     , Let sig sigl a
     , DeclF a :<<<<: sigl
@@ -52,25 +45,24 @@ type Functions sig sigs sigl a =
 
 fun
     :: forall sig sigs sigl m a
-     . (EffectMonad m sig sigs sigl Id, Functions sig sigs sigl a)
+     . (EffectCons m sig sigs sigl Id, Functions sig sigs sigl a)
     => Scope
     -> QName
     -> Either [m a] [Ptr]
     -> m a
-fun scope qn ps = do
-    ptrs <- either (mapM thunk) return ps
-    (ar, vis, ty, r) <- getInfo @a qn
-    let fdecl = AEFunc qn ar vis ty r
-    if isExternal fdecl
-        then callExternal fdecl (map force ptrs)
-        else do
-            let (vs, ts, _) = fdclRule fdecl
-                pds = findPolyDicts scope (zip ts ptrs)
-            modify @FunctionState (pds ++)
-            letThunked scope (zip vs ptrs) (getBody qn)
+fun scope qn ps =
+    logCall >> do
+        ptrs <- either (mapM thunk) return ps
+        (ar, vis, ty, r) <- getInfo @a qn
+        let fdecl = AEFunc qn ar vis ty r
+        if isExternal fdecl
+            then callExternal fdecl (map force ptrs)
+            else do
+                let (vs, ts, _) = fdclRule fdecl
+                letThunked scope (zip vs ptrs) (getBody qn)
 
 callExternal
-    :: (EffectMonad m sig sigs sigl Id, Functions sig sigs sigl a)
+    :: (EffectCons m sig sigs sigl Id, Functions sig sigs sigl a)
     => AEFuncDecl v
     -> [m a]
     -> m a
@@ -181,14 +173,13 @@ instance Functor Closure where
     {-# INLINE fmap #-}
 
 partial
-    :: (EffectMonad m sig sigs sigl Id, Thunking a :<<<<: sigl, Partial :<: sigs)
+    :: (EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl, Partial :<: sigs)
     => QName
     -> CombType
     -> [m a]
     -> m a
-partial qn combtype args = ctrace
-    ("partial " ++ show qn ++ " " ++ show (missingArgs combtype))
-    $ do
+partial qn combtype args =
+    logCall >> do
         ptrs <- mapM thunk args
         injectS $ PartCall qn combtype ptrs
 
@@ -201,12 +192,12 @@ decArgs (FuncPartCall i) = FuncPartCall (i - 1)
 decArgs (ConsPartCall i) = ConsPartCall (i - 1)
 
 apply'
-    :: (EffectMonad m sig sigs sigl Id, Functions sig sigs sigl a)
+    :: (EffectCons m sig sigs sigl Id, Functions sig sigs sigl a)
     => m a
     -> m a
     -> m a
-apply' f x = ctrace "apply" $
-    do
+apply' f x =
+    logCall >> do
         ptr <- thunk x
         injectS $ FApply (fmap return f) (return . k ptr)
   where
@@ -284,7 +275,7 @@ newtype ClosureL l a = ClosureL {unClosureL :: Closure (l a)}
 
 unify
     :: forall sig sigs sigl m a
-     . ( EffectMonad m sig sigs sigl Id
+     . ( EffectCons m sig sigs sigl Id
        , ConsF :<: sig
        , Functions sig sigs sigl a
        , ND :<: sig
@@ -294,40 +285,37 @@ unify
     -> m a
     -> m a
 unify e1 e2 =
-    ctrace "unify" $
-        injectS (Unify (fmap return e1) (fmap return e2) (return . cnt))
+    logCall
+        >> injectS (Unify (fmap return e1) (fmap return e2) (return . cnt))
   where
     cnt :: (Value (), Value ()) -> m a
     cnt (HNF qn1 args1, HNF qn2 args2)
-        | qn1 == qn2 = ctrace ("unify: " ++ show qn1 ++ " " ++ show qn2) $
-            do
-                let args1' = map force args1
-                let args2' = map force args2
-                ands $ zipWith unify args1' args2'
+        | qn1 == qn2 = do
+            let args1' = map force args1
+            let args2' = map force args2
+            ands $ zipWith unify args1' args2'
     cnt (Free i, Free j) = do
         modify @CStore (addC i (VarC j))
         cons ("Prelude", "True") []
-    cnt (Free i, HNF qn args) = ctrace ("unify: " ++ show i ++ " " ++ show qn) $
-        do
-            let args' = map force args
-            cs <- get @CStore
-            scope <- currentScope
-            vs <- freshNames scope (length args)
-            let fvs = map (fvar scope) vs
-            put @CStore (addC i (ConsC qn vs) cs)
-            ands $ zipWith unify fvs args'
+    cnt (Free i, HNF qn args) = do
+        let args' = map force args
+        cs <- get @CStore
+        scope <- currentScope
+        vs <- freshNames scope (length args)
+        let fvs = map (fvar scope) vs
+        put @CStore (addC i (ConsC qn vs) cs)
+        ands $ zipWith unify fvs args'
     cnt (HNF qn args, Free i) = cnt (Free i, HNF qn args)
     cnt (Lit l1, Lit l2)
         | l1 == l2 = cons ("Prelude", "True") []
-    cnt (Free i, Lit l) = ctrace ("unify: " ++ show i ++ " " ++ show l) $
-        do
-            modify @CStore (addC i (LitC l))
-            cons ("Prelude", "True") []
+    cnt (Free i, Lit l) = do
+        modify @CStore (addC i (LitC l))
+        cons ("Prelude", "True") []
     cnt (Lit l, Free i) = cnt (Free i, Lit l)
-    cnt args = ctrace ("unify: fail: " ++ show args) failed
+    cnt _ = failed
 
 ands
-    :: (EffectMonad m sig sigs sigl Id, Functions sig sigs sigl a)
+    :: (EffectCons m sig sigs sigl Id, Functions sig sigs sigl a)
     => [m a]
     -> m a
 ands [] = cons ("Prelude", "True") []

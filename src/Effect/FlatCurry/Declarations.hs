@@ -22,13 +22,13 @@
 
 module Effect.FlatCurry.Declarations (DeclF, runDecl, runDeclC, H (..), initDecls, getBody, getInfo) where
 
-import Debug (ctrace)
 import Type (AEProg (..), AEFuncDecl (AEFunc), fdclBody, fdclVars, AERule (AERule, AEExternal))
 import Curry.FlatCurry.Annotated.Type (QName, VarIndex, TypeExpr, Visibility, ARule (AExternal))
 import qualified Data.Map as Map
 import Control.Monad (ap, void)
 import Signature
 import Free
+import Effect.General.State (EffectCons, logCall)
 
 data DeclF v :: * -> (* -> *) -> * where
   DeclInfo  :: QName ->  DeclF v (Int, Visibility, TypeExpr, AERule ()) NoSub
@@ -53,7 +53,7 @@ runDecl s p = hDecl p s
 hDecl  :: forall sig sigs sigl l m v a. (Functor l, m ~ Prog (Sig sig sigs sigl l)) => Prog (Sig sig sigs (DeclF v :+++: sigl) l) a
       -> Progs m l v
       -> m a
-hDecl  = ctrace "runDecl" . unH . fold point con
+hDecl  = unH . fold point con
 {-# INLINE hDecl #-}
 
 addBody :: (ManySub v v -> H m l v (l v)) -> AEFuncDecl a -> AEFuncDecl (H m l v (l v))
@@ -93,23 +93,23 @@ instance (Monad m) => Pointed (H m l v) where
    {-# INLINE point #-}
 
 getInfo :: forall a sig sigs sigl m.
-    (EffectMonad m sig sigs sigl Id)
+    (EffectCons m sig sigs sigl Id)
     => (DeclF a :<<<<: sigl)
     => QName -> m (Int, Visibility, TypeExpr, AERule ())
-getInfo qn = ctrace "ask" $ injectL (DeclInfo qn :: DeclF a _ _) (Id ()) (\x -> case x of) (return . unId)
+getInfo qn = logCall >> injectL (DeclInfo qn :: DeclF a _ _) (Id ()) (\x -> case x of) (return . unId)
 {-# INLINE getInfo #-}
 
 getBody :: forall sig sigs sigl m a.
-    (EffectMonad m sig sigs sigl Id)
+    (EffectCons m sig sigs sigl Id)
     => (DeclF a :<<<<: sigl)
     => QName -> m a
-getBody qn = ctrace "ask" $ injectL (DeclBody qn :: DeclF a _ _) (Id ()) (\x -> case x of) (return . unId)
+getBody qn = logCall >> injectL (DeclBody qn :: DeclF a _ _) (Id ()) (\x -> case x of) (return . unId)
 {-# INLINE getBody #-}
 
 initDecls :: forall sig sigs sigl m v.
-         (DeclF v :<<<<: sigl, EffectMonad m sig sigs sigl Id)
+         (DeclF v :<<<<: sigl, EffectCons m sig sigs sigl Id)
       => [AEProg (m v)] -> m ()
-initDecls ps = injectL (Init (map void ps) :: DeclF v _ _) (Id ()) (\(Many qn) _ -> fmap Id (fdclBody $ findModule ps qn)) (const (return ()))
+initDecls ps = logCall >> injectL (Init (map void ps) :: DeclF v _ _) (Id ()) (\(Many qn) _ -> fmap Id (fdclBody $ findModule ps qn)) (const (return ()))
 {-# INLINE initDecls #-}
 
 findModule :: [AEProg a] -> QName -> AEFuncDecl a

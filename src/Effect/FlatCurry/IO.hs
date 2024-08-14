@@ -27,6 +27,7 @@ import Effect.FlatCurry.Constructor (
 import Effect.General.Memoization (Thunking)
 import Free
 import Signature
+import Effect.General.State (EffectCons, logCall)
 
 data IOAction a
   = PutChar Char a
@@ -43,10 +44,10 @@ putCharIO :: forall sig sigs sigl l m a. ( ConsF :<: sig
              , IOAction :<: sig
              , () :<<<: a
              , CaseScope :<: sigs
-             , EffectMonad m sig sigs sigl l)
+             , EffectCons m sig sigs sigl l)
           => m a
           -> m a
-putCharIO x = injectS (External [fmap return x] (return . f))
+putCharIO x = logCall >> injectS (External [fmap return x] (return . f))
   where
     f :: [Value ()] -> m a
     f [Lit (Charc c)] = injectA (PutChar c (return (injV ())))
@@ -56,34 +57,34 @@ writeFileIO, appendFileIO :: forall sig sigs sigl l m a. ( ConsF :<: sig
                , IOAction :<: sig
                , () :<<<: a
                , CaseScope :<: sigs
-               ,  EffectMonad m sig sigs sigl l)
+               , EffectCons m sig sigs sigl l)
             => m a
             -> m a
             -> m a
-writeFileIO fp s = injectS (External [fmap return fp, fmap return s] (return . f))
+writeFileIO fp s = logCall >> injectS (External [fmap return fp, fmap return s] (return . f))
   where
     f :: [Value ()] -> m a
     f [fpv, sv] = injectA (WriteFile (val2str fpv) (val2str sv) (return (injV ())))
 
-appendFileIO fp s = injectS (External [fmap return fp, fmap return s] (return . f))
+appendFileIO fp s = logCall >> injectS (External [fmap return fp, fmap return s] (return . f))
   where
     f :: [Value ()] -> m a
     f [fpv, sv] = injectA (AppendFile (val2str fpv) (val2str sv) (return (injV ())))
 {-# INLINE writeFileIO #-}
 {-# INLINE appendFileIO #-}
 
-getCharIO :: (IOAction :<: sig, ConsF :<: sig, EffectMonad m sig sigs sigl l) => m a
-getCharIO = injectA (GetChar (lit . Charc))
+getCharIO :: (IOAction :<: sig, ConsF :<: sig, EffectCons m sig sigs sigl l) => m a
+getCharIO = logCall >> injectA (GetChar (lit . Charc))
 {-# INLINE getCharIO #-}
 
 readFileIO :: forall sig sigs sigl m a. ( IOAction :<: sig
               , ConsF :<: sig
               , CaseScope :<: sigs
               , Thunking a :<<<<: sigl
-              , EffectMonad m sig sigs sigl Id)
+              , EffectCons m sig sigs sigl Id)
            => m a
            -> m a
-readFileIO fp = injectS (External [fmap return fp] (return . f))
+readFileIO fp = logCall >> injectS (External [fmap return fp] (return . f))
   where
     f :: [Value ()] -> m a
     f [fpv] = injectA (ReadFile (val2str fpv) str2prog)

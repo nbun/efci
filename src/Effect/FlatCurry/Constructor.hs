@@ -16,7 +16,6 @@ import Curry.FlatCurry.Annotated.Type (APattern (..), Literal (..), VarIndex)
 import Curry.FlatCurry.Type (CaseType (..), QName)
 import Data.Functor ((<&>))
 import Data.Maybe (mapMaybe)
-import Debug (ctrace)
 import Effect.FlatCurry.Let
 import Effect.General.Error (Err (..))
 import Effect.General.Memoization (Ptr, Thunking, force, thunk)
@@ -60,13 +59,11 @@ normalform
     :: ( ConsF :<: sig
        , Thunking a :<<<<: sigl
        , CaseScope :<: sigs
-       , EffectMonad m sig sigs sigl Id
+       , EffectCons m sig sigs sigl Id
        )
     => m a
     -> m a
-normalform p = ctrace "normalform" $
-    do
-        injectS (Normalize (fmap return p) (fmap return . f))
+normalform p = logCall >> injectS (Normalize (fmap return p) (fmap return . f))
   where
     f (qn, ptrs) = do
         let args = map (normalform . force) ptrs
@@ -74,28 +71,26 @@ normalform p = ctrace "normalform" $
 {-# INLINE normalform #-}
 
 cons
-    :: (EffectMonad m sig sigs sigl Id, Thunking a :<<<<: sigl, ConsF :<: sig)
+    :: (EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl, ConsF :<: sig)
     => QName
     -> [m a]
     -> m a
-cons qn ps = do
-    args <- mapM thunk ps
-    ctrace ("cons " ++ show qn ++ " with " ++ show args) $
+cons qn ps =
+    logCall >> do
+        args <- mapM thunk ps
         injectA (FCons qn args)
 {-# INLINE cons #-}
 
 thunkedCons
-    :: (EffectMonad m sig sigs sigl Id, Thunking a :<<<<: sigl, ConsF :<: sig)
+    :: (EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl, ConsF :<: sig)
     => QName
     -> [Ptr]
     -> m a
-thunkedCons qn args = do
-    ctrace ("thunkedCons " ++ show qn ++ " with " ++ show args) $
-        injectA (FCons qn args)
+thunkedCons qn args = logCall >> injectA (FCons qn args)
 {-# INLINE thunkedCons #-}
 
-lit :: (EffectMonad m sig sigs sigl l, ConsF :<: sig) => Literal -> m a
-lit l = injectA (FLit l)
+lit :: (EffectCons m sig sigs sigl l, ConsF :<: sig) => Literal -> m a
+lit l = logCall >> injectA (FLit l)
 {-# INLINE lit #-}
 
 data CaseState
@@ -105,14 +100,14 @@ instance Identify CaseState where
 
 case'
     :: forall m sig sigs sigl a
-     . (EffectMonad m sig sigs sigl Id, Let sig sigl a, CaseScope :<: sigs, ND :<: sig, ConstraintStore :<: sig, ConsF :<: sig)
+     . (EffectCons m sig sigs sigl Id, Let sig sigl a, CaseScope :<: sigs, ND :<: sig, ConstraintStore :<: sig, ConsF :<: sig)
     => Scope
     -> m a
     -> [(APattern (), m a)]
     -> m a
 case' scope cp brs =
-    ctrace "case" $
-        injectS (Case (fmap return cp) (return . cnt))
+    logCall
+        >> injectS (Case (fmap return cp) (return . cnt))
   where
     cnt :: Value () -> m a
     cnt hnf = case mapMaybe (match hnf) brs of
@@ -122,14 +117,9 @@ case' scope cp brs =
       where
         match (HNF qn args) (APattern _ (pqn, _) argVars, e)
             | pqn == qn =
-                ctrace
-                    ("Pattern match! " ++ show qn ++ " with " ++ show args)
-                    $ Just
-                    $ letThunked scope (zip (map fst argVars) args) e
-            | otherwise =
-                ctrace
-                    ("Pattern match failed: " ++ show qn ++ " mismatches " ++ show pqn)
-                    Nothing
+                Just $
+                    letThunked scope (zip (map fst argVars) args) e
+            | otherwise = Nothing
         match (Lit l) (ALPattern _ lp, e)
             | l == lp = Just e
             | otherwise = Nothing
@@ -176,7 +166,7 @@ runCons
     :: forall sig sigs sigl l a
      . Prog (Sig (ConsF :+: sig) (CaseScope :+: sigs) sigl l) a
     -> Prog (Sig sig sigs sigl (ValueL l)) (Value a)
-runCons = ctrace "runCons" . unCC . fold point con
+runCons = unCC . fold point con
 {-# INLINE runCons #-}
 
 instance
@@ -259,12 +249,12 @@ instance Lift ValueL Value where
     lift2 (ValOther x) = x
 
 arithInt
-    :: (ConsF :<: sig, CaseScope :<: sigs, TermMonad m (Sig sig sigs sigl l))
+    :: (ConsF :<: sig, CaseScope :<: sigs, EffectCons m sig sigs sigl l)
     => (Integer -> Integer -> Integer)
     -> m a
     -> m a
     -> m a
-arithInt op x y = injectS (External [fmap return x, fmap return y] (return . f))
+arithInt op x y = logCall >> injectS (External [fmap return x, fmap return y] (return . f))
   where
     f [Lit (Intc x), Lit (Intc y)] = lit (Intc (x `op` y))
 {-# INLINE arithInt #-}
@@ -274,13 +264,13 @@ compInt
        , Thunking v :<<<<: sigl
        , ConsF :<: sig
        , CaseScope :<: sigs
-       , EffectMonad m sig sigs sigl Id
+       , EffectCons m sig sigs sigl Id
        )
     => (Integer -> Integer -> Bool)
     -> m v
     -> m v
     -> m v
-compInt op x y = injectS (External [fmap return x, fmap return y] (return . f))
+compInt op x y = logCall >> injectS (External [fmap return x, fmap return y] (return . f))
   where
     f [Lit (Intc x), Lit (Intc y)]
         | x `op` y = cons ("Prelude", "True") []
@@ -292,14 +282,14 @@ compChar
        , Thunking v :<<<<: sigl
        , ConsF :<: sig
        , CaseScope :<: sigs
-       , EffectMonad m sig sigs sigl Id
+       , EffectCons m sig sigs sigl Id
        )
     => (Char -> Char -> Bool)
     -> m v
     -> m v
     -> m v
 compChar op x y =
-    injectS (External [fmap return x, fmap return y] (return . f))
+    logCall >> injectS (External [fmap return x, fmap return y] (return . f))
   where
     f [Lit (Charc x), Lit (Charc y)]
         | x `op` y = cons ("Prelude", "True") []
@@ -311,12 +301,12 @@ err
      . ( CaseScope :<: sigs
        , Err :<: sig
        , Thunking v :<<<<: sigl
-       , EffectMonad m sig sigs sigl Id
+       , EffectCons m sig sigs sigl Id
        )
     => m v
     -> m v
-err p = do
-    injectS (External [fmap return p] (return . f))
+err p =
+    logCall >> injectS (External [fmap return p] (return . f))
   where
     f :: [Value ()] -> m v
     f [hnf] = injectA (Err (val2str hnf))
@@ -328,7 +318,7 @@ val2str (Cons ("Prelude", ":") [Lit (Charc c), xs]) = c : val2str xs
 val2str hnf = error $ "hnf2str: " ++ show hnf
 
 str2prog
-    :: (Thunking a :<<<<: sigl, ConsF :<: sig, EffectMonad m sig sigs sigl Id)
+    :: (Thunking a :<<<<: sigl, ConsF :<: sig, EffectCons m sig sigs sigl Id)
     => String
     -> m a
 str2prog [] = cons ("Prelude", "[]") []
@@ -341,20 +331,20 @@ fvar
        , Thunking a :<<<<: sigl
        , ConstraintStore :<: sig
        , Renaming :<: sig
-       , EffectMonad m sig sigs sigl Id
+       , EffectCons m sig sigs sigl Id
        )
     => Scope
     -> VarIndex
     -> m a
-fvar scope i = ctrace ("free " ++ show scope ++ " " ++ show i) $ do
-    cs <- get @CStore
-    ctrace (show cs) return ()
-    i' <- lookupRenaming scope i
-    applyC cs i'
+fvar scope i =
+    logCall >> do
+        cs <- get @CStore
+        i' <- lookupRenaming scope i
+        applyC cs i'
   where
     applyC store n = case lookupC n store of
-        Just (ConsC qn vs) -> ctrace "consc" $ do
+        Just (ConsC qn vs) -> do
             cons qn (map (applyC store) vs)
-        Just (VarC j) -> ctrace "varc" $ applyC store j
-        Just (LitC l) -> ctrace "litc" $ lit l
-        _ -> ctrace "freec" $ injectA $ FFree n
+        Just (VarC j) -> applyC store j
+        Just (LitC l) -> lit l
+        _ -> injectA $ FFree n

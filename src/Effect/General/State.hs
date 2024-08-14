@@ -1,4 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -19,9 +20,11 @@ module Effect.General.State where
 import Curry.FlatCurry.Annotated.Type (Literal, QName, VarIndex)
 import qualified Data.IntMap as IntMap
 import Data.Kind (Type)
-import Debug (ctrace)
+import Debug (tracingActive)
 import Free
+import GHC.Stack (callStack, getCallStack)
 import Signature
+import Data.List (sortBy)
 
 data StateF (tag :: Type) s a
     = Get (s -> a)
@@ -34,30 +37,28 @@ instance Functor (StateF tag s) where
 
 get
     :: forall tag s m l sig sigs sigl
-     . (EffectMonad m sig sigs sigl l, Identify tag, StateF tag s :<: sig)
+     . (EffectCons m sig sigs sigl l, Identify tag, StateF tag s :<: sig)
     => m s
-get =
-    ctrace ("get " ++ identify @tag) $ injectA (Get @tag return)
+get = logCallWith (identify @tag) >> injectA (Get @tag return)
 {-# INLINE get #-}
 
 put
     :: forall tag s m l sig sigs sigl
-     . (EffectMonad m sig sigs sigl l, Identify tag, StateF tag s :<: sig)
+     . (EffectCons m sig sigs sigl l, Identify tag, StateF tag s :<: sig)
     => s
     -> m ()
-put s =
-    ctrace ("put " ++ identify @tag) $
-        injectA (Put @tag s (return ()))
+put s = logCallWith (identify @tag) >> injectA (Put @tag s (return ()))
 {-# INLINE put #-}
 
 modify
     :: forall tag s m l sig sigs sigl
-     . (EffectMonad m sig sigs sigl l, Identify tag, StateF tag s :<: sig)
+     . (EffectCons m sig sigs sigl l, Identify tag, StateF tag s :<: sig)
     => (s -> s)
     -> m ()
-modify f = do
-    s <- get @tag
-    put @tag (f s)
+modify f =
+    logCallWith (identify @tag) >> do
+        s <- get @tag
+        put @tag (f s)
 {-# INLINE modify #-}
 
 class Identify a where
@@ -74,19 +75,18 @@ type Renaming =
     StateF Rename ((Scope, VarIndex), [((Scope, VarIndex), VarIndex)])
 
 rename
-    :: (EffectMonad m sig sigs sigl l, Renaming :<: sig)
+    :: (EffectCons m sig sigs sigl l, Renaming :<: sig)
     => Scope
     -> [VarIndex]
     -> m [VarIndex]
-rename scope vs = do
-    ((nextScope :: Scope, nextVar), renaming) <- get @Rename
-    let end = nextVar + length vs - 1
-    let vs' = [nextVar .. end]
-    ctrace
-        ("rename " ++ show scope ++ " " ++ show vs ++ " to " ++ show vs')
-        (return ())
-    put @Rename ((nextScope, end + 1), addScope scope vs vs' ++ renaming)
-    return vs'
+rename _ [] = logCall >> return []
+rename scope vs =
+    logCall >> do
+        ((nextScope :: Scope, nextVar), renaming) <- get @Rename
+        let end = nextVar + length vs - 1
+        let vs' = [nextVar .. end]
+        put @Rename ((nextScope, end + 1), addScope scope vs vs' ++ renaming)
+        return vs'
 {-# INLINE rename #-}
 
 addScope
@@ -96,86 +96,63 @@ addScope scope vs vs' =
      in zip (zip scopes vs) vs'
 {-# INLINE addScope #-}
 
-fresh
-    :: (EffectMonad m sig sigs sigl l, Renaming :<: sig)
-    => Scope
-    -> [VarIndex]
-    -> m ((Scope, VarIndex), [((Scope, VarIndex), VarIndex)])
-fresh scope vs = do
-    ((nextScope, nextVar), _ :: [((Scope, VarIndex), VarIndex)]) <- get @Rename
-    let end = nextVar + length vs - 1
-    let vs' = [nextVar .. end]
-    ctrace
-        ("rename " ++ show scope ++ " " ++ show vs ++ " to " ++ show vs')
-        (return ())
-    return ((nextScope, end + 1), addScope scope vs vs')
-{-# INLINE fresh #-}
-
 freshNames
-    :: (EffectMonad m sig sigs sigl l, Renaming :<: sig)
+    :: (EffectCons m sig sigs sigl l, Renaming :<: sig)
     => Scope
     -> Int
     -> m [VarIndex]
-freshNames scope n = do
-    ((nextScope :: Scope, nextVar), renaming) <- get @Rename
-    let end = nextVar + n - 1
-    let vs' = [nextVar .. end]
-    ctrace ("fresh " ++ show scope ++ " " ++ show vs') (return ())
-    put @Rename ((nextScope, end + 1), addScope scope vs' vs' ++ renaming)
-    return vs'
+freshNames _ 0 = logCall >> return []
+freshNames scope n =
+    logCall >> do
+        ((nextScope :: Scope, nextVar), renaming) <- get @Rename
+        let end = nextVar + n - 1
+        let vs' = [nextVar .. end]
+        put @Rename ((nextScope, end + 1), addScope scope vs' vs' ++ renaming)
+        return vs'
 {-# INLINE freshNames #-}
 
 newScope
-    :: (EffectMonad m sig sigs sigl l, Renaming :<: sig)
+    :: (EffectCons m sig sigs sigl l, Renaming :<: sig)
     => m Scope
-newScope = do
-    ((nextScope, newVar), renaming)
-        :: ((Scope, VarIndex), [((Scope, VarIndex), VarIndex)]) <-
-        get @Rename
-    put @Rename ((nextScope + 1, newVar), renaming)
-    ctrace ("newScope " ++ show nextScope) (return nextScope)
+newScope =
+    logCall >> do
+        ((nextScope, newVar), renaming)
+            :: ((Scope, VarIndex), [((Scope, VarIndex), VarIndex)]) <-
+            get @Rename
+        put @Rename ((nextScope + 1, newVar), renaming)
+        return nextScope
 {-# INLINE newScope #-}
 
 currentScope
-    :: (EffectMonad m sig sigs sigl l, Renaming :<: sig)
+    :: (EffectCons m sig sigs sigl l, Renaming :<: sig)
     => m Scope
-currentScope = do
-    ((nextScope, _), _)
-        :: ((Scope, VarIndex), [((Scope, VarIndex), VarIndex)]) <-
-        get @Rename
-    ctrace ("currentScope " ++ show (nextScope - 1)) (return (nextScope - 1))
+currentScope =
+    logCall >> do
+        ((nextScope, _), _)
+            :: ((Scope, VarIndex), [((Scope, VarIndex), VarIndex)]) <-
+            get @Rename
+        return (nextScope - 1)
 {-# INLINE currentScope #-}
 
 lookupRenaming
-    :: (EffectMonad m sig sigs sigl l, Renaming :<: sig)
+    :: (EffectCons m sig sigs sigl l, Renaming :<: sig)
     => Scope
     -> VarIndex
     -> m VarIndex
-lookupRenaming scope i = do
-    (_ :: (Scope, VarIndex), renaming :: [((Scope, VarIndex), VarIndex)]) <-
-        get @Rename
-    case lookup (scope, i) renaming of
-        Just i' ->
-            ctrace
-                ( "lookupRenaming: "
-                    ++ show scope
-                    ++ " "
-                    ++ show i
-                    ++ " "
-                    ++ show i'
-                    ++ " "
-                    ++ show renaming
-                )
-                return
-                i'
-        Nothing ->
-            error $
-                "lookupRenaming: "
-                    ++ show scope
-                    ++ " "
-                    ++ show i
-                    ++ " not found in "
-                    ++ show renaming
+lookupRenaming scope i =
+    logCall >> do
+        (_ :: (Scope, VarIndex), renaming :: [((Scope, VarIndex), VarIndex)]) <-
+            get @Rename
+        case lookup (scope, i) renaming of
+            Just i' -> return i'
+            Nothing ->
+                error $
+                    "lookupRenaming: "
+                        ++ show scope
+                        ++ " "
+                        ++ show i
+                        ++ " not found in "
+                        ++ show renaming
 {-# INLINE lookupRenaming #-}
 
 runState
@@ -190,7 +167,7 @@ hState
     :: forall tag sig sigs sigl l s a
      . Prog (Sig (StateF tag s :+: sig) sigs sigl l) a
     -> (s -> Prog (Sig sig sigs sigl (StateL s l)) (s, a))
-hState = ctrace "runState" . unSTC . fold point con
+hState = unSTC . fold point con
 {-# INLINE hState #-}
 
 instance
@@ -277,3 +254,44 @@ instance Identify CStore where
     identify = "CStore"
 
 type ConstraintStore = StateF CStore Constraints
+
+-- Tracing
+
+type TraceInfo = (String, String)
+
+data Trace
+
+instance Identify Trace where
+    identify = "Trace"
+
+type Tracing = StateF Trace [TraceInfo]
+
+type EffectCons m sig sigs sigl l = (TermMonad m (Sig sig sigs sigl l), Tracing :<: sig, HasCallStack)
+
+logCall :: (EffectCons m sig sigs sigl l) => m ()
+logCall | tracingActive = let (_ : (name, _) : _) = getCallStack callStack in modifyWithoutLog ((name, "") :)
+        | otherwise = return ()
+           where
+             modifyWithoutLog f = do
+               s <- injectA (Get @Trace return)
+               injectA (Put @Trace (f s) (return ()))
+{-# INLINE logCall #-}
+
+logCallWith :: (EffectCons m sig sigs sigl l) => String -> m ()
+logCallWith s
+    | tracingActive = let (_ : (name, _) : _) = getCallStack callStack in modifyWithoutLog ((name, s) :)
+    | otherwise = return ()
+      where
+        modifyWithoutLog f = do
+          s <- injectA (Get @Trace return)
+          injectA (Put @Trace (f s) (return ()))
+{-# INLINE logCallWith #-}
+
+statistics :: [TraceInfo] -> [(TraceInfo, Int)]
+statistics ti = sortBy (\(_,n) (_, m) -> compare n m) (foldr f [] ti)
+  where
+    f name acc =
+        case lookup name acc of
+            Just n -> (name, n + 1) : filter ((/= name) . fst) acc
+            Nothing -> (name, 1) : acc
+{-# INLINE statistics #-}

@@ -41,6 +41,7 @@ module Signature (
     Union,
     absurd,
     (:.:),
+    HasCallStack
     
 ) where
 
@@ -48,6 +49,7 @@ import Data.Kind (Type)
 import Data.Union
 import Free
 import GHC.Base (Constraint)
+import GHC.Stack (HasCallStack)
 
 type (:<:) e r = Elem e r
 
@@ -174,7 +176,7 @@ injectA
     :: (eff :<: sig, TermMonad m (Sig sig sigs sigl l), Functor eff)
     => eff (m a)
     -> m a
-injectA = con . A . Algebraic . inj
+injectA e = con (A (Algebraic (inj e)))
 {-# INLINE injectA #-}
 
 injectL
