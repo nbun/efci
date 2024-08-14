@@ -30,6 +30,7 @@ library
                    , Effect.FlatCurry.IO
                    , Effect.General.Error
                    , Debug
+                   , Data.Union
                    , Signature
                    
     exposed-modules: App, Pipeline

@@ -33,7 +33,7 @@ runCurryEffects :: (Show a)
                 -> IO (Error [(Constraints, Value (Closure a))])
 runCurryEffects ps e = pipeline e'
   where
-    e' = initDecls ps >> e 
+    e' = initDecls ps >> e
     pipeline = runIO
       . runError
       . runND
@@ -186,6 +186,10 @@ type M a = Cod
                                               a))))))
                             Id
                             a)
+
+-- {-# SPECIALISE runCurryEffectsC :: [AEProg ((M ()) ())]
+--                  -> (M ()) ()
+--                  -> IO (Error [(Constraints, Value (Closure ()))]) #-}
 
 runCurryEffectsC :: forall a.
                  (Show a)

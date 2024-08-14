@@ -48,13 +48,13 @@ force p = ctrace ("force " ++ show p) $ injectL (Force p) (Id ()) (\x -> case x 
 
 type Ptr = Int
 
-runLazy :: (Functor sig, Functor sigs, Functor l, Show (l v), Show (l ()), m ~ Prog (Sig sig sigs sigl (StateL (ThunkStore n l v) l)), n ~ Prog (Sig sig sigs sigl l), Monad m) => ThunkStore m l v -> Prog (Sig sig sigs (Thunking v :+++: sigl) l) b -> m b
+runLazy :: (Functor l, Show (l v), Show (l ()), m ~ Prog (Sig sig sigs sigl (StateL (ThunkStore n l v) l)), n ~ Prog (Sig sig sigs sigl l), Monad m) => ThunkStore m l v -> Prog (Sig sig sigs (Thunking v :+++: sigl) l) b -> m b
 runLazy s = fmap snd . \p -> hLazy p s
 {-# INLINE runLazy #-}
 
 hLazy
    :: forall m n sig sigs sigl l v a
-    . (Functor sig, Functor sigs, Functor l, Show (l v), Show (l ()), m ~ Prog (Sig sig sigs sigl (StateL (ThunkStore n l v) l)), n ~ Prog (Sig sig sigs sigl l), Monad m)
+    . (Functor l, Show (l v), Show (l ()), m ~ Prog (Sig sig sigs sigl (StateL (ThunkStore n l v) l)), n ~ Prog (Sig sig sigs sigl l), Monad m)
    => Prog (Sig sig sigs (Thunking v :+++: sigl) l) a
    -> ThunkStore m l v
    -> m (ThunkStore m l v, a)

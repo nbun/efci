@@ -16,3 +16,7 @@ benchmarks/.curry/
 *.prof
 
 *.html
+
+Run.curry
+
+*.icurry

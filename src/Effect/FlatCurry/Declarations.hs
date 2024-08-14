@@ -46,11 +46,11 @@ instance (Functor m) => Functor (H m l v) where
   fmap f (H x) = H $ \th -> fmap f (x th)
   {-# INLINE fmap #-}
 
-runDecl :: (Functor l, m ~ Prog (Sig sig sigs sigl l), Functor sig, Functor sigs) => Progs m l v -> Prog (Sig sig sigs (DeclF v :+++: sigl) l) b -> m b
+runDecl :: (Functor l, m ~ Prog (Sig sig sigs sigl l)) => Progs m l v -> Prog (Sig sig sigs (DeclF v :+++: sigl) l) b -> m b
 runDecl s p = hDecl p s
 {-# INLINE runDecl #-}
 
-hDecl  :: forall sig sigs sigl l m v a. (Functor l, m ~ Prog (Sig sig sigs sigl l), Functor sig, Functor sigs) => Prog (Sig sig sigs (DeclF v :+++: sigl) l) a
+hDecl  :: forall sig sigs sigl l m v a. (Functor l, m ~ Prog (Sig sig sigs sigl l)) => Prog (Sig sig sigs (DeclF v :+++: sigl) l) a
       -> Progs m l v
       -> m a
 hDecl  = ctrace "runDecl" . unH . fold point con

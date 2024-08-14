@@ -11,6 +11,7 @@
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# LANGUAGE EmptyCase #-}
+{-# LANGUAGE DataKinds #-}
 
 module Effect.FlatCurry.IO where
 
@@ -88,18 +89,20 @@ readFileIO fp = injectS (External [fmap return fp] (return . f))
     f [fpv] = injectA (ReadFile (val2str fpv) str2prog)
 {-# INLINE readFileIO #-}
 
-runIO :: forall l a. Prog (Sig IOAction Void LVoid l) a -> IO a
+runIO :: forall l a. Prog (Sig '[IOAction] '[] LVoid l) a -> IO a
 runIO = unIOC . fold point con
 {-# INLINE runIO #-}
 
-instance TermAlgebra (IOC l) (Sig IOAction Void LVoid l) where
-  con (A (Algebraic op)) = IOC . algIO . fmap unIOC $ op
+instance TermAlgebra (IOC l) (Sig '[IOAction] '[] LVoid l) where
+  con (A (Algebraic op)) = IOC . (algIO # absurd) . fmap unIOC $ op
     where
       algIO (PutChar c k) = putChar c >> k
       algIO (GetChar k) = getChar >>= k
       algIO (WriteFile fp s k) = writeFile fp s >> k
       algIO (ReadFile fp k) = readFile fp >>= k
       algIO (AppendFile fp s k) = appendFile fp s >> k
+
+
   con (S (Enter op)) = case op of
   con (L (Node op _ _ _)) = case op of
   {-# INLINE con #-}
