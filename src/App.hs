@@ -179,7 +179,10 @@ run topts progs fcyrunner = do
              runCurryEffects @() aprogs' runner
   -- when (showFlatCurryExpr topts) $ print fcyrunner\
   let (ti, values) = declutter res
+      stats = statistics ti
+      sum = foldr (\(_, n) acc -> n + acc) 0 stats
   mapM_ print (statistics ti)
+  putStrLn $ "Total: " ++ show sum
   return values
 
 genRun :: Bool -> String -> String -> [String] -> String

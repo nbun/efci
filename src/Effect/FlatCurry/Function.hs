@@ -50,23 +50,24 @@ fun
     -> QName
     -> Either [m a] [Ptr]
     -> m a
-fun scope qn ps =
-    logCall >> do
-        ptrs <- either (mapM thunk) return ps
+fun scope qn ps = logCallWith (either (const "") (const "thunked") ps) >> do
         (ar, vis, ty, r) <- getInfo @a qn
         let fdecl = AEFunc qn ar vis ty r
         if isExternal fdecl
-            then callExternal fdecl (map force ptrs)
+            then callExternal fdecl (either id (map force) ps)
             else do
-                let (vs, ts, _) = fdclRule fdecl
-                letThunked scope (zip vs ptrs) (getBody qn)
+                let (vs, _, _) = fdclRule fdecl
+                    e = getBody qn
+                case ps of
+                    Left prgs -> let' scope (zip vs prgs) e
+                    Right ptrs -> letThunked scope (zip vs ptrs) e
 
 callExternal
     :: (EffectCons m sig sigs sigl Id, Functions sig sigs sigl a)
     => AEFuncDecl v
     -> [m a]
     -> m a
-callExternal fdecl args = case (externalName fdecl, args) of
+callExternal fdecl args = logCall >> case (externalName fdecl, args) of
     ("Prelude.plusInt", [px, py]) -> arithInt (+) px py
     ("Prelude.minusInt", [px, py]) -> arithInt (-) px py
     ("Prelude.timesInt", [px, py]) -> arithInt (*) px py
