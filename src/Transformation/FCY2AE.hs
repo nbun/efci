@@ -124,7 +124,7 @@ fcyExpr2ae m expr = do
             let m' = insertBinds FreeVar m bs
             e' <- fcyExpr2ae m' e
             scope <- currentScope
-            return (rename scope (map fst bs) >> e')
+            return ( e')
         AOr _ e1 e2 -> do
             liftM2 (?) (fcyExpr2ae m e1) (fcyExpr2ae m e2)
         ACase _ ct e brs -> do

@@ -13,6 +13,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE TupleSections #-}
 
 module Effect.FlatCurry.Function where
 
@@ -299,10 +300,10 @@ unify e1 e2 =
         cons ("Prelude", "True") []
     cnt (Free i, HNF qn args) = do
         let args' = map force args
+        vs <- freshNames (length args)
         scope <- currentScope
-        vs <- freshNames scope (length args)
         let fvs = map (fvar scope) vs
-        modify @CStore (addC i (ConsC qn vs))
+        modify @CStore (addC i (ConsC qn (map (scope,) vs)))
         ands $ zipWith unify fvs args'
     cnt (HNF qn args, Free i) = cnt (Free i, HNF qn args)
     cnt (Lit l1, Lit l2)

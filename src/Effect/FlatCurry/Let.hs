@@ -37,7 +37,6 @@ lvar
 lvar scope i =
     logCall >> do
         s <- get @LocalBindings
-        -- i' <- lookupRenaming scope i
         case Map.lookup (scope, i) s of
             Nothing -> error $ "Unbound variable " ++ show i
             Just ptr -> force ptr

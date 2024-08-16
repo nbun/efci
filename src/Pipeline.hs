@@ -39,8 +39,8 @@ runCurryEffects ps e = pipeline e'
       . (\x -> hState @Trace x ([] :: [TraceInfo]))
       . runError
       . runND
-      . (\x -> hState @CStore x IntMap.empty)
-      . runState @Rename ((0, 0), [])
+      . (\x -> hState @CStore x Map.empty)
+      . runState @Rename ((0, 0))
       . runState @LocalBindings Map.empty
       . runLazy (0, IntMap.empty)
       . runCons
@@ -52,7 +52,7 @@ declutter (ti, Error s) = (ti, [RError s])
 declutter (ti, EOther xs) = (ti, map addBindings xs)
   where
     addBindings (bs, v)
-      | IntMap.null bs || all (> 999) (IntMap.keys bs) = declutterHNF v
+      | Map.null bs || all (\(_,i) -> i > 999) (Map.keys bs) = declutterHNF v
       | otherwise = RBindings bs (declutterHNF v)
 
 declutterHNF :: Show a => Value (Closure a) -> Result
@@ -69,7 +69,7 @@ data Result = RLit Literal
             | Unevaluated
             | RClosure QName CombType
             | RError String
-            | RFree VarIndex
+            | RFree (Scope, VarIndex)
             | ROther String
             | RBindings Constraints Result
   deriving (Show, Eq)
@@ -98,10 +98,10 @@ instance Pretty Result where
     snd qn ++ " " ++ unwords (replicate (missingArgs ct) "_")
   pretty (RError s) = "Error: " ++ s
   pretty (RBindings cs r) =
-    "{" ++ intercalate ", " (map pretty (IntMap.toList cs)) ++ "} " ++ pretty r
+    "{" ++ intercalate ", " (map pretty (Map.toList cs)) ++ "} " ++ pretty r
   pretty (ROther s) = s
 
-instance Pretty (VarIndex, CValue) where
+instance Pretty ((Scope, VarIndex), CValue) where
   pretty (i, LitC l) = '_':show i ++ " -> " ++ show l
   pretty (i, VarC j) = '_':show i ++ " -> " ++ show j
   pretty (i, ConsC qn []) = '_':show i ++ " -> " ++ snd qn
@@ -119,13 +119,13 @@ parOnce "" = ""
 parOnce s@('(':_) = s
 parOnce s = '(':s ++ ")"
 
-type L c a = StateL [TraceInfo] 
+type L c a = StateL [TraceInfo]
                       (ErrorL
                          (ListL
                             (StateL
                                Constraints
                                   (StateL
-                                     ((Scope, VarIndex), [((Scope, VarIndex), VarIndex)])
+                                     (Scope, VarIndex)
                                      (StateL
                                         Ptrs
                                         (StateL
@@ -133,11 +133,11 @@ type L c a = StateL [TraceInfo]
                                            (ValueL (ClosureL Id))))))))
 
 type Co = (Cod (STC LocalBindings Ptrs
-            (Cod (STC Rename ((Scope, VarIndex), [((Scope, VarIndex), VarIndex)])
+            (Cod (STC Rename (Scope, VarIndex)
                 (Cod (STC CStore Constraints
                   (Cod (NDC
-                    (Cod (EC 
-                      (Cod (STC Trace [TraceInfo] 
+                    (Cod (EC
+                      (Cod (STC Trace [TraceInfo]
                         (Cod (IOC T2))))))))))))))
 
 type T2 = StateL [TraceInfo] (ErrorL
@@ -145,7 +145,7 @@ type T2 = StateL [TraceInfo] (ErrorL
                             (StateL
                                Constraints
                                   (StateL
-                                     ((Scope, VarIndex), [((Scope, VarIndex), VarIndex)])
+                                     (Scope, VarIndex)
                                      (StateL Ptrs (ValueL (ClosureL Id)))))))
 
 type M a =           Cod
@@ -162,8 +162,7 @@ type M a =           Cod
                                                     (Cod
                                                        (STC
                                                           Rename
-                                                          ((Scope, VarIndex),
-                                                           [((Scope, VarIndex), VarIndex)])
+                                                          (Scope, VarIndex)
                                                                 (Cod
                                                                    (STC
                                                                       CStore
@@ -199,8 +198,8 @@ runCurryEffectsC ps e = unIOC (pipeline e' ) -- :: IOC (L Co a) ([TraceInfo], Er
       . runStateC @Trace []
       . runErrorC
       . runNDC
-      . runStateC @CStore IntMap.empty
-      . runStateC' @Rename ((0, 0), [])
+      . runStateC @CStore Map.empty
+      . runStateC' @Rename ((0, 0))
       . runStateC' @LocalBindings Map.empty
       . runLazyC (0, IntMap.empty)
       . runConsC

@@ -8,6 +8,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE TupleSections #-}
 
 module Effect.FlatCurry.Constructor where
 
@@ -28,7 +29,7 @@ data ConsF a
     = FCons QName [Ptr]
     | FStrictCons QName [a]
     | FLit Literal
-    | FFree VarIndex
+    | FFree (Scope, VarIndex)
 
 instance Functor ConsF where
     fmap _ (FCons qn args) = FCons qn args
@@ -126,9 +127,9 @@ case' scope cp brs =
         match (Free i) pat = Just $ do
             case pat of
                 (APattern _ (pqn, _) argVars, e) -> do
-                    vs <- freshNames scope (length argVars)
+                    vs <- freshNames (length argVars)
                     let fvs = map (fvar scope) vs
-                    modify @CStore (addC i (ConsC pqn vs))
+                    modify @CStore (addC i (ConsC pqn (map (scope,) vs)))
                     let' scope (zip (map fst argVars) fvs) e
                 (ALPattern _ lp, e) -> do
                     modify @CStore (addC i (LitC lp))
@@ -141,7 +142,7 @@ data Value a
     = Cons QName [Value a]
     | HNF QName [Ptr]
     | Lit Literal
-    | Free VarIndex
+    | Free (Scope, VarIndex)
     | ValOther a
     deriving (Show)
 
@@ -337,8 +338,7 @@ fvar
 fvar scope i =
     logCall >> do
         cs <- get @CStore
-        i' <- lookupRenaming scope i
-        applyC cs i'
+        applyC cs (scope, i)
   where
     applyC store n = case lookupC n store of
         Just (ConsC qn vs) -> do
