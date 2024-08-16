@@ -103,8 +103,7 @@ fcyExpr2ae m expr = do
             case callType of
                 FuncCall -> return $
                     do
-                        scope <- newScope
-                        fun scope qn (Left args')
+                        fun qn (Left args')
                 FuncPartCall i ->
                     return $
                         partial qn (Effect.FlatCurry.Function.FuncPartCall i) args'

@@ -46,11 +46,11 @@ type Functions sig sigs sigl a =
 fun
     :: forall sig sigs sigl m a
      . (EffectCons m sig sigs sigl Id, Functions sig sigs sigl a)
-    => Scope
-    -> QName
+    => QName
     -> Either [m a] [Ptr]
     -> m a
-fun scope qn ps = logCallWith (either (const "") (const "thunked") ps) >> do
+fun qn ps = logCallWith (either (const "") (const "thunked") ps) >> do
+        scope <- newScope
         (ar, vis, ty, r) <- getInfo @a qn
         let fdecl = AEFunc qn ar vis ty r
         if isExternal fdecl
@@ -206,8 +206,7 @@ apply' f x =
         let ptrs' = ptrs ++ [p]
          in case combtype of
                 FuncPartCall 1 -> do
-                    scope <- newScope
-                    fun scope qn (Right ptrs')
+                    fun qn (Right ptrs')
                 ConsPartCall 1 -> thunkedCons qn ptrs'
                 _ -> injectS $ PartCall qn (decArgs combtype) ptrs'
 
@@ -321,5 +320,4 @@ ands
 ands [] = cons ("Prelude", "True") []
 ands [x] = x
 ands (x : xs) = do
-    scope <- newScope
-    fun scope ("Prelude", "&&") (Left [x, ands xs])
+    fun ("Prelude", "&&") (Left [x, ands xs])
