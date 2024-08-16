@@ -1,4 +1,5 @@
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE BangPatterns #-}
 module App where
 
 import Base.Messages (Message, putErrLn)
@@ -14,7 +15,7 @@ import CompilerOpts (
   getCompilerOpts,
  )
 import Control.Exception (SomeException, try)
-import Control.Monad (unless)
+import Control.Monad (unless, when)
 import Curry.Base.Ident (ModuleIdent, moduleName)
 import Curry.Base.Message (ppError, ppMessagesWithPreviews, ppWarning)
 import Curry.Base.Monad (runCYIO)
@@ -61,6 +62,7 @@ import Transformation.FCY2AE (CurryEffects, fcyProg2ae, fcyRunner2ae)
 import Transformations (qual)
 import Type (AEProg)
 import Effect.General.State (statistics)
+import Debug (tracingActive)
 
 data ToolOpts = ToolOpts { showFlatCurryExpr :: Bool, optimize :: Bool}
 
@@ -180,9 +182,8 @@ run topts progs fcyrunner = do
   -- when (showFlatCurryExpr topts) $ print fcyrunner\
   let (ti, values) = declutter res
       stats = statistics ti
-      sum = foldr (\(_, n) acc -> n + acc) 0 stats
-  mapM_ print (statistics ti)
-  putStrLn $ "Total: " ++ show sum
+      sum = foldr (\(_, n) !acc -> n + acc) 0 stats
+  when tracingActive (mapM_ print stats >> putStrLn ("Total: " ++ show sum))
   return values
 
 genRun :: Bool -> String -> String -> [String] -> String
