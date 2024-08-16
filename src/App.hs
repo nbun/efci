@@ -149,7 +149,8 @@ loadProg :: ToolOpts -> FilePath -> String -> IO ([AProg TypeExpr], AFuncDecl Ty
 loadProg topts file query = do
   let runmod = "Run"
       runmodfn = runmod ++ ".curry"
-  writeFile runmodfn (genRun (showFlatCurryExpr topts) runmod query [file])
+      qualQuery = if query == "main" then dropExtension file ++ "." ++ query else query
+  writeFile runmodfn (genRun (showFlatCurryExpr topts) runmod qualQuery [file])
   currentDir <- getCurrentDirectory
   preludeDir <- preludeDir
   let dirs =
