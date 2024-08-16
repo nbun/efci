@@ -66,7 +66,6 @@ letThunked scope bs e =
     logCall >> do
         let (vs, ptrs) = unzip bs
         vs' <- rename scope vs
-        s <- get @LocalBindings
-        put @LocalBindings (foldr (uncurry IntMap.insert) s (zip vs' ptrs))
+        modify @LocalBindings (\s -> foldr (uncurry IntMap.insert) s (zip vs' ptrs))
         e
 {-# INLINE letThunked #-}

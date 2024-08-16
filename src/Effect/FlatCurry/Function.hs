@@ -300,11 +300,10 @@ unify e1 e2 =
         cons ("Prelude", "True") []
     cnt (Free i, HNF qn args) = do
         let args' = map force args
-        cs <- get @CStore
         scope <- currentScope
         vs <- freshNames scope (length args)
         let fvs = map (fvar scope) vs
-        put @CStore (addC i (ConsC qn vs) cs)
+        modify @CStore (addC i (ConsC qn vs))
         ands $ zipWith unify fvs args'
     cnt (HNF qn args, Free i) = cnt (Free i, HNF qn args)
     cnt (Lit l1, Lit l2)

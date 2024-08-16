@@ -126,14 +126,12 @@ case' scope cp brs =
         match (Free i) pat = Just $ do
             case pat of
                 (APattern _ (pqn, _) argVars, e) -> do
-                    cs <- get @CStore
                     vs <- freshNames scope (length argVars)
                     let fvs = map (fvar scope) vs
-                    put @CStore (addC i (ConsC pqn vs) cs)
+                    modify @CStore (addC i (ConsC pqn vs))
                     let' scope (zip (map fst argVars) fvs) e
                 (ALPattern _ lp, e) -> do
-                    cs <- get @CStore
-                    put @CStore (addC i (LitC lp) cs)
+                    modify @CStore (addC i (LitC lp))
                     e
         match v ps =
             error $

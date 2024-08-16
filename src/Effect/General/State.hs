@@ -29,10 +29,12 @@ import Data.List (sortBy)
 data StateF (tag :: Type) s a
     = Get (s -> a)
     | Put s a
+    | Modify (s -> s) a
 
 instance Functor (StateF tag s) where
     fmap f (Get g) = Get (f . g)
     fmap f (Put s a) = Put s (f a)
+    fmap f (Modify g a) = Modify g (f a)
     {-# INLINE fmap #-}
 
 get
@@ -56,9 +58,7 @@ modify
     => (s -> s)
     -> m ()
 modify f =
-    logCallWith (identify @tag) >> do
-        s <- get @tag
-        put @tag (f s)
+    logCallWith (identify @tag) >> injectA (Modify @tag f (return ()))
 {-# INLINE modify #-}
 
 class Identify a where
@@ -178,6 +178,7 @@ instance
       where
         algS (Get k) s = k s s
         algS (Put s' k) _ = k s'
+        algS (Modify f k) s = k (f s)
 
         afwd op s = con (A (Algebraic (fmap (\k -> k s) op)))
     con (S (Enter op)) = STC $ \s -> con $ S $ Enter $ fmap (go s) op
