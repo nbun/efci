@@ -15,7 +15,7 @@ import Data.List (intercalate)
 import Effect.FlatCurry.Constructor
 import Effect.FlatCurry.Function
 import Effect.FlatCurry.IO (runIO, IOC (..))
-import Effect.FlatCurry.Let (LocalBindings)
+import Effect.FlatCurry.Let (LocalBindings, Ptrs)
 import Effect.General.Error (Error (..), runError, ErrorL, EC, runErrorC)
 import Effect.General.Memoization
 import Effect.General.ND (runND, ListL, NDC, runNDC)
@@ -26,6 +26,7 @@ import Signature
 import Transformation.FCY2AE
 import Type (AEProg)
 import Effect.FlatCurry.Declarations
+import qualified Data.Map as Map
 
 runCurryEffects :: (Show a)
                 => [AEProg (Prog (CurryEffects a) a)]
@@ -40,7 +41,7 @@ runCurryEffects ps e = pipeline e'
       . runND
       . (\x -> hState @CStore x IntMap.empty)
       . runState @Rename ((0, 0), [])
-      . runState @LocalBindings IntMap.empty
+      . runState @LocalBindings Map.empty
       . runLazy (0, IntMap.empty)
       . runCons
       . runPartial
@@ -126,12 +127,12 @@ type L c a = StateL [TraceInfo]
                                   (StateL
                                      ((Scope, VarIndex), [((Scope, VarIndex), VarIndex)])
                                      (StateL
-                                        (IntMap.IntMap Ptr)
+                                        Ptrs
                                         (StateL
                                            (ThunkStore c (ValueL (ClosureL Id)) a)
                                            (ValueL (ClosureL Id))))))))
 
-type Co = (Cod (STC LocalBindings (IntMap.IntMap Ptr)
+type Co = (Cod (STC LocalBindings Ptrs
             (Cod (STC Rename ((Scope, VarIndex), [((Scope, VarIndex), VarIndex)])
                 (Cod (STC CStore Constraints
                   (Cod (NDC
@@ -145,7 +146,7 @@ type T2 = StateL [TraceInfo] (ErrorL
                                Constraints
                                   (StateL
                                      ((Scope, VarIndex), [((Scope, VarIndex), VarIndex)])
-                                     (StateL (IntMap.IntMap Ptr) (ValueL (ClosureL Id)))))))
+                                     (StateL Ptrs (ValueL (ClosureL Id)))))))
 
 type M a =           Cod
                          (H (Cod
@@ -157,7 +158,7 @@ type M a =           Cod
                                               (Cod
                                                  (STC
                                                     LocalBindings
-                                                    (IntMap.IntMap Ptr)
+                                                    Ptrs
                                                     (Cod
                                                        (STC
                                                           Rename
@@ -200,7 +201,7 @@ runCurryEffectsC ps e = unIOC (pipeline e' ) -- :: IOC (L Co a) ([TraceInfo], Er
       . runNDC
       . runStateC @CStore IntMap.empty
       . runStateC' @Rename ((0, 0), [])
-      . runStateC' @LocalBindings IntMap.empty
+      . runStateC' @LocalBindings Map.empty
       . runLazyC (0, IntMap.empty)
       . runConsC
       . runPartialC

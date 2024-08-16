@@ -8,11 +8,12 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
+{-# LANGUAGE TupleSections #-}
 
 module Effect.FlatCurry.Let where
 
 import Curry.FlatCurry.Type (VarIndex)
-import qualified Data.IntMap as IntMap
+import qualified Data.Map as Map
 import Effect.General.Memoization
 import Effect.General.State
 import Free
@@ -23,7 +24,7 @@ data LocalBindings
 instance Identify LocalBindings where
     identify = "LocalBindings"
 
-type Ptrs = IntMap.IntMap Ptr
+type Ptrs = Map.Map (Scope, VarIndex) Ptr
 
 type Let sig sigl a =
     (StateF LocalBindings Ptrs :<: sig, Renaming :<: sig, Thunking a :<<<<: sigl)
@@ -36,8 +37,8 @@ lvar
 lvar scope i =
     logCall >> do
         s <- get @LocalBindings
-        i' <- lookupRenaming scope i
-        case IntMap.lookup i' s of
+        -- i' <- lookupRenaming scope i
+        case Map.lookup (scope, i) s of
             Nothing -> error $ "Unbound variable " ++ show i
             Just ptr -> force ptr
 {-# INLINE lvar #-}
@@ -65,7 +66,7 @@ letThunked _ [] e = logCall >> e
 letThunked scope bs e =
     logCall >> do
         let (vs, ptrs) = unzip bs
-        vs' <- rename scope vs
-        modify @LocalBindings (\s -> foldr (uncurry IntMap.insert) s (zip vs' ptrs))
+            vs' = map (scope,) vs
+        modify @LocalBindings (\s -> foldr (uncurry Map.insert) s (zip vs' ptrs))
         e
 {-# INLINE letThunked #-}

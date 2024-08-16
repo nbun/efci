@@ -61,7 +61,7 @@ data VarKind
 
 type VarKindMap = Map.Map VarIndex VarKind
 
-type AEffects = '[ConsF, StateF LocalBindings (IntMap Ptr), Renaming, ConstraintStore, ND, Err, StateF Trace [TraceInfo], IOAction]
+type AEffects = '[ConsF, StateF LocalBindings Ptrs, Renaming, ConstraintStore, ND, Err, StateF Trace [TraceInfo], IOAction]
 type SEffects = '[Partial, CaseScope]
 type LEffects v = DeclF v :+++: (Thunking v :+++: LVoid)
 
