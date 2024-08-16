@@ -5,10 +5,10 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
-{-# LANGUAGE TupleSections #-}
 
 module Effect.FlatCurry.Let where
 
@@ -33,12 +33,16 @@ lvar
     :: (Let sig sigl a, EffectCons m sig sigs sigl Id)
     => Scope
     -> VarIndex
+    -> ( Scope
+         -> VarIndex
+         -> m a
+       )
     -> m a
-lvar scope i =
+lvar scope i fwd =
     logCall >> do
         s <- get @LocalBindings
         case Map.lookup (scope, i) s of
-            Nothing -> error $ "Unbound variable " ++ show i
+            Nothing -> fwd scope i
             Just ptr -> force ptr
 {-# INLINE lvar #-}
 
