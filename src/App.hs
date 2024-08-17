@@ -63,11 +63,19 @@ import Transformations (qual)
 import Type (AEProg)
 import Effect.General.State (statistics)
 import Debug (tracingActive)
+import Monolith (runMonolithic)
 
-data ToolOpts = ToolOpts { showFlatCurryExpr :: Bool, optimize :: Bool}
+data Mode = Tree | Codensity | Monolithic deriving Show
+
+rotateMode :: Mode -> Mode
+rotateMode Tree = Codensity
+rotateMode Codensity = Monolithic
+rotateMode Monolithic = Tree
+
+data ToolOpts = ToolOpts { showFlatCurryExpr :: Bool, mode :: Mode} deriving Show
 
 defaultToolOpts :: ToolOpts
-defaultToolOpts = ToolOpts { showFlatCurryExpr = False, optimize = True}
+defaultToolOpts = ToolOpts { showFlatCurryExpr = False, mode = Codensity}
 
 main :: IO ()
 main = do
@@ -85,8 +93,8 @@ loop topts file = do
   input <- getLine
   case input of
     ":q" -> return ()
-    ":fcy" -> loop (topts {showFlatCurryExpr = not $ showFlatCurryExpr topts}) file
-    ":o" -> loop (topts {optimize = not $ optimize topts}) file
+    ":fcy" -> let topts' = topts {showFlatCurryExpr = not $ showFlatCurryExpr topts} in print topts' >> loop topts' file
+    ":o" -> let topts' = topts {mode = rotateMode $ mode topts} in print topts' >> loop topts' file
 
     _ -> do
       let query = case input :: String of
@@ -171,15 +179,16 @@ loadProg topts file query = do
 
 run :: ToolOpts -> [AProg TypeExpr] -> AFuncDecl TypeExpr -> IO [Result]
 run topts progs fcyrunner = do
-  res <- case optimize topts of
-           True -> do
+  res <- case mode topts of
+           Codensity -> do
              let aprogs' = map fcyProg2ae progs
                  runner = fcyRunner2ae (fdclRule fcyrunner)
              runCurryEffectsC @() aprogs' runner
-           False -> do
+           Tree -> do
              let aprogs' = map fcyProg2ae progs
                  runner = fcyRunner2ae (fdclRule fcyrunner)
              runCurryEffects @() aprogs' runner
+           Monolithic -> runMonolithic progs fcyrunner
   -- when (showFlatCurryExpr topts) $ print fcyrunner\
   let (ti, values) = declutter res
       stats = statistics ti

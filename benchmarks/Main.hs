@@ -1,6 +1,6 @@
 import Criterion.Main
 import Criterion.Types
-import           App                  ( execute, loadProg, defaultToolOpts, ToolOpts(..))
+import           App                  ( execute, loadProg, defaultToolOpts, ToolOpts(..), Mode (..))
 import           Curry.FlatCurry.Annotated.Type
 import           Pipeline
 import Control.Monad (when)
@@ -38,4 +38,4 @@ prepare :: ToolOpts -> (String, String) -> IO (String, [AProg TypeExpr], AFuncDe
 prepare opts (mod, expr) = loadProg opts (mod ++ ".curry") expr >>= \(ps, expr) -> return (mod, ps, expr)
 
 noOptimize :: ToolOpts
-noOptimize = defaultToolOpts { optimize = False }
+noOptimize = defaultToolOpts { mode = Tree }
