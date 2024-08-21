@@ -64,6 +64,7 @@ import Type (AEProg)
 import Effect.General.State (statistics)
 import Debug (tracingActive)
 import Monolith (runMonolithic)
+import System.Clock (getTime, Clock (..), TimeSpec (sec, nsec))
 
 data Mode = Tree | Codensity | Monolithic deriving Show
 
@@ -174,11 +175,12 @@ loadProg topts file query = do
   progs <- genTAFCY (opts True True dirs) runmod
   removeFile runmodfn
   let fcyrunner = findRunner (last progs)
-  
+
   return (progs, fcyrunner)
 
 run :: ToolOpts -> [AProg TypeExpr] -> AFuncDecl TypeExpr -> IO [Result]
 run topts progs fcyrunner = do
+  start <- getTime Monotonic
   res <- case mode topts of
            Codensity -> do
              let aprogs' = map fcyProg2ae progs
@@ -190,11 +192,19 @@ run topts progs fcyrunner = do
              runCurryEffects @() aprogs' runner
            Monolithic -> runMonolithic progs fcyrunner
   -- when (showFlatCurryExpr topts) $ print fcyrunner\
+  end <- getTime Monotonic
+  printTime start end
   let (ti, values) = declutter res
       stats = statistics ti
       sum = foldr (\(_, n) !acc -> n + acc) 0 stats
   when tracingActive (mapM_ print stats >> putStrLn ("Total: " ++ show sum))
   return values
+
+printTime :: TimeSpec -> TimeSpec -> IO ()
+printTime start end = do
+  -- let diff = fromIntegral (sec end - sec start) +  :: Float
+  let diff = fromIntegral (sec end - sec start) + fromIntegral (nsec end - nsec start) / 1e9 :: Float
+  putStrLn $ "Time: " ++ show diff ++ "s"
 
 genRun :: Bool -> String -> String -> [String] -> String
 genRun dump name expr imports =
