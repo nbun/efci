@@ -42,7 +42,7 @@ runCurryEffects ps e = pipeline e'
       . (\x -> hState @CStore x Map.empty)
       . runState @Rename ((0, 0))
       . runState @LocalBindings Map.empty
-      . runLazy (0, IntMap.empty)
+      . runLazy
       . runCons
       . runPartial
       . runDecl []
@@ -119,7 +119,7 @@ parOnce "" = ""
 parOnce s@('(':_) = s
 parOnce s = '(':s ++ ")"
 
-type L c a = StateL [TraceInfo]
+type L a = StateL [TraceInfo]
                       (ErrorL
                          (ListL
                             (StateL
@@ -129,7 +129,7 @@ type L c a = StateL [TraceInfo]
                                      (StateL
                                         Ptrs
                                         (StateL
-                                           (ThunkStore c (ValueL (ClosureL Id)) a)
+                                           (ThunkStore (ValueL (ClosureL Id)) a)
                                            (ValueL (ClosureL Id))))))))
 
 type Co = (Cod (STC LocalBindings Ptrs
@@ -175,7 +175,7 @@ type M a =           Cod
                                                                                     (STC Trace [TraceInfo]
                                                                                       (Cod
                                                                                         (IOC
-                                                                                          (L Co
+                                                                                          (L 
                                                                                              a)))))))))))))))
                                               (ValueL (ClosureL Id))
                                               a))))))
@@ -201,7 +201,7 @@ runCurryEffectsC ps e = unIOC (pipeline e' ) -- :: IOC (L Co a) ([TraceInfo], Er
       . runStateC @CStore Map.empty
       . runStateC' @Rename ((0, 0))
       . runStateC' @LocalBindings Map.empty
-      . runLazyC (0, IntMap.empty)
+      . runLazyC
       . runConsC
       . runPartialC
       . runDeclC []

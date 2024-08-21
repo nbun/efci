@@ -64,7 +64,7 @@ execute ps expr = case expr of
         case r of
             (_, Error s) -> return ([], Error s)
             (_, EOther xs) -> do
-                case mapMaybe (match (snd $ head xs)) alts of
+                case mapMaybe (undefined (snd $ head xs)) alts of
                   [] -> return ([], EOther [])
                 --   [x] -> return x
                 --   xs -> choose xs
@@ -73,16 +73,16 @@ execute ps expr = case expr of
 let' :: (Control.Monad.State.Class.MonadState State m) => State -> [VarIndex] -> [AExpr TypeExpr] -> m ()
 let' s vs es = put $ s{memo = Map.union (Map.fromList (zip (map (currentScope s,) vs) (map Left es))) (memo s)}
 
-match :: Value a -> ABranchExpr TypeExpr -> Maybe Result
-match (HNF qn args) (ABranch (APattern _ (pqn, _) argVars) e)
-    | pqn == qn = Just $ do
-        s <- get
-        let' s (map fst argVars) args
-        execute ps e
-    | otherwise = Nothing
-match (Lit l) (ABranch (ALPattern _ lp) e)
-    | l == lp = Just e
-    | otherwise = Nothing
+-- match :: Value a -> ABranchExpr TypeExpr -> Maybe Result
+-- match (HNF qn args) (ABranch (APattern _ (pqn, _) argVars) e)
+--     | pqn == qn = Just $ do
+--         s <- get
+--         let' s (map fst argVars) args
+--         execute ps e
+--     | otherwise = Nothing
+-- match (Lit l) (ABranch (ALPattern _ lp) e)
+--     | l == lp = Just e
+--     | otherwise = Nothing
 -- match (Free i) pat = Just $ do
 --     case pat of
 --         (APattern _ (pqn, _) argVars, e) -> do
