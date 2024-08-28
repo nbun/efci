@@ -60,7 +60,7 @@ import System.FilePath (
 import System.Timeout (timeout)
 import Transformation.FCY2AE (CurryEffects, fcyProg2ae, fcyRunner2ae)
 import Transformations (qual)
-import Type (AEProg)
+import Type (AEProg, fdclBdy, reqFuncs, withoutTDecls)
 import Effect.General.State (statistics)
 import Debug (tracingActive)
 import Monolith (runMonolithic)
@@ -73,10 +73,10 @@ rotateMode Tree = Codensity
 rotateMode Codensity = Monolithic
 rotateMode Monolithic = Tree
 
-data ToolOpts = ToolOpts { showFlatCurryExpr :: Bool, mode :: Mode} deriving Show
+data ToolOpts = ToolOpts { showFlatCurryExpr :: Bool, mode :: Mode, time :: Bool} deriving Show
 
 defaultToolOpts :: ToolOpts
-defaultToolOpts = ToolOpts { showFlatCurryExpr = False, mode = Codensity}
+defaultToolOpts = ToolOpts { showFlatCurryExpr = False, mode = Codensity, time = True}
 
 main :: IO ()
 main = do
@@ -96,12 +96,14 @@ loop topts file = do
     ":q" -> return ()
     ":fcy" -> let topts' = topts {showFlatCurryExpr = not $ showFlatCurryExpr topts} in print topts' >> loop topts' file
     ":o" -> let topts' = topts {mode = rotateMode $ mode topts} in print topts' >> loop topts' file
+    ":time" -> let topts' = topts {time = not $ time topts} in print topts' >> loop topts' file
 
     _ -> do
       let query = case input :: String of
             "" -> "main"
             _ -> input
       res <- execute topts (Left (file, query))
+      -- res <- execute topts (Right (preloadProgs, preloadRunner))
       putStrLn ""
       mapM_ (putStrLn . pretty) res
       loop topts file
@@ -175,11 +177,13 @@ loadProg topts file query = do
   progs <- genTAFCY (opts True True dirs) runmod
   removeFile runmodfn
   let fcyrunner = findRunner (last progs)
-
-  return (progs, fcyrunner)
+  let progs' = map withoutTDecls (reqFuncs progs (fdclBdy fcyrunner))
+  return (progs', fcyrunner)
 
 run :: ToolOpts -> [AProg TypeExpr] -> AFuncDecl TypeExpr -> IO [Result]
 run topts progs fcyrunner = do
+  -- writeFile "Progs.hs" (show progs)
+  -- writeFile "Runner.hs" (show fcyrunner)
   start <- getTime Monotonic
   res <- case mode topts of
            Codensity -> do
@@ -193,7 +197,7 @@ run topts progs fcyrunner = do
            Monolithic -> runMonolithic progs fcyrunner
   -- when (showFlatCurryExpr topts) $ print fcyrunner\
   end <- getTime Monotonic
-  printTime start end
+  when (time topts) (printTime start end)
   let (ti, values) = declutter res
       stats = statistics ti
       sum = foldr (\(_, n) !acc -> n + acc) 0 stats

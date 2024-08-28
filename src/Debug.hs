@@ -6,7 +6,7 @@ debug :: Bool
 debug = False
 
 tracingActive :: Bool
-tracingActive = True
+tracingActive = False
 
 ctrace :: String -> a -> a
 ctrace s =
