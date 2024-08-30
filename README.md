@@ -4,9 +4,9 @@ This repository accompanies the Haskell'24 paper [Making a Curry Interpreter usi
 
 The most recent code might differ from the version shown in the paper. You can check out
 
-* 4db98c2cd0f80b27fc2d4cac5f15109417e1b7d5 for the original interpreter
-* 1421632a166990b8369bdd7d12a46c6b8b9663c3 for an extended version featuring unification
-* 90dfb99d4d1b4b9cfa7fed71503f6486237b46ac for 'fusion all the way'
+* [4db98c2](https://github.com/nbun/efci/tree/4db98c2cd0f80b27fc2d4cac5f15109417e1b7d5) for the original interpreter
+* [1421632](https://github.com/nbun/efci/tree/1421632a166990b8369bdd7d12a46c6b8b9663c3) for an extended version featuring unification
+* [90dfb99](https://github.com/nbun/efci/tree/90dfb99d4d1b4b9cfa7fed71503f6486237b46ac) for 'fusion all the way'
 
 ## Installation
 
