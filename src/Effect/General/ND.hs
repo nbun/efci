@@ -16,12 +16,15 @@ import Control.Monad (liftM2)
 import Free
 import Signature
 import Effect.General.State (logCall, EffectCons)
+import GHC.Conc
 
 data ND a = Fail | Or a a
 
 instance Functor ND where
     fmap _ Fail = Fail
-    fmap f (Or l r) = Or (f l) (f r)
+    fmap f (Or l r) = let l' = f l
+                          r' = f r
+                      in pseq (par l' r') (Or l' r')
     {-# INLINE fmap #-}
 
 (?)

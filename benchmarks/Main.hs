@@ -7,19 +7,21 @@ import Control.Monad (when)
 import System.Directory (setCurrentDirectory)
 import Debug.Trace (traceShowId)
 import System.Process (callCommand)
+import Control.Concurrent (setNumCapabilities)
 
 main :: IO ()
 main = do
+  setNumCapabilities 16
   setCurrentDirectory "benchmarks"
   progs <- mapM (prepare defaultToolOpts) benchmarks
-  mapM_ preparePakcs benchmarks
+  -- mapM_ preparePakcs benchmarks
   defaultMainWith (defaultConfig  { timeLimit = 1, csvFile = Just "result/bench.csv", reportFile = Just "result/report.html" })
     [ bgroup "Cod" (map (\(mod, ps, expr) -> bench mod $ whnfIO (execute defaultToolOpts (Right (ps, expr)))) progs)
-    -- , bgroup "Prog" (map (\(mod, ps, expr) -> bench mod $ whnfIO (execute noOptimize (Right (ps, expr)))) progs)
-    , bgroup "pakcs" (map (\(mod, expr) -> bench mod $ whnfIO (callCommand $ "./" ++ mod )) benchmarks)
+    , bgroup "Prog" (map (\(mod, ps, expr) -> bench mod $ whnfIO (execute noOptimize (Right (ps, expr)))) progs)
+    -- , bgroup "pakcs" (map (\(mod, expr) -> bench mod $ whnfIO (callCommand $ "./" ++ mod )) benchmarks)
     -- , bgroup "pakcs-eval" (map (\(mod, expr) -> bench mod $ whnfIO (runPakcs (mod, expr))) benchmarks)
    ]
-  mapM_ deletePakcs benchmarks
+  -- mapM_ deletePakcs benchmarks
 
 escapePar :: String -> String
 escapePar = concatMap (\c -> if c == '(' then "\\(" else if c == ')' then "\\)" else [c])

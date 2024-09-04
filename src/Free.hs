@@ -13,6 +13,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE BangPatterns #-}
 
 module Free where
 
@@ -102,7 +103,7 @@ instance Pointed (Cod h) where
   {-# INLINE point #-}
 
 algCod :: forall f h a. (HFunctor f, Pointed h) => (forall x. f h (h x) -> h x) -> (f (Cod h) (Cod h a) -> Cod h a)
-algCod alg op = Cod (\k -> alg (hmap (\(Cod m) -> m point) (fmap (\(Cod m) -> m k) op)))
+algCod alg !op = Cod (\k -> alg (fmap (\(Cod m) -> m k)  (hmap (\(Cod m) -> m point) op)))
 {-# INLINE algCod #-}
 
 runCod :: (a -> f x) -> Cod f a -> f x

@@ -65,6 +65,7 @@ import Effect.General.State (statistics)
 import Debug (tracingActive)
 import Monolith (runMonolithic)
 import System.Clock (getTime, Clock (..), TimeSpec (sec, nsec))
+import Control.Concurrent (setNumCapabilities)
 
 data Mode = Tree | Codensity | Monolithic deriving Show
 
@@ -80,6 +81,7 @@ defaultToolOpts = ToolOpts { showFlatCurryExpr = False, mode = Codensity, time =
 
 main :: IO ()
 main = do
+  setNumCapabilities 16
   (_, _, files, _) <- getCompilerOpts
   let file =
         if null files
