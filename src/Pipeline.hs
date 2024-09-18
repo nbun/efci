@@ -113,6 +113,7 @@ prettyList r = "[" ++ intercalate ", " (prettyList' r) ++ "]"
   where
     prettyList' (RCons ("Prelude", ":") [x, y]) = pretty x:prettyList' y
     prettyList' (RCons ("Prelude", "[]") []) = []
+    prettyList' x = [show x]
 
 parOnce :: String -> String
 parOnce "" = ""

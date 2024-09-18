@@ -2,24 +2,29 @@
 {-# LANGUAGE TupleSections #-}
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# HLINT ignore "Use if" #-}
 
 module Monolith where
 
-import Control.Monad (join)
+import Control.Monad (join, liftM2)
 import Control.Monad.State (StateT, evalStateT, get, put, MonadState)
 import qualified Control.Monad.State.Class
-import Curry.FlatCurry.Annotated.Type
+import Curry.FlatCurry.Annotated.Type hiding (Cons)
 import qualified Data.IntMap as IntMap
 import qualified Data.Map as Map
 import Data.Maybe (mapMaybe)
 import Effect.FlatCurry.Constructor (Value (..))
-import Effect.FlatCurry.Function (Closure (..))
+import Effect.FlatCurry.Function (Closure (..), decArgs)
 import Effect.General.Error (Error (..))
 import Effect.General.Memoization (Ptr)
 import Effect.General.State (Constraints, Scope, TraceInfo)
 import Data.Functor (void)
 import Debug.Trace (traceShowId, trace)
 import Type (findFDcl)
+import Data.Bifunctor (first)
+import qualified Effect.FlatCurry.Function
 
 -- IO ([TraceInfo], Error [(Constraints, Value (Closure a))])
 
@@ -30,164 +35,241 @@ type Result = ([TraceInfo], Error [(Constraints, Value (Closure ()))])
 
 data State = State
     { fargs :: Map.Map (Scope, Int) Ptr
-    , memo :: IntMap.IntMap (Either (AExpr Scope) Result)
+    , memo :: IntMap.IntMap (Either (StateT State IO Result) Result)
     , currentScope :: Scope
     , currentPtr :: Ptr
     , progs :: [AProg TypeExpr]
     }
 
-initial :: [AProg TypeExpr] -> State
-initial ps = State{progs = ps, fargs = Map.empty, memo = IntMap.empty, currentScope = 0, currentPtr = 0}
+-- initial :: [AProg TypeExpr] -> State m
+-- initial ps = State{progs = ps, fargs = Map.empty, memo = IntMap.empty, currentScope = 0, currentPtr = 0}
 
 runMonolithic :: [AProg TypeExpr] -> AFuncDecl TypeExpr -> IO Result
-runMonolithic ps (AFunc _ _ _ _ (ARule _ _ e)) = evalStateT (execute (toScope (-1) e)) (initial ps)
+runMonolithic ps (AFunc _ _ _ _ (ARule _ _ e)) = evalStateT (join $ fcyExpr2ae e) initial
+  where initial = State{progs = ps, fargs = Map.empty, memo = IntMap.empty, currentScope = 0, currentPtr = 0}
 
-toScope :: Functor f => Int -> f a -> f Scope
-toScope i = trace ("toScope" ++ show i) fmap (const i)
+-- normalform :: (m ~ StateT State IO) => m Result -> m Result
+-- normalform p = do
+    -- r <- p
+    -- case r of
+        -- (ts, Error e) -> return (ts, Error e)
+        -- (ts, EOther xs) -> return (ts, EOther (map normalform' xs))
 
-updateScope :: (Functor f) => Scope -> f Scope -> f Scope
-updateScope i = trace ("updateScope" ++ show i) fmap (\j -> if j == -1 then i else j)
+-- normalform' (cs, HNF qn ptrs) = (cs, Cons qn xs)
+    -- where xs = map (normalform . force) ptrs
+
+fcyExpr2ae
+    :: forall m
+     . (m ~ StateT State IO)
+    => AExpr TypeExpr
+    -> m (m Result)
+fcyExpr2ae expr = let return = Prelude.return . trace (show (void expr)) in do
+    case expr of
+        AVar _ i -> do
+            scope <- curScp
+            return $ lvar scope i fvar
+        ALit _ l -> return $ lit l
+        AComb _ FuncCall (("Prelude", "?"), _) [e1, e2] ->
+            liftM2 (?) (fcyExpr2ae e1) (fcyExpr2ae e2)
+        AComb _ FuncCall (("Prelude", "failed"), _) [] -> return failed
+        AComb _ FuncCall (("Prelude", "apply"), _) [fe, ee] ->
+            liftM2 apply' (fcyExpr2ae fe) (fcyExpr2ae ee)
+        AComb _ callType (qn, _) args -> do
+            args' <- mapM fcyExpr2ae args
+            case callType of
+                FuncCall -> return $ fun qn (Left args')
+                FuncPartCall i ->
+                    return $
+                        partial qn (Effect.FlatCurry.Function.FuncPartCall i) args'
+                ConsCall -> return $ cons qn args'
+                ConsPartCall i ->
+                    return $
+                        partial qn (Effect.FlatCurry.Function.ConsPartCall i) args'
+        -- -- _ -> error
+        -- -- \$ "FCY2AE.fcyExpr2ae: comb type not supported for " ++ show qn
+        ALet _ bs e -> do
+            let ((vs, _), es) = first unzip (unzip bs)
+            es' <- mapM fcyExpr2ae es
+            e' <- fcyExpr2ae e
+            scope <- curScp
+            return $ let' scope vs es' e'
+        -- AFree _ bs e -> fcyExpr2ae e
+        AOr _ e1 e2 -> do
+            liftM2 (?) (fcyExpr2ae e1) (fcyExpr2ae e2)
+        ACase _ ct e brs -> do
+            e' <- fcyExpr2ae e
+            brs' <-
+                mapM
+                    (\(ABranch pat e') -> fmap (patf pat,) (fcyExpr2ae e'))
+                    brs
+            scope <- curScp
+            return $ case' scope e' brs'
+          where
+            patf (APattern _ (qn, _) vars) = APattern () (qn, ()) (map void vars)
+            patf (ALPattern _ l) = ALPattern () l
+        ATyped _ e _ -> fcyExpr2ae e -- type annotations not required
+        _ -> error $ "FCY2AE.fcyExpr2ae: expression type not supported: " ++ show expr
+  where
+    fvar = undefined
+
+    apply' :: m Result -> m Result -> m Result
+    apply' mf mx = do
+        ptr <- thunk mx
+        f <- mf
+        case f of
+          (_, EOther [(_, ValOther (Closure qn ct ptrs))]) ->
+                let ptrs' = ptrs ++ [ptr]
+                in case ct of
+                       Effect.FlatCurry.Function.FuncPartCall 1 -> do
+                           fun qn (Right ptrs')
+                       Effect.FlatCurry.Function.ConsPartCall 1 -> return ([], EOther [(Map.empty, HNF qn ptrs')])
+                       _ -> return ([], EOther [(Map.empty, ValOther (Closure qn (decArgs ct) ptrs'))])
+
+    partial :: QName -> Effect.FlatCurry.Function.CombType -> [m Result] -> m Result
+    partial qn ct args = do
+        ptrs <- mapM thunk args
+        return ([], EOther [(Map.empty, ValOther (Closure qn ct ptrs))])
 
 
-execute :: AExpr Scope -> StateT State IO Result
-execute expr = case expr of
-    ALit _ l -> return ([], EOther [(Map.empty, Lit l)])
-    AVar scope i -> do
+    curScp :: m Scope
+    curScp = fmap currentScope get
+
+    newScp :: m Scope
+    newScp = do
+        s <- get
+        put $ s{currentScope = currentScope s + 1}
+        -- if currentScope s == 10 then undefined else return ()
+        return $ currentScope s + 1
+
+    lvar :: Scope -> Int -> p -> m Result
+    lvar scope i fvar = do
         s <- get
         case Map.lookup (scope, i) (fargs s) of
             Nothing -> error $ "Variable not found " ++ show (scope, i)
-            Just ptr -> case IntMap.lookup ptr (memo s) of
-                Nothing -> error "Pointer not found"
-                Just x -> case x of
-                    Left e -> do
-                        r <- execute e
-                        put $ s{memo = IntMap.insert ptr (Right r) (memo s)}
-                        return r
-                    Right r -> return r
-    ALet _ bs e -> do
-        let (vs, es) = unzip bs
+            Just ptr -> force ptr
+
+    force :: Ptr -> m Result
+    force ptr = trace ("force " ++ show ptr) $ do
         s <- get
-        let' (currentScope s) (map fst vs) es e
-    AComb _ ct qn args -> case ct of
-        FuncCall -> do
-            s <- get
-            let fd = findFDcl (progs s) (fst qn)
-            if isExternal fd
-                then do callExternal fd args
-                else do
-                    let scope = currentScope s
-                    put $ s{currentScope = currentScope s + 1}
-                    let' scope (fdclVars fd) args (fdclBody fd)
-        ConsCall -> do
-            ptrs <- mapM thunk args
-            return ([], EOther [(Map.empty, HNF (fst qn) ptrs)])
-        _ -> error "Comb type not supported"
-    AOr _ e1 e2 -> do
-        r1 <- execute e1
-        r2 <- execute e2
-        return $ combine r1 r2
-    ACase _ _ e alts -> do
-        r <- execute e
+        case IntMap.lookup ptr (memo s) of
+            Nothing -> error "Pointer not found"
+            Just x -> case x of
+                Left e -> do
+                    r <- e
+                    s <- get
+                    put $ s{memo = IntMap.insert ptr (Right r) (memo s)}
+                    return r
+                Right r -> trace ("memo " ++ show r) return r
+
+    lit :: Literal -> m Result
+    lit l = return ([], EOther [(Map.empty, Lit l)])
+
+    failed :: m Result
+    failed = return ([], EOther [])
+
+    (?) :: m Result -> m Result -> m Result
+    (?) = liftM2 combine
+
+    let' :: Scope -> [VarIndex] -> [m Result] -> m Result -> m Result
+    let' scope vs es e = do
+      ptrs <- mapM thunk es
+      trace ("let' " ++ show ptrs) $ return ()
+      letThunked scope vs ptrs e
+
+    letThunked :: Scope -> [VarIndex] -> [Ptr]-> m Result -> m Result
+    letThunked scope vs ptrs e = do
+        s <- get
+        let fargs' = Map.union (Map.fromList (traceShowId $ zip (map (scope,) vs) ptrs)) (fargs s)
+        put $ s{fargs = traceShowId fargs'}
+        e
+
+    thunk :: m Result -> m Ptr
+    thunk e = do
+      s <- get
+      let ptr = currentPtr s
+      put $ s{memo = IntMap.insert ptr (Left e) (memo s), currentPtr = ptr + 1}
+      trace ("thunk " ++ show ptr) $ return ptr
+
+    fun :: QName -> Either [m Result] [Ptr] -> m Result
+    fun qn args = do
+        scope <- newScp
+        s <- get
+        let fd = findFDcl (progs s) qn
+        case isExternal fd of
+            True -> do
+                let args' = either id (map force) args
+                callExternal fd args'
+            False -> case args of
+                Left es -> do
+                    e <- fcyExpr2ae (fdclBody fd)
+                    let' scope (fdclVars fd) es e
+                Right ptrs -> do
+                    e <- fcyExpr2ae (fdclBody fd)
+                    letThunked scope (fdclVars fd) ptrs e
+
+    callExternal :: AFuncDecl a -> [m Result] -> m Result
+    callExternal fdecl args = do
+        case (externalName fdecl, args) of
+          ("Prelude.plusInt", [px, py]) -> arithInt (f2l (+)) px py
+          ("Prelude.minusInt", [px, py]) -> arithInt (f2l (-)) px py
+          ("Prelude.timesInt", [px, py]) -> arithInt (f2l (*)) px py
+          ("Prelude.divInt", [px, py]) -> arithInt (f2l div) px py
+          ("Prelude.modInt", [px, py]) -> arithInt (f2l mod) px py
+          ("Prelude.eqInt", [px, py]) -> compInt (==) px py
+          ("Prelude.ltEqInt", [px, py]) -> compInt (<=) px py
+        --   ("Prelude.eqChar", [px, py]) -> compChar (==) px py
+          _ -> error $ "External function not implemented: " ++ externalName fdecl
+      where
+        arithInt f px py = do
+            (t1, x) <- px
+            (t2, y) <- py
+            return (t1 ++ t2, apply f x y)
+
+        compInt f px py = do
+            (t1, x) <- px
+            (t2, y) <- py
+            let f' (Intc x) (Intc y) = if f x y then HNF ("Prelude", "True") [] else HNF ("Prelude", "False") []
+            return (t1 ++ t2, applyCons f' x y)
+
+    cons :: QName -> [m Result] -> m Result
+    cons qn args = do
+        ptrs <- mapM thunk args
+        return ([], EOther [(Map.empty, HNF qn ptrs)])
+
+    case' :: Scope -> m Result -> [(APattern (), m Result)] -> m Result
+    case' scope e brs = do
+        r <- e
         case r of
-            (_, Error s) -> return ([], Error s)
-            (_, EOther xs) -> do
-                s <- get
-                let scope = currentScope s
-                let xs' = join $ map (\x -> mapMaybe (match scope (snd x)) alts) xs
-                xs'' <- sequence xs'
-                return $ combineAll xs''
-    ATyped _ e _ -> execute e
+            (ts, Error e) -> return (ts, Error e)
+            (ts, EOther rs) -> do
+            --   res <- sequence $ concat [mapMaybe (match scope r) brs | r <- rs]
+            --   return (combineAll res)
+              case mapMaybe (match scope (head rs)) brs of
+                  [] -> return ([], EOther [])
+                  [r] -> r
 
--- fcyExpr2ae
---     :: forall m
---      . (MonadState State m)
---     => AExpr TypeExpr
---     -> m (m Result)
--- fcyExpr2ae expr = do
---     case expr of
---         AVar _ i -> do
---             scope <- curScp
---             return $ lvar scope i fvar
---         ALit _ l -> return $ lit l
---         AComb _ FuncCall (("Prelude", "?"), _) [e1, e2] ->
---             liftM2 (?) (fcyExpr2ae e1) (fcyExpr2ae e2)
---         AComb _ FuncCall (("Prelude", "failed"), _) [] -> return failed
---         AComb _ FuncCall (("Prelude", "apply"), _) [fe, ee] ->
---             liftM2 apply' (fcyExpr2ae fe) (fcyExpr2ae ee)
---         AComb _ callType (qn, _) args -> do
---             args' <- mapM fcyExpr2ae args
---             case callType of
---                 FuncCall -> return $ fun qn (Left args')
---                 FuncPartCall i ->
---                     return $
---                         partial qn (Effect.FlatCurry.Function.FuncPartCall i) args'
---                 ConsCall -> return $ cons qn args'
---                 ConsPartCall i ->
---                     return $
---                         partial qn (Effect.FlatCurry.Function.ConsPartCall i) args'
---         -- _ -> error
---         -- \$ "FCY2AE.fcyExpr2ae: comb type not supported for " ++ show qn
---         ALet _ bs e -> do
---             let ((vs, _), es) = first unzip (unzip bs)
---             es' <- mapM fcyExpr2ae es
---             e' <- fcyExpr2ae e
---             scope <- curScp
---             return $ let' scope (zip vs es') e'
---         AFree _ bs e -> fcyExpr2ae e
---         AOr _ e1 e2 -> do
---             liftM2 (?) (fcyExpr2ae e1) (fcyExpr2ae e2)
---         ACase _ ct e brs -> do
---             e' <- fcyExpr2ae e
---             brs' <-
---                 mapM
---                     (\(ABranch pat e') -> fmap (patf pat,) (fcyExpr2ae e'))
---                     brs
---             scope <- curScp
---             return $ case' scope e' brs'
---           where
---             patf (APattern _ (qn, _) vars) = APattern () (qn, ()) (map void vars)
---             patf (ALPattern _ l) = ALPattern () l
---         ATyped _ e t -> fcyExpr2ae e -- type annotations not required
---   where
---     curScp = do
---         s <- get
---         return $ currentScope s
---     lvar scope i fvar = do
---         s <- get
---         case Map.lookup (scope, i) (fargs s) of
---             Nothing -> error $ "Variable not found " ++ show (scope, i)
---             Just ptr -> force ptr
---     force ptr = do
---         s <- get
---         case IntMap.lookup ptr (memo s) of
---             Nothing -> error "Pointer not found"
---             Just x -> case x of
---                 Left e -> do
---                     r <- execute e
---                     put $ s{memo = IntMap.insert ptr (Right r) (memo s)}
---                     return r
---                 Right r -> return r
---     lit l = return ([], EOther [(Map.empty, Lit l)])
 
-callExternal :: AFuncDecl a -> [AExpr Scope] -> StateT State IO Result
-callExternal fdecl args = do
-    s <- get
-    let scope = currentScope s
-        args' = map (updateScope scope) args
-    case (externalName fdecl, args') of
-      ("Prelude.plusInt", [px, py]) -> arithInt (f2l (+)) px py
-      ("Prelude.minusInt", [px, py]) -> arithInt (f2l (-)) px py
-      ("Prelude.timesInt", [px, py]) -> arithInt (f2l (*)) px py
-      ("Prelude.divInt", [px, py]) -> arithInt (f2l div) px py
-      ("Prelude.modInt", [px, py]) -> arithInt (f2l mod) px py
-      -- ("Prelude.eqInt", [px, py]) -> compInt (==) px py
-      -- ("Prelude.ltEqInt", [px, py]) -> compInt (<=) px py
-      -- ("Prelude.eqChar", [px, py]) -> compChar (==) px py
-  where
-    arithInt f px py = do
-        (t1, x) <- execute px
-        (t2, y) <- execute py
-        return (t1 ++ t2, apply f x y)
+    match :: Scope -> (Constraints, Value (Closure ())) -> (APattern (), m Result) -> Maybe (m Result)
+    match scope (_, HNF qn args) (APattern _ (pqn, _) argVars, e)
+        | pqn == qn = Just $ do
+            letThunked scope (map fst argVars) args e
+        | otherwise = Nothing
+    match scope (_, Lit l) (ALPattern _ lp, e)
+        | l == lp = Just e
+        | otherwise = Nothing
+    -- match (Free i) pat = Just $ do
+    --     case pat of
+    --         (APattern _ (pqn, _) argVars, e) -> do
+    --             vs <- freshNames (length argVars)
+    --             let fvs = map (fvar scope) vs
+    --             modify @CStore (addC i (ConsC pqn (map (scope,) vs)))
+    --             let' scope (zip (map fst argVars) fvs) e
+    --         (ALPattern _ lp, e) -> do
+    --             modify @CStore (addC i (LitC lp))
+    --             e
+    match scope v ps =
+        error $
+            "Pattern match not implemented for " ++ show v
 
 f2l :: (Integer -> Integer -> Integer) -> Literal -> Literal -> Literal
 f2l f ((Intc x)) ((Intc y)) = Intc (f x y)
@@ -203,6 +285,16 @@ apply f (EOther xs) (EOther ys) = EOther [apply' x y | x <- xs, y <- ys ]
     apply' :: (Constraints, Value (Closure ())) -> (Constraints, Value (Closure ())) -> (Constraints, Value (Closure ()))
     apply' (cs1, Lit l1) (cs2, Lit l2) = (Map.union cs1 cs2, Lit (f l1 l2))
 
+applyCons :: (Literal -> Literal -> Value (Closure ()))
+       -> Error [(Constraints, Value (Closure ()))]
+       -> Error [(Constraints, Value (Closure ()))]
+       -> Error [(Constraints, Value (Closure ()))]
+applyCons _ (Error e) _ = Error e
+applyCons _ _ (Error e) = Error e
+applyCons f (EOther xs) (EOther ys) = EOther [apply' x y | x <- xs, y <- ys ]
+  where
+    apply' :: (Constraints, Value (Closure ())) -> (Constraints, Value (Closure ())) -> (Constraints, Value (Closure ()))
+    apply' (cs1, Lit l1) (cs2, Lit l2) = (Map.union cs1 cs2, f l1 l2)
 
 combine :: Result -> Result -> Result
 combine (t1, Error e) (t2, Error _) = (t1 ++ t2, Error e)
@@ -212,52 +304,9 @@ combine (t1, EOther xs) (t2, EOther ys) = (t1 ++ t2, EOther (xs ++ ys))
 combineAll :: [Result] -> Result
 combineAll = foldr combine ([], EOther [])
 
-let' :: Scope -> [VarIndex] -> [AExpr Scope] -> AExpr Scope -> StateT State IO Result
-let' scope vs es e = do
-    let es' = map (updateScope scope) es
-    ptrs <- mapM thunk es' 
-    letThunked scope vs ptrs (updateScope scope e)
 
-letThunked :: Scope -> [VarIndex] -> [Ptr]-> AExpr Scope -> StateT State IO Result
-letThunked scope vs ptrs e = do
-    s <- get
-    let fargs' = Map.union (Map.fromList (traceShowId $ zip (map (scope,) vs) ptrs)) (fargs s)
-    put $ s{fargs = fargs'}
-    execute e
-
-thunk :: (Control.Monad.State.Class.MonadState State m) => AExpr Scope -> m Ptr
-thunk e = do
-    s <- get
-    let ptr = currentPtr s
-    put $ s{memo = IntMap.insert ptr (Left e) (memo s), currentPtr = ptr + 1}
-    return ptr
-
-match :: (Show a) => Scope -> Value a -> ABranchExpr Scope -> Maybe (StateT State IO Result)
-match scope (HNF qn args) (ABranch (APattern _ (pqn, _) argVars) e)
-    | pqn == qn = Just $ do
-        letThunked scope (map fst argVars) args e
-    | otherwise = Nothing
-match scope (Lit l) (ABranch (ALPattern _ lp) e)
-    | l == lp = Just (execute e)
-    | otherwise = Nothing
--- match (Free i) pat = Just $ do
---     case pat of
---         (APattern _ (pqn, _) argVars, e) -> do
---             vs <- freshNames (length argVars)
---             let fvs = map (fvar scope) vs
---             modify @CStore (addC i (ConsC pqn (map (scope,) vs)))
---             let' scope (zip (map fst argVars) fvs) e
---         (ALPattern _ lp, e) -> do
---             modify @CStore (addC i (LitC lp))
---             e
-match scope v ps =
-    error $
-        "Pattern match not implemented for " ++ show v ++ show ps
-
-
-
-fdclBody :: AFuncDecl a -> AExpr Scope
-fdclBody (AFunc _ _ _ _ (ARule _ _ a)) = toScope (-1) a
+fdclBody :: AFuncDecl a -> AExpr a
+fdclBody (AFunc _ _ _ _ (ARule _ _ a)) = a
 
 fdclVars :: AFuncDecl a -> [VarIndex]
 fdclVars (AFunc _ _ _ _ (ARule _ vs _)) = map fst vs

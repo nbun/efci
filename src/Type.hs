@@ -59,7 +59,7 @@ declFuncs (AFunc _ _ _ _ e) = ruleFuncs e
         ruleFuncs (AExternal _ _) = []
 
 reqFuncs :: Show a => [AProg a] -> AExpr a -> [AProg a]
-reqFuncs ps e = reqFuncs' ps (exprFuncs e)
+reqFuncs ps e = reqFuncs' ps (nub $ exprFuncs e)
   where reqFuncs' ps acc | done = map (filterFuncs acc) ps
                          | otherwise = reqFuncs' ps acc'
           where
