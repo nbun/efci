@@ -19,7 +19,8 @@ import Data.Functor ((<&>))
 import Data.Maybe (mapMaybe)
 import Effect.FlatCurry.Let
 import Effect.General.Error (Err (..))
-import Effect.General.Memoization (Ptr, Thunking, force, thunk)
+import Effect.General.Memoization
+    ( Ptr, Thunking, thunk, force, let', letThunked )
 import Effect.General.ND (ND, choose, failed)
 import Effect.General.State
 import Free
@@ -67,7 +68,7 @@ normalform
 normalform p = logCall >> injectS (Normalize (fmap return p) (fmap return . f))
   where
     f (qn, ptrs) = do
-        let args = map (normalform . force) ptrs
+        let args = map ((normalform . force) . Left) ptrs
         injectA (FStrictCons qn args)
 {-# INLINE normalform #-}
 
@@ -101,7 +102,7 @@ instance Identify CaseState where
 
 case'
     :: forall m sig sigs sigl a
-     . (EffectCons m sig sigs sigl Id, Let sig sigl a, CaseScope :<: sigs, ND :<: sig, ConstraintStore :<: sig, ConsF :<: sig)
+     . (EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl, Renaming :<: sig, CaseScope :<: sigs, ND :<: sig, ConstraintStore :<: sig, ConsF :<: sig)
     => Scope
     -> m a
     -> [(APattern (), m a)]

@@ -14,6 +14,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Free where
 
@@ -63,12 +64,16 @@ instance (HFunctor k) => Pointed (Prog k) where
 class HFunctor f => TermAlgebra h f | h -> f where
   var :: a -> h a
   con :: f h (h a) -> h a
+  peek :: h a -> Maybe (f h (h a))
 
 instance HFunctor sig => TermAlgebra (Prog sig) sig where
   var = Return
   {-# INLINE var #-}
   con = Call
   {-# INLINE con #-}
+  peek (Call op) = Just op
+  peek _ = Nothing
+  {-# INLINE peek #-}
 
 class (Monad m, TermAlgebra m f, Pointed m) => TermMonad m f | m -> f
 
@@ -97,6 +102,8 @@ instance (Pointed h, TermAlgebra h f) => TermAlgebra (Cod h) f where
   {-# INLINE var #-}
   con = algCod con
   {-# INLINE con #-}
+  peek (Cod m) = Nothing
+  {-# INLINE peek #-}
 
 instance Pointed (Cod h) where
   point = pure

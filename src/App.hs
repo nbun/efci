@@ -63,7 +63,7 @@ import Transformations (qual)
 import Type (AEProg, fdclBdy, reqFuncs, withoutTDecls)
 import Effect.General.State (statistics)
 import Debug (tracingActive)
-import Monolith (runMonolithic)
+-- import Monolith (runMonolithic)
 import System.Clock (getTime, Clock (..), TimeSpec (sec, nsec))
 import Control.Concurrent (setNumCapabilities)
 
@@ -77,7 +77,7 @@ rotateMode Monolithic = Tree
 data ToolOpts = ToolOpts { showFlatCurryExpr :: Bool, mode :: Mode, time :: Bool} deriving Show
 
 defaultToolOpts :: ToolOpts
-defaultToolOpts = ToolOpts { showFlatCurryExpr = False, mode = Codensity, time = True}
+defaultToolOpts = ToolOpts { showFlatCurryExpr = False, mode = Tree, time = True}
 
 main :: IO ()
 main = do
@@ -196,7 +196,7 @@ run topts progs fcyrunner = do
              let aprogs' = map fcyProg2ae progs
                  runner = fcyRunner2ae (fdclRule fcyrunner)
              runCurryEffects @() aprogs' runner
-           Monolithic -> return $ ([], runMonolithic progs fcyrunner)
+          --  Monolithic -> return $ ([], runMonolithic progs fcyrunner)
   -- when (showFlatCurryExpr topts) $ print fcyrunner\
   end <- getTime Monotonic
   when (time topts) (printTime start end)

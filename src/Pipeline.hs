@@ -15,7 +15,6 @@ import Data.List (intercalate)
 import Effect.FlatCurry.Constructor
 import Effect.FlatCurry.Function
 import Effect.FlatCurry.IO (runIO, IOC (..))
-import Effect.FlatCurry.Let (LocalBindings, Ptrs)
 import Effect.General.Error (Error (..), runError, ErrorL, EC, runErrorC)
 import Effect.General.Memoization
 import Effect.General.ND (runND, ListL, NDC, runNDC)
@@ -41,7 +40,6 @@ runCurryEffects ps e = pipeline e'
       . runND
       . (\x -> hState @CStore x Map.empty)
       . runState @Rename ((0, 0))
-      . runState @LocalBindings Map.empty
       . runLazy
       . runCons
       . runPartial
@@ -127,19 +125,16 @@ type L a = StateL [TraceInfo]
                                Constraints
                                   (StateL
                                      (Scope, VarIndex)
-                                     (StateL
-                                        Ptrs
                                         (StateL
                                            (ThunkStore (ValueL (ClosureL Id)) a)
-                                           (ValueL (ClosureL Id))))))))
+                                           (ValueL (ClosureL Id)))))))
 
-type Co = (Cod (STC LocalBindings Ptrs
-            (Cod (STC Rename (Scope, VarIndex)
+type Co = (Cod  (STC Rename (Scope, VarIndex)
                 (Cod (STC CStore Constraints
                   (Cod (NDC
                     (Cod (EC
                       (Cod (STC Trace [TraceInfo]
-                        (Cod (IOC T2))))))))))))))
+                        (Cod (IOC T2))))))))))))
 
 type T2 = StateL [TraceInfo] (ErrorL
                          (ListL
@@ -147,7 +142,7 @@ type T2 = StateL [TraceInfo] (ErrorL
                                Constraints
                                   (StateL
                                      (Scope, VarIndex)
-                                     (StateL Ptrs (ValueL (ClosureL Id)))))))
+                                     (ValueL (ClosureL Id))))))
 
 type M a =           Cod
                          (H (Cod
@@ -157,10 +152,6 @@ type M a =           Cod
                                         (Cod
                                            (MC
                                               (Cod
-                                                 (STC
-                                                    LocalBindings
-                                                    Ptrs
-                                                    (Cod
                                                        (STC
                                                           Rename
                                                           (Scope, VarIndex)
@@ -177,7 +168,7 @@ type M a =           Cod
                                                                                       (Cod
                                                                                         (IOC
                                                                                           (L 
-                                                                                             a)))))))))))))))
+                                                                                             a)))))))))))))
                                               (ValueL (ClosureL Id))
                                               a))))))
                             Id
@@ -201,7 +192,6 @@ runCurryEffectsC ps e = unIOC (pipeline e' ) -- :: IOC (L Co a) ([TraceInfo], Er
       . runNDC
       . runStateC @CStore Map.empty
       . runStateC' @Rename ((0, 0))
-      . runStateC' @LocalBindings Map.empty
       . runLazyC
       . runConsC
       . runPartialC

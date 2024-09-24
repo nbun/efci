@@ -62,7 +62,7 @@ data VarKind
 
 type VarKindMap = Map.Map VarIndex VarKind
 
-type AEffects = '[ConsF, StateF LocalBindings Ptrs, Renaming, ConstraintStore, ND, Err, StateF Trace [TraceInfo], IOAction]
+type AEffects = '[ConsF, Renaming, ConstraintStore, ND, Err, StateF Trace [TraceInfo], IOAction]
 type SEffects = '[Partial, CaseScope]
 type LEffects v = DeclF v :+++: (Thunking v :+++: LVoid)
 
@@ -71,26 +71,29 @@ type CurryEffects v = Sig AEffects SEffects (LEffects v) Id
 -- normalform = id
 fcyRunner2ae :: (() :<<<: v, TermMonad m (CurryEffects v)) => ARule TypeExpr -> m v
 fcyRunner2ae (AExternal _ _) = undefined
-fcyRunner2ae (ARule _ _ e) = normalform (join $ fcyExpr2ae e) -- normalform
+fcyRunner2ae (ARule _ _ e) = normalform (join $ fcyExpr2ae [] e) -- normalform
 
 fcyExpr2ae
     :: forall m v
      . (() :<<<: v, TermMonad m (CurryEffects v))
-    => AExpr TypeExpr
+    => [VarIndex] -> AExpr TypeExpr
     -> m (m v)
-fcyExpr2ae expr = do
+fcyExpr2ae frees expr = let rec = fcyExpr2ae frees in
     case expr of
-        AVar _ i -> do
+        AVar _ i | i `elem` frees -> do
             scope <- currentScope
-            return $ lvar scope i fvar
+            return $ fvar scope i
+                 | otherwise -> do
+            scope <- currentScope
+            return $ lvar scope i
         ALit _ l -> return $ lit l
         AComb _ FuncCall (("Prelude", "?"), _) [e1, e2] ->
-            liftM2 (?) (fcyExpr2ae e1) (fcyExpr2ae e2)
+            liftM2 (?) (rec e1) (rec e2)
         AComb _ FuncCall (("Prelude", "failed"), _) [] -> return failed
         AComb _ FuncCall (("Prelude", "apply"), _) [fe, ee] ->
-            liftM2 apply' (fcyExpr2ae fe) (fcyExpr2ae ee)
+            liftM2 apply' (rec fe) (rec ee)
         AComb _ callType (qn, _) args -> do
-            args' <- mapM fcyExpr2ae args
+            args' <- mapM rec args
             case callType of
                 FuncCall -> return $ fun qn (Left args')
                 FuncPartCall i ->
@@ -104,25 +107,25 @@ fcyExpr2ae expr = do
         -- \$ "FCY2AE.fcyExpr2ae: comb type not supported for " ++ show qn
         ALet _ bs e -> do
             let ((vs, _), es) = first unzip (unzip bs)
-            es' <- mapM fcyExpr2ae es
-            e' <- fcyExpr2ae e
+            es' <- mapM rec es
+            e' <- rec e
             scope <- currentScope
             return $ let' scope (zip vs es') e'
-        AFree _ bs e -> fcyExpr2ae e
+        AFree _ bs e -> fcyExpr2ae (map fst bs ++ frees) e
         AOr _ e1 e2 -> do
-            liftM2 (?) (fcyExpr2ae e1) (fcyExpr2ae e2)
+            liftM2 (?) (rec e1) (rec e2)
         ACase _ ct e brs -> do
-            e' <- fcyExpr2ae e
+            e' <- rec e
             brs' <-
                 mapM
-                    (\(ABranch pat e') -> fmap (patf pat,) (fcyExpr2ae e'))
+                    (\(ABranch pat e') -> fmap (patf pat,) (rec e'))
                     brs
             scope <- currentScope
             return $ case' scope e' brs'
           where
             patf (APattern _ (qn, _) vars) = APattern () (qn, ()) (map void vars)
             patf (ALPattern _ l) = ALPattern () l
-        ATyped _ e t -> fcyExpr2ae e -- type annotations not required
+        ATyped _ e t -> rec e -- type annotations not required
 
 insertBinds :: VarKind -> VarKindMap -> [(VarIndex, ann)] -> VarKindMap
 insertBinds k = foldl (\s' (v, _) -> Map.insert v k s')
@@ -147,5 +150,5 @@ fcyFDecl2ae (AFunc qn arity vis ty r) = AEFunc qn arity vis ty (fcyRule2ae r)
 fcyRule2ae :: (() :<<<: v, TermMonad m (CurryEffects v)) => ARule TypeExpr -> AERule (m v)
 fcyRule2ae (ARule _ vars e) =
     let (vs, _) = unzip vars
-     in AERule vs (join $ fcyExpr2ae e)
+     in AERule vs (join $ fcyExpr2ae [] e)
 fcyRule2ae (AExternal _ s) = AEExternal s

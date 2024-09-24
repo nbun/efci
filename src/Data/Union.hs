@@ -10,7 +10,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE BangPatterns #-}
 
-module Data.Union (Union (..), Elem, inj, (#), absurd) where
+module Data.Union (Union (..), Elem, inj, prj, (#), absurd) where
 import Unsafe.Coerce (unsafeCoerce)
 import Data.Kind (Type)
 
@@ -49,3 +49,8 @@ instance Elem e effs => Elem e (_e ': effs) where
 inj :: forall f r a. (Functor f, Elem f r) => f a -> Union r a
 inj = Union elemAt
 {-# INLINE inj #-}
+
+prj :: forall f r a. Elem f r => Union r a -> Maybe (f a)
+prj (Union p x) = case elemAt @f @r of
+  Index n -> if n == 0 then Just (unsafeCoerce x) else Nothing
+{-# INLINE prj #-}

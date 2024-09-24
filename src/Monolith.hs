@@ -12,7 +12,6 @@ import Control.Monad (join, liftM2, MonadPlus (..))
 import Control.Monad.State (StateT, evalStateT, get, put, MonadState, MonadTrans (..))
 import qualified Control.Monad.State.Class
 import Curry.FlatCurry.Annotated.Type hiding (Cons)
-import qualified Data.IntMap as IntMap
 import qualified Data.Map as Map
 import Data.Maybe (mapMaybe)
 import Effect.FlatCurry.Constructor (Value (..))
@@ -35,14 +34,14 @@ traceShowId = id
 
 -- data Result = Error String | Results [Result']
 -- data Result' =
-
+{-
 type Result = (Constraints, Value (Closure ()))
 
 data State = State
     { fargs :: Map.Map (Scope, Int) Ptr
     , memo :: IntMap.IntMap (Either (Interpreter Result) Result)
     , currentScope :: Scope
-    , currentPtr :: Ptr
+    , currentPtr :: Int
     , progs :: [AProg TypeExpr]
     }
 
@@ -332,3 +331,4 @@ externalName :: AFuncDecl a -> String
 externalName (AFunc _ _ _ _ r) = case r of
     AExternal _ s -> s
     _ -> undefined
+    -}
