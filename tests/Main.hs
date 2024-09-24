@@ -26,7 +26,7 @@ progs
     , ("Prelude.curry", "const (1 :: Int) (2 ? 3 :: Int)", [RLit (Intc 1)])
     , ("Prelude.curry", "head [1 :: Int, 2 ? 3]", [RLit (Intc 1)])
     , ("Prelude.curry", "let x = 0 ? 1 :: Int in x + x", [RLit (Intc 0), RLit (Intc 2)])
-    , ("Prelude.curry", "let x = 0 ? 1 :: Int in (x + 0 ? 1) + (x + 0 ? 1)", [RLit (Intc 0),RLit (Intc 1),RLit (Intc 2),RLit (Intc 2),RLit (Intc 1),RLit (Intc 2),RLit (Intc 2)])
+    , ("Prelude.curry", "let x = 0 ? 1 :: Int in (x + (0 ? 1)) + (x + (0 ? 1))", [RLit (Intc 0),RLit (Intc 1),RLit (Intc 1),RLit (Intc 2),RLit (Intc 2),RLit (Intc 3),RLit (Intc 3), RLit (Intc 4)])
     , ("Prelude.curry", "let f x = x + 1 in f 1 :: Int", [RLit (Intc 2)])
 
     , ("Peano.curry", "add O O", [RCons ("Peano", "O") []])
