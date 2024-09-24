@@ -169,6 +169,13 @@ runCons
 runCons = unCC . fold point con
 {-# INLINE runCons #-}
 
+runConsSmart
+    :: forall sig sigs sigl l a
+     . SmartProg (Sig (ConsF :+: sig) (CaseScope :+: sigs) sigl l) a
+    -> SmartProg (Sig sig sigs sigl (ValueL l)) (Value a)
+runConsSmart = unCC . smartFold point con
+{-# INLINE runConsSmart #-}
+
 instance
     (EffectMonad m sig sigs sigl (ValueL l))
     => TermAlgebra (CC m) (Sig (ConsF :+: sig) (CaseScope :+: sigs) sigl l)

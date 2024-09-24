@@ -83,6 +83,10 @@ runLazy :: (Functor l, Show (l v), Show (l ()), m ~ Prog (Sig sig sigs sigl (Sta
 runLazy = fmap snd . \p -> hLazy p (TS 0 Map.empty Map.empty)
 {-# INLINE runLazy #-}
 
+runLazySmart :: (Functor l, Show (l v), Show (l ()), m ~ SmartProg (Sig sig sigs sigl (StateL (ThunkStore l v) l)), Monad m) => SmartProg (Sig sig sigs (Thunking v :+++: sigl) l) b -> m b
+runLazySmart = fmap snd . \p -> hLazySmart p (TS 0 Map.empty Map.empty)
+{-# INLINE runLazySmart #-}
+
 hLazy
    :: forall m n sig sigs sigl l v a
     . (Functor l, Show (l v), Show (l ()), m ~ Prog (Sig sig sigs sigl (StateL (ThunkStore l v) l)), Monad m)
@@ -91,6 +95,15 @@ hLazy
    -> m (ThunkStore l v, a)
 hLazy = unMC . fold point con
 {-# INLINE hLazy #-}
+
+hLazySmart
+   :: forall m n sig sigs sigl l v a
+    . (Functor l, Show (l v), Show (l ()), m ~ SmartProg (Sig sig sigs sigl (StateL (ThunkStore l v) l)), Monad m)
+   => SmartProg (Sig sig sigs (Thunking v :+++: sigl) l) a
+   -> ThunkStore l v
+   -> m (ThunkStore l v, a)
+hLazySmart = unMC . smartFold point con
+{-# INLINE hLazySmart #-}
 
 instance (Functor l, EffectMonad m sig sigs sigl (StateL (ThunkStore l v) l), Show (l v)) => TermAlgebra (MC m l v) (Sig sig sigs (Thunking v :+++: sigl) l) where
    con (A (Algebraic op)) = MC $ \th -> con $ A $ Algebraic $ fmap (\x -> unMC x th) op

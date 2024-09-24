@@ -55,6 +55,13 @@ runND
 runND = unNDC . fold point con
 {-# INLINE runND #-}
 
+runNDSmart
+    :: forall sig sigs sigl l a
+     . SmartProg (Sig (ND :+: sig) sigs sigl l) a
+    -> SmartProg (Sig sig sigs sigl (ListL l)) [a]
+runNDSmart = unNDC . smartFold point con
+{-# INLINE runNDSmart #-}
+
 runNDC :: (EffectMonad m sig sigs sigl (ListL l)) => Cod (NDC m) a -> m [a]
 runNDC = unNDC . runCod var
 {-# INLINE runNDC #-}

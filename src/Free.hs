@@ -17,6 +17,7 @@
 {-# LANGUAGE TypeApplications #-}
 
 module Free where
+import Debug.Trace (trace)
 
 data Prog k a where
   Return :: a -> Prog k a
@@ -49,6 +50,16 @@ fold gen alg (Call op) = alg (hmap fold' (fmap (fold gen alg) op))
   fold' :: Prog k --> f
   fold' (Return x) = point x
   fold' (Call op) = alg (hmap fold' (fmap fold' op))
+
+smartFold :: forall k f a b. (HFunctor k, Pointed f) => (a -> f b) -> (forall x. k f (f x) -> f x) -> SmartProg k a -> f b
+smartFold gen alg p = case view p of
+  (ViewReturn x) -> gen x
+  (ViewCall op) -> alg (hmap fold' (fmap (smartFold gen alg) op))
+ where
+  fold' :: SmartProg k --> f
+  fold' p = case view p of
+    (ViewReturn x) -> point x
+    (ViewCall op) -> alg (hmap fold' (fmap fold' op))
 
 class (Functor f) => Pointed f where
   point :: a -> f a
@@ -120,3 +131,47 @@ runCod g m = unCod m g
 finish :: TermAlgebra h f => Cod h x -> h x
 finish m = unCod m var
 {-# INLINE finish #-}
+
+data SmartProg k a where
+  SmartReturn :: a -> SmartProg k a
+  SmartCall :: k (SmartProg k) (SmartProg k a) -> SmartProg k a
+  SmartBind :: SmartProg k a -> (a -> SmartProg k b) -> SmartProg k b
+
+instance (HFunctor k) => Functor (SmartProg k) where
+  fmap f (SmartReturn x) = SmartReturn (f x)
+  fmap f (SmartCall op) = SmartCall (fmap (fmap f) op)
+  fmap f (SmartBind p g) = SmartBind p (fmap f . g)
+
+instance (HFunctor k) => Applicative (SmartProg k) where
+  pure = SmartReturn
+  SmartReturn f <*> p = fmap f p
+  SmartCall op <*> p = SmartCall (fmap (<*> p) op)
+  SmartBind p g <*> q = SmartBind p (\x -> g x <*> q)
+
+instance (HFunctor k) => Monad (SmartProg k) where
+  x >>= f = SmartBind x f
+
+data ProgView k a where
+  ViewReturn :: a -> ProgView k a
+  ViewCall :: k (SmartProg k) (SmartProg k a) -> ProgView k a
+
+view ::(HFunctor k) => SmartProg k a -> ProgView k a
+view (SmartReturn x) = ViewReturn x
+view (SmartCall op) = ViewCall op
+view (SmartBind (SmartBind m f) g) = view (SmartBind m (\x -> SmartBind (f x) g))
+view (SmartBind (SmartReturn x) f) = view (f x)
+view (SmartBind (SmartCall op) f) = ViewCall (fmap (`SmartBind` f) op)
+{-# INLINE view #-}
+
+instance HFunctor sig => TermAlgebra (SmartProg sig) sig where
+  var = SmartReturn
+  {-# INLINE var #-}
+  con = SmartCall
+  {-# INLINE con #-}
+  peek p = case view p of
+    ViewCall op -> Just op
+    _           -> Nothing
+  {-# INLINE peek #-}
+
+instance (HFunctor k) => Pointed (SmartProg k) where
+  point = SmartReturn

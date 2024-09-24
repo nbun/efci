@@ -67,17 +67,18 @@ import Debug (tracingActive)
 import System.Clock (getTime, Clock (..), TimeSpec (sec, nsec))
 import Control.Concurrent (setNumCapabilities)
 
-data Mode = Tree | Codensity | Monolithic deriving Show
+data Mode = Tree | Codensity | Monolithic | Smart deriving Show
 
 rotateMode :: Mode -> Mode
 rotateMode Tree = Codensity
 rotateMode Codensity = Monolithic
-rotateMode Monolithic = Tree
+rotateMode Monolithic = Smart
+rotateMode Smart = Tree
 
 data ToolOpts = ToolOpts { showFlatCurryExpr :: Bool, mode :: Mode, time :: Bool} deriving Show
 
 defaultToolOpts :: ToolOpts
-defaultToolOpts = ToolOpts { showFlatCurryExpr = False, mode = Tree, time = True}
+defaultToolOpts = ToolOpts { showFlatCurryExpr = False, mode = Smart, time = True}
 
 main :: IO ()
 main = do
@@ -196,7 +197,11 @@ run topts progs fcyrunner = do
              let aprogs' = map fcyProg2ae progs
                  runner = fcyRunner2ae (fdclRule fcyrunner)
              runCurryEffects @() aprogs' runner
-          --  Monolithic -> return $ ([], runMonolithic progs fcyrunner)
+           -- Monolithic -> return $ ([], runMonolithic progs fcyrunner)
+           Smart -> do
+              let aprogs' = map fcyProg2ae progs
+                  runner = fcyRunner2ae (fdclRule fcyrunner)
+              runSmartCurryEffects @() aprogs' runner
   -- when (showFlatCurryExpr topts) $ print fcyrunner\
   end <- getTime Monotonic
   when (time topts) (printTime start end)

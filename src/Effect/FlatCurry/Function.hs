@@ -218,6 +218,12 @@ runPartial
     -> Prog (Sig sig sigs sigl (ClosureL l)) (Closure a)
 runPartial = unPC . fold point con
 
+runPartialSmart
+    :: forall sig sigs sigl l a
+     . SmartProg (Sig sig (Partial :+: sigs) sigl l) a
+    -> SmartProg (Sig sig sigs sigl (ClosureL l)) (Closure a)
+runPartialSmart = unPC . smartFold point con
+
 instance
     (EffectMonad m sig sigs sigl (ClosureL l))
     => TermAlgebra (PC m) (Sig sig (Partial :+: sigs) sigl l)

@@ -14,10 +14,10 @@ import qualified Data.IntMap as IntMap
 import Data.List (intercalate)
 import Effect.FlatCurry.Constructor
 import Effect.FlatCurry.Function
-import Effect.FlatCurry.IO (runIO, IOC (..))
-import Effect.General.Error (Error (..), runError, ErrorL, EC, runErrorC)
+import Effect.FlatCurry.IO (runIO, IOC (..), runIOSmart)
+import Effect.General.Error (Error (..), runError, ErrorL, EC, runErrorC, runErrorSmart)
 import Effect.General.Memoization
-import Effect.General.ND (runND, ListL, NDC, runNDC)
+import Effect.General.ND (runND, ListL, NDC, runNDC, runNDSmart)
 import Effect.General.Reader
 import Effect.General.State
 import Free
@@ -44,6 +44,24 @@ runCurryEffects ps e = pipeline e'
       . runCons
       . runPartial
       . runDecl []
+
+runSmartCurryEffects :: (Show a)
+                => [AEProg (SmartProg (CurryEffects a) a)]
+                -> SmartProg (CurryEffects a) a
+                -> IO ([TraceInfo], Error [(Constraints, Value (Closure a))])
+runSmartCurryEffects ps e = pipeline e'
+  where
+    e' = initDecls ps >> e
+    pipeline = runIOSmart
+      . (\x -> hStateSmart @Trace x ([] :: [TraceInfo]))
+      . runErrorSmart
+      . runNDSmart
+      . (\x -> hStateSmart @CStore x Map.empty)
+      . runStateSmart @Rename ((0, 0))
+      . runLazySmart
+      . runConsSmart
+      . runPartialSmart
+      . runDeclSmart []
 
 declutter :: Show a => ([TraceInfo], Error [(Constraints, Value (Closure a))]) -> ([TraceInfo], [Result])
 declutter (ti, Error s) = (ti, [RError s])

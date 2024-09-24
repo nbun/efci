@@ -34,6 +34,13 @@ runError
 runError = unEC . fold point con
 {-# INLINE runError #-}
 
+runErrorSmart
+    :: forall sig sigs sigl l a
+     . SmartProg (Sig (Err :+: sig) sigs sigl l) a
+    -> SmartProg (Sig sig sigs sigl (ErrorL l)) (Error a)
+runErrorSmart = unEC . smartFold point con
+{-# INLINE runErrorSmart #-}
+
 instance (EffectMonad m sig sigs sigl (ErrorL l)) => TermAlgebra (EC m) (Sig (Err :+: sig) sigs sigl l) where
     con (A (Algebraic op)) = EC . (algE # afwd) . fmap unEC $ op
       where

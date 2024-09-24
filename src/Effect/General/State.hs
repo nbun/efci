@@ -127,12 +127,27 @@ runState
 runState s = fmap snd . \p -> hState p s
 {-# INLINE runState #-}
 
+runStateSmart
+    :: forall tag sig sigs sigl l s a
+     . s
+    -> SmartProg (Sig (StateF tag s :+: sig) sigs sigl l) a
+    -> SmartProg (Sig sig sigs sigl (StateL s l)) a
+runStateSmart s = fmap snd . \p -> hStateSmart p s
+{-# INLINE runStateSmart #-}
+
 hState
     :: forall tag sig sigs sigl l s a
      . Prog (Sig (StateF tag s :+: sig) sigs sigl l) a
     -> (s -> Prog (Sig sig sigs sigl (StateL s l)) (s, a))
 hState = unSTC . fold point con
 {-# INLINE hState #-}
+
+hStateSmart
+    :: forall tag sig sigs sigl l s a
+     . SmartProg (Sig (StateF tag s :+: sig) sigs sigl l) a
+    -> (s -> SmartProg (Sig sig sigs sigl (StateL s l)) (s, a))
+hStateSmart = unSTC . smartFold point con
+{-# INLINE hStateSmart #-}
 
 instance
     (EffectMonad m sig sigs sigl (StateL s l))

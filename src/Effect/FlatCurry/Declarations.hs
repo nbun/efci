@@ -20,7 +20,7 @@
 {-# LANGUAGE PartialTypeSignatures #-}
 
 
-module Effect.FlatCurry.Declarations (DeclF, runDecl, runDeclC, H (..), initDecls, getBody, getInfo) where
+module Effect.FlatCurry.Declarations where
 
 import Type (AEProg (..), AEFuncDecl (AEFunc), fdclBody, fdclVars, AERule (AERule, AEExternal))
 import Curry.FlatCurry.Annotated.Type (QName, VarIndex, TypeExpr, Visibility, ARule (AExternal))
@@ -56,6 +56,16 @@ hDecl  :: forall sig sigs sigl l m v a. (Functor l, m ~ Prog (Sig sig sigs sigl 
       -> m a
 hDecl  = unH . fold point con
 {-# INLINE hDecl #-}
+
+runDeclSmart :: (Functor l, m ~ SmartProg (Sig sig sigs sigl l), Show (l v)) => Progs m l v -> SmartProg (Sig sig sigs (DeclF v :+++: sigl) l) b -> m b
+runDeclSmart s p = hDeclSmart p s
+{-# INLINE runDeclSmart #-}
+
+hDeclSmart  :: forall sig sigs sigl l m v a. (Functor l, m ~ SmartProg (Sig sig sigs sigl l), Show (l v)) => SmartProg (Sig sig sigs (DeclF v :+++: sigl) l) a
+      -> Progs m l v
+      -> m a
+hDeclSmart  = unH . smartFold point con
+{-# INLINE hDeclSmart #-}
 
 addBody :: (ManySub v v -> l () -> H m l v (l v)) -> AEFuncDecl a -> AEFuncDecl (l () -> H m l v (l v))
 addBody get (AEFunc qn ar vis ty (AERule vs _)) = AEFunc qn ar vis ty (AERule vs (get (Many qn)))

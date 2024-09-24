@@ -16,9 +16,10 @@ main = do
   progs <- mapM (prepare defaultToolOpts) benchmarks
   -- mapM_ preparePakcs benchmarks
   defaultMainWith (defaultConfig  { timeLimit = 1, csvFile = Just "result/bench.csv", reportFile = Just "result/report.html" })
-    [ bgroup "Mono" (map (\(mod, ps, expr) -> bench mod $ whnfIO (execute monolithic (Right (ps, expr)))) progs)
-    , bgroup "Cod" (map (\(mod, ps, expr) -> bench mod $ whnfIO (execute defaultToolOpts (Right (ps, expr)))) progs)
-    , bgroup "Prog" (map (\(mod, ps, expr) -> bench mod $ whnfIO (execute noOptimize (Right (ps, expr)))) progs)
+    [ --bgroup "Mono" (map (\(mod, ps, expr) -> bench mod $ whnfIO (execute (setMode Monolithic) (Right (ps, expr)))) progs)
+     bgroup "Cod" (map (\(mod, ps, expr) -> bench mod $ whnfIO (execute (setMode Codensity) (Right (ps, expr)))) progs)
+    , bgroup "Smart" (map (\(mod, ps, expr) -> bench mod $ whnfIO (execute (setMode Smart) (Right (ps, expr)))) progs)
+    , bgroup "Prog" (map (\(mod, ps, expr) -> bench mod $ whnfIO (execute (setMode Tree) (Right (ps, expr)))) progs)
     -- , bgroup "pakcs" (map (\(mod, expr) -> bench mod $ whnfIO (callCommand $ "./" ++ mod )) benchmarks)
     -- , bgroup "pakcs-eval" (map (\(mod, expr) -> bench mod $ whnfIO (runPakcs (mod, expr))) benchmarks)
    ]
@@ -58,8 +59,5 @@ benchmarks = [
 prepare :: ToolOpts -> (String, String) -> IO (String, [AProg TypeExpr], AFuncDecl TypeExpr)
 prepare opts (mod, expr) = loadProg opts (mod ++ ".curry") expr >>= \(ps, expr) -> return (mod, ps, expr)
 
-noOptimize :: ToolOpts
-noOptimize = defaultToolOpts { mode = Tree }
-
-monolithic :: ToolOpts
-monolithic = defaultToolOpts { mode = Monolithic }
+setMode :: Mode -> ToolOpts
+setMode m = defaultToolOpts { mode = m }

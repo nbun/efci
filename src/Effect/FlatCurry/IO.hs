@@ -94,6 +94,10 @@ runIO :: forall l a. Prog (Sig '[IOAction] '[] LVoid l) a -> IO a
 runIO = unIOC . fold point con
 {-# INLINE runIO #-}
 
+runIOSmart :: forall l a. SmartProg (Sig '[IOAction] '[] LVoid l) a -> IO a
+runIOSmart = unIOC . smartFold point con
+{-# INLINE runIOSmart #-}
+
 instance TermAlgebra (IOC l) (Sig '[IOAction] '[] LVoid l) where
   con (A (Algebraic op)) = IOC . (algIO # absurd) . fmap unIOC $ op
     where
