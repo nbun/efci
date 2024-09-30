@@ -13,3 +13,12 @@ ctrace s =
     if debug
         then htrace s
         else id
+
+statistics :: Bool
+statistics = True
+
+strace :: String -> a -> a
+strace s =
+    if statistics
+        then htrace s
+        else id

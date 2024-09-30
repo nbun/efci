@@ -26,11 +26,11 @@ module Effect.General.Memoization where
 import Free
 
 import Data.Bifunctor (second)
-import Data.Either (rights)
+import Data.Either (rights, lefts)
 import Data.Kind (Type)
 import Effect.General.State (StateL (..), EffectCons, logCall, StateF (..), Renaming, Identify (..), Scope, modify, get)
 import Signature
-import Debug (ctrace)
+import Debug (ctrace, strace)
 import Unsafe.Coerce (unsafeCoerce)
 import Debug.Trace (trace)
 import Data.Union (prj)
@@ -84,7 +84,7 @@ runLazy = fmap snd . \p -> hLazy p (TS 0 Map.empty Map.empty)
 {-# INLINE runLazy #-}
 
 runLazySmart :: (Functor l, Show (l v), Show (l ()), m ~ SmartProg (Sig sig sigs sigl (StateL (ThunkStore l v) l)), Monad m) => SmartProg (Sig sig sigs (Thunking v :+++: sigl) l) b -> m b
-runLazySmart = fmap snd . \p -> hLazySmart p (TS 0 Map.empty Map.empty)
+runLazySmart = fmap (\(s, r) -> strace (showTS s) r)  . \p -> hLazySmart p (TS 0 Map.empty Map.empty)
 {-# INLINE runLazySmart #-}
 
 hLazy
@@ -162,7 +162,8 @@ instance (Functor m) => Functor (MC m l v) where
    {-# INLINE fmap #-}
 
 showTS :: (Show (l v)) => ThunkStore l v -> String
-showTS (TS i _ m) = show i ++ " " ++ show (rights $ map snd (Map.toList m))
+showTS (TS i _ m) = show i ++ " " ++ concatMap ((++ "\n") . show) (rights $ map snd (Map.toList m)) ++ "\n" ++ show (length (rights $ map snd (Map.toList m))) ++ " " ++ show (length (lefts $ map snd (Map.toList m)))
+{-# INLINE showTS #-}
 
 instance (Show (l v)) => Show (ThunkStore l v) where
    show = showTS

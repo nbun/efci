@@ -15,6 +15,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE BangPatterns #-}
 
 module Signature (
     (:+:),
@@ -137,7 +138,12 @@ instance {-# OVERLAPPABLE #-} (sig :<<<<: sig2) => sig :<<<<: (sig1 :+++: sig2) 
 
 data LVoid p c deriving (Functor)
 
-data Sig sig sigs sigl l f a = A (Algebraic sig f a) | S (Scoped sigs f a) | L (Latent sigl l f a) deriving (Functor)
+data Sig sig sigs sigl l f a = A (Algebraic sig f a) | S (Scoped sigs f a) | L (Latent sigl l f a) 
+
+instance Functor f => Functor (Sig sig sigs sigl l f) where
+    fmap f (A !a) = A (fmap f a)
+    fmap f (S !s) = S (fmap f s)
+    fmap f (L !l) = L (fmap f l)
 
 injectS :: forall sig sigs sigl l m a eff. (eff :<: sigs, TermMonad m (Sig sig sigs sigl l), Functor eff) => eff (m (m a)) -> m a
 injectS = con . S . Enter . inj

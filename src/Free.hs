@@ -141,15 +141,19 @@ instance (HFunctor k) => Functor (SmartProg k) where
   fmap f (SmartReturn x) = SmartReturn (f x)
   fmap f (SmartCall op) = SmartCall (fmap (fmap f) op)
   fmap f (SmartBind p g) = SmartBind p (fmap f . g)
+  {-# INLINE fmap #-}
 
 instance (HFunctor k) => Applicative (SmartProg k) where
   pure = SmartReturn
+  {-# INLINE pure #-}
   SmartReturn f <*> p = fmap f p
   SmartCall op <*> p = SmartCall (fmap (<*> p) op)
   SmartBind p g <*> q = SmartBind p (\x -> g x <*> q)
+  {-# INLINE (<*>) #-}
 
 instance (HFunctor k) => Monad (SmartProg k) where
   x >>= f = SmartBind x f
+  {-# INLINE (>>=) #-}
 
 data ProgView k a where
   ViewReturn :: a -> ProgView k a
@@ -175,3 +179,4 @@ instance HFunctor sig => TermAlgebra (SmartProg sig) sig where
 
 instance (HFunctor k) => Pointed (SmartProg k) where
   point = SmartReturn
+  {-# INLINE point #-}
