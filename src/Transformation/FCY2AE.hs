@@ -13,6 +13,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Transformation.FCY2AE where
 
@@ -52,6 +53,7 @@ import Effect.General.State hiding (get, put)
 import Free
 import Signature
 import Type (AEFuncDecl (..), AEProg (..), AERule (..))
+import Effect.General.State (get, put)
 
 data VarKind
     = CombVar
@@ -62,7 +64,7 @@ data VarKind
 
 type VarKindMap = Map.Map VarIndex VarKind
 
-type AEffects = '[ConsF, Renaming, ConstraintStore, ND, Err, StateF Trace [TraceInfo], IOAction]
+type AEffects = '[LiveVars, ConsF, Renaming, ConstraintStore, ND, Err, StateF Trace [TraceInfo], IOAction]
 type SEffects = '[Partial, CaseScope]
 type LEffects v = DeclF v :+++: (Thunking v :+++: LVoid)
 
@@ -82,9 +84,11 @@ fcyExpr2ae frees expr = let rec = fcyExpr2ae frees in
     case expr of
         AVar _ i | i `elem` frees -> do
             scope <- currentScope
+            modify @LiveVar (\s -> (scope, i) : s)
             return $ fvar scope i
                  | otherwise -> do
             scope <- currentScope
+            modify @LiveVar (\s -> (scope, i) : s)
             return $ lvar scope i
         ALit _ l -> return $ lit l
         AComb _ FuncCall (("Prelude", "?"), _) [e1, e2] ->

@@ -189,10 +189,10 @@ run topts progs fcyrunner = do
   -- writeFile "Runner.hs" (show fcyrunner)
   start <- getTime Monotonic
   res <- case mode topts of
-           Codensity -> do
-             let aprogs' = map fcyProg2ae progs
-                 runner = fcyRunner2ae (fdclRule fcyrunner)
-             runCurryEffectsC @() aprogs' runner
+          --  Codensity -> do
+          --    let aprogs' = map fcyProg2ae progs
+          --        runner = fcyRunner2ae (fdclRule fcyrunner)
+          --    runCurryEffectsC @() aprogs' runner
            Tree -> do
              let aprogs' = map fcyProg2ae progs
                  runner = fcyRunner2ae (fdclRule fcyrunner)

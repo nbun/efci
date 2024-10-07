@@ -27,7 +27,7 @@ import Type (AEProg)
 import Effect.FlatCurry.Declarations
 import qualified Data.Map as Map
 
-runCurryEffects :: (Show a)
+runCurryEffects :: (Show a, Vars a)
                 => [AEProg (Prog (CurryEffects a) a)]
                 -> Prog (CurryEffects a) a
                 -> IO ([TraceInfo], Error [(Constraints, Value (Closure a))])
@@ -42,10 +42,11 @@ runCurryEffects ps e = pipeline e'
       . runState @Rename ((0, 0))
       . runLazy
       . runCons
+      . runState @LiveVar []
       . runPartial
       . runDecl []
 
-runSmartCurryEffects :: (Show a)
+runSmartCurryEffects :: (Show a, Vars a)
                 => [AEProg (SmartProg (CurryEffects a) a)]
                 -> SmartProg (CurryEffects a) a
                 -> IO ([TraceInfo], Error [(Constraints, Value (Closure a))])
@@ -60,6 +61,7 @@ runSmartCurryEffects ps e = pipeline e'
       . runStateSmart @Rename ((0, 0))
       . runLazySmart
       . runConsSmart
+      . runStateSmart @LiveVar []
       . runPartialSmart
       . runDeclSmart []
 
@@ -197,7 +199,7 @@ type M a =           Cod
 --                  -> IO (Error [(Constraints, Value (Closure ()))]) #-}
 
 runCurryEffectsC :: forall a.
-                 (Show a)
+                 (Show a, Vars a)
                  => [AEProg ((M a) a)]
                  -> (M a) a
                  -> IO ([TraceInfo], Error [(Constraints, Value (Closure a))])

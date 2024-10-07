@@ -206,6 +206,11 @@ instance (Monad m) => Pointed (STC tag s m) where
 
 newtype StateL s l a = StateL {unStateL :: (s, l a)} deriving (Show)
 
+instance Vars (l a) => Vars (StateL s l a) where
+    vars (StateL (_, l)) = vars l
+    {-# INLINE vars #-}
+
+
 instance (Functor l) => Functor (StateL s l) where
     fmap f (StateL (s, la)) = StateL (s, fmap f la)
     {-# INLINE fmap #-}
@@ -276,3 +281,11 @@ statistics ti = sortBy (\(_, n) (_, m) -> compare n m) (foldr f [] ti)
             Just n -> (name, n + 1) : filter ((/= name) . fst) acc
             Nothing -> (name, 1) : acc
 {-# INLINE statistics #-}
+
+data LiveVar
+
+instance Identify LiveVar where
+    identify = "LiveVar"
+
+type LiveVars = StateF LiveVar [(Scope, VarIndex)]
+

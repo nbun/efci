@@ -170,6 +170,10 @@ data Closure a
     | Other a
     deriving (Show)
 
+instance Vars a => Vars (Closure a) where
+    vars (Closure _ _ ptrs) = ptrs
+    vars (Other x) = vars x
+
 instance Functor Closure where
     fmap _ (Closure qn ct ptrs) = Closure qn ct ptrs
     fmap f (Other x) = Other (f x)
@@ -278,6 +282,9 @@ instance Lift ClosureL Closure where
 
 newtype ClosureL l a = ClosureL {unClosureL :: Closure (l a)}
     deriving (Functor, Show)
+
+instance Vars (Closure (l a)) => Vars (ClosureL l a) where
+    vars (ClosureL c) = vars c
 
 -- unification --
 

@@ -147,6 +147,13 @@ data Value a
     | ValOther a
     deriving (Show)
 
+instance Vars a => Vars (Value a) where
+    vars (Cons _ args) = concatMap vars args
+    vars (HNF _ ptrs) = ptrs
+    vars (ValOther x) = vars x
+    vars _ = []
+    {-# INLINE vars #-}
+
 instance Functor Value where
     fmap f (Cons qn args) = Cons qn (map (fmap f) args)
     fmap _ (HNF qn ptrs) = HNF qn ptrs
@@ -157,6 +164,10 @@ instance Functor Value where
 
 newtype ValueL l a = ValueL {unValueL :: Value (l a)}
     deriving (Show)
+
+instance Vars (Value (l a)) => Vars (ValueL l a) where
+    vars (ValueL v) = vars v
+    {-# INLINE vars #-}
 
 instance (Functor l) => Functor (ValueL l) where
     fmap f (ValueL x) = ValueL (fmap (fmap f) x)

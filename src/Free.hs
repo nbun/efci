@@ -180,3 +180,12 @@ instance HFunctor sig => TermAlgebra (SmartProg sig) sig where
 instance (HFunctor k) => Pointed (SmartProg k) where
   point = SmartReturn
   {-# INLINE point #-}
+
+class Vars a where
+   vars :: a -> [Int]
+
+-- instance Vars (StateL s l a) where
+   -- vars (StateL (th, _)) = vars th
+  
+instance Vars () where
+    vars _ = []
