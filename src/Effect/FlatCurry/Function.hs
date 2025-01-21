@@ -43,6 +43,7 @@ type Functions sig sigs sigl a =
     , Renaming :<: sig
     , DeclF a :<<<<: sigl
     , () :<<<: a
+    , Let sig sigl a
     )
 
 fun
@@ -56,7 +57,7 @@ fun qn ps = logCallWith (either (const "") (const "thunked") ps) >> do
         (ar, vis, ty, r) <- getInfo @a qn
         let fdecl = AEFunc qn ar vis ty r
         if isExternal fdecl
-            then callExternal fdecl (either id (map (force . Left)) ps)
+            then callExternal fdecl (either id (map (force)) ps)
             else do
                 let (vs, _, _) = fdclRule fdecl
                     e = getBody qn
@@ -306,14 +307,14 @@ unify e1 e2 =
     cnt :: (Value (), Value ()) -> m a
     cnt (HNF qn1 args1, HNF qn2 args2)
         | qn1 == qn2 = do
-            let args1' = map (force . Left) args1
-            let args2' = map (force . Left) args2
+            let args1' = map (force) args1
+            let args2' = map (force) args2
             ands $ zipWith unify args1' args2'
     cnt (Free i, Free j) = do
         modify @CStore (addC i (VarC j))
         cons ("Prelude", "True") []
     cnt (Free i, HNF qn args) = do
-        let args' = map (force . Left) args
+        let args' = map (force) args
         vs <- freshNames (length args)
         scope <- currentScope
         let fvs = map (fvar scope) vs
