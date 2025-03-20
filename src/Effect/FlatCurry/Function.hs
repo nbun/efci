@@ -54,6 +54,7 @@ fun
     -> m a
 fun qn ps = logCallWith (either (const "") (const "thunked") ps) >> do
         scope <- newScope
+        modifyRenaming (const [])
         (ar, vis, ty, r) <- getInfo @a qn
         let fdecl = AEFunc qn ar vis ty r
         if isExternal fdecl

@@ -27,20 +27,21 @@ import Type (AEProg)
 import Effect.FlatCurry.Declarations
 import qualified Data.Map as Map
 import Effect.FlatCurry.Let
+import GHC.Types.Unique.Supply (mkSplitUniqSupply)
 
 runCurryEffects :: (Show a, Vars a)
                 => [AEProg (Prog (CurryEffects a) a)]
                 -> Prog (CurryEffects a) a
                 -> IO ([TraceInfo], Error [(Constraints, Value (Closure a))])
-runCurryEffects ps e = pipeline e'
+runCurryEffects ps e = mkSplitUniqSupply 'a' >>= \sup -> pipeline sup e'
   where
     e' = initDecls ps >> e
-    pipeline = runIO
+    pipeline sup = runIO
       . (\x -> hState @Trace x ([] :: [TraceInfo]))
       . runError
       . runND
       . (\x -> hState @CStore x Map.empty)
-      . runState @Rename ((0, 0))
+      . runState @Rename ((0, 0, [], sup))
       . runState @LocalBindings Map.empty
       . runLazy
       . runCons
@@ -51,15 +52,15 @@ runSmartCurryEffects :: (Show a, Vars a)
                 => [AEProg (SmartProg (CurryEffects a) a)]
                 -> SmartProg (CurryEffects a) a
                 -> IO ([TraceInfo], Error [(Constraints, Value (Closure a))])
-runSmartCurryEffects ps e = pipeline e'
+runSmartCurryEffects ps e = mkSplitUniqSupply 'a' >>= \sup -> pipeline sup e'
   where
     e' = initDecls ps >> e
-    pipeline = runIOSmart
+    pipeline sup = runIOSmart
       . (\x -> hStateSmart @Trace x ([] :: [TraceInfo]))
       . runErrorSmart
       . runNDSmart
       . (\x -> hStateSmart @CStore x Map.empty)
-      . runStateSmart @Rename ((0, 0))
+      . runStateSmart @Rename ((0, 0, [], sup))
       . runStateSmart @LocalBindings Map.empty
       . runLazySmart
       . runConsSmart

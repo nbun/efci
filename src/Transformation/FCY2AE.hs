@@ -87,6 +87,7 @@ fcyExpr2ae frees expr = let rec = fcyExpr2ae frees in
             return $ fvar scope i
                  | otherwise -> do
             scope <- currentScope
+            lookupRenaming i
             return $ lvar scope i
         ALit _ l -> return $ lit l
         AComb _ FuncCall (("Prelude", "?"), _) [e1, e2] ->
@@ -109,14 +110,20 @@ fcyExpr2ae frees expr = let rec = fcyExpr2ae frees in
         -- \$ "FCY2AE.fcyExpr2ae: comb type not supported for " ++ show qn
         ALet _ bs e -> do
             let ((vs, _), es) = first unzip (unzip bs)
+            rename vs
             es' <- mapM rec es
             e' <- rec e
             scope <- currentScope
             return $ let' scope (zip vs es') e'
-        AFree _ bs e -> fcyExpr2ae (map fst bs ++ frees) e
+        AFree _ bs e -> do
+            let vs = map fst bs
+            rename vs
+            fcyExpr2ae (map fst bs ++ frees) e
         AOr _ e1 e2 -> do
             liftM2 (?) (rec e1) (rec e2)
         ACase _ ct e brs -> do
+            let vs = map fst $ concatMap (patVars . (\(ABranch pat _) -> pat)) brs
+            rename vs
             e' <- rec e
             brs' <-
                 mapM
@@ -152,5 +159,8 @@ fcyFDecl2ae (AFunc qn arity vis ty r) = AEFunc qn arity vis ty (fcyRule2ae r)
 fcyRule2ae :: (() :<<<: v, TermMonad m (CurryEffects v)) => ARule TypeExpr -> AERule (m v)
 fcyRule2ae (ARule _ vars e) =
     let (vs, _) = unzip vars
-     in AERule vs (join $ fcyExpr2ae [] e)
+        e' = do
+            rename vs
+            join $ fcyExpr2ae [] e
+     in AERule vs e'
 fcyRule2ae (AExternal _ s) = AEExternal s

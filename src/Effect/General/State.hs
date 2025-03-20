@@ -26,6 +26,9 @@ import Debug (tracingActive)
 import Free
 import GHC.Stack (callStack, getCallStack)
 import Signature
+import GHC.Types.Unique.Supply
+import Data.Unique (Unique)
+import GHC.Types.Unique
 
 data StateF (tag :: Type) s a
     = Get (s -> a)
@@ -73,7 +76,7 @@ instance Identify Rename where
 type Scope = Int
 
 type Renaming =
-    StateF Rename (Scope, VarIndex)
+    StateF Rename (Scope, VarIndex, [(VarIndex, VarIndex)], UniqSupply)
 
 addScope
     :: Scope -> [VarIndex] -> [VarIndex] -> [((Scope, VarIndex), VarIndex)]
@@ -89,10 +92,10 @@ freshNames
 freshNames 0 = logCall >> return []
 freshNames n =
     logCall >> do
-        (nextScope :: Scope, nextVar) <- get @Rename
+        (nextScope :: Scope, nextVar, rs :: [(VarIndex, VarIndex)], s :: UniqSupply) <- get @Rename
         let end = nextVar - (n - 1)
         let vs' = [nextVar, (nextVar - 1) .. end]
-        put @Rename (nextScope, end - 1)
+        put @Rename (nextScope, end - 1, rs, s) 
         return vs'
 {-# INLINE freshNames #-}
 
@@ -101,10 +104,10 @@ newScope
     => m Scope
 newScope =
     logCall >> do
-        (nextScope, newVar)
-            :: (Scope, VarIndex) <-
+        (nextScope, newVar, rs, s)
+            :: (Scope, VarIndex, [(VarIndex, VarIndex)], UniqSupply) <-
             get @Rename
-        put @Rename (nextScope + 1, newVar)
+        put @Rename (nextScope + 1, newVar, rs, s)
         return nextScope
 {-# INLINE newScope #-}
 
@@ -113,11 +116,36 @@ currentScope
     => m Scope
 currentScope =
     logCall >> do
-        (nextScope, _)
-            :: (Scope, VarIndex) <-
+        (nextScope, _, _, _)
+            :: (Scope, VarIndex, [(VarIndex, VarIndex)], UniqSupply) <-
             get @Rename
         return (nextScope - 1)
 {-# INLINE currentScope #-}
+
+modifyRenaming :: (EffectCons m sig sigs sigl l, Renaming :<: sig) => ([(VarIndex, VarIndex)] -> [(VarIndex, VarIndex)]) -> m ()
+modifyRenaming f = logCall >> do
+        (nextScope, newVar, rs, s)
+            :: (Scope, VarIndex, [(VarIndex, VarIndex)], UniqSupply) <-
+            get @Rename
+        put @Rename (nextScope, newVar, f rs, s)
+        return ()
+
+lookupRenaming :: (EffectCons m sig sigs sigl l, Renaming :<: sig) => VarIndex -> m VarIndex
+lookupRenaming v = logCall >> do
+        s@(_, _, rs, _) :: (Scope, VarIndex, [(VarIndex, VarIndex)], UniqSupply) <- get @Rename
+        case lookup v rs of
+            Just v' -> return v'
+            Nothing -> error $ "lookupRenaming: " ++ show v ++ " in "
+{-# INLINE lookupRenaming #-}
+
+rename :: (EffectCons m sig sigs sigl l, Renaming :<: sig) => [VarIndex] -> m [VarIndex]
+rename vs = logCall >> do
+        s@(nextScope, newVar, rs, sup) :: (Scope, VarIndex, [(VarIndex, VarIndex)], UniqSupply) <- get @Rename
+        let (us, sup') = foldr (\v (us, sup) -> let (u, sup') = takeUniqFromSupply sup in (u:us, sup')) ([], sup) vs
+        let vs' = map (fromIntegral . getKey) us
+        put @Rename (nextScope, newVar, rs ++ zip vs vs', sup')
+        return vs'
+{-# INLINE rename #-}
 
 runState
     :: forall tag sig sigs sigl l s a
