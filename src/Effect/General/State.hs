@@ -14,6 +14,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# LANGUAGE BangPatterns #-}
 
 module Effect.General.State where
 
@@ -30,6 +31,7 @@ import GHC.Stack (callStack, getCallStack)
 import GHC.Types.Unique
 import GHC.Types.Unique.Supply
 import Signature
+import qualified Control.DeepSeq
 
 data StateF (tag :: Type) s a
     = Get (s -> a)
@@ -54,7 +56,7 @@ put
      . (EffectCons m sig sigs sigl l, Identify tag, StateF tag s :<: sig)
     => s
     -> m ()
-put s = logCallWith (identify @tag) >> injectA (Put @tag s (return ()))
+put !s = logCallWith (identify @tag) >> injectA (Put @tag s (return ()))
 {-# INLINE put #-}
 
 modify
@@ -112,9 +114,9 @@ lookupRenaming v =
 rename :: (EffectCons m sig sigs sigl l, Renaming :<: sig) => [VarIndex] -> m [VarIndex]
 rename vs =
     logCall >> do
-        s@(rs, sup) :: RState <- get @Rename
-        let (rs', sup') = foldr (\v (us, sup) -> let (u, sup') = takeUniqFromSupply sup in ((v, fromIntegral (getKey u)) : us, sup')) ([], sup) vs
-        put @Rename (rs ++ rs', sup')
+        (rs, sup) :: RState <- get @Rename
+        let (rs', sup') = foldr (\v (us, sup) -> let (!u, sup') = takeUniqFromSupply sup in ((v, fromIntegral (getKey u)) : us, sup')) ([], sup) vs
+        Control.DeepSeq.deepseq rs (put @Rename ((rs ++ rs', sup')))
         -- trace ("rename: " ++ show rs ++ show rs') $ return ()
         return (map snd rs')
 {-# INLINE rename #-}
