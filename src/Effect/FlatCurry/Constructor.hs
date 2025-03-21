@@ -28,7 +28,7 @@ import Signature
 import Effect.General.Delay
 
 data ConsF a
-    = FCons QName [Ptr]
+    = FCons QName [DPtr]
     | FStrictCons QName [a]
     | FLit Literal
     | FFree (Scope, VarIndex)
@@ -42,7 +42,7 @@ instance Functor ConsF where
 
 data CaseScope a
     = Case a (Value () -> a)
-    | Normalize a ((QName, [Ptr]) -> a)
+    | Normalize a ((QName, [DPtr]) -> a)
     | External [a] ([Value ()] -> a)
     | Unify a a ((Value (), Value ()) -> a)
 
@@ -60,7 +60,7 @@ data Mode
 
 normalform
     :: ( ConsF :<: sig
-       , Thunking a :<<<<: sigl
+       , Delaying a :<<<<: sigl
        , CaseScope :<: sigs
        , EffectCons m sig sigs sigl Id
        )
@@ -69,7 +69,7 @@ normalform
 normalform p = logCall >> injectS (Normalize (fmap return p) (fmap return . f))
   where
     f (qn, ptrs) = do
-        let args = map ((normalform . force)) ptrs
+        let args = map ((normalform . retrieve)) ptrs
         injectA (FStrictCons qn args)
 {-# INLINE normalform #-}
 
@@ -87,7 +87,7 @@ cons qn ps =
 thunkedCons
     :: (EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl, ConsF :<: sig)
     => QName
-    -> [Ptr]
+    -> [DPtr]
     -> m a
 thunkedCons qn args = logCall >> injectA (FCons qn args)
 {-# INLINE thunkedCons #-}
@@ -143,7 +143,7 @@ case' scope cp brs =
 
 data Value a
     = Cons QName [Value a]
-    | HNF QName [Ptr]
+    | HNF QName [DPtr]
     | Lit Literal
     | Free (Scope, VarIndex)
     | ValOther a
@@ -151,7 +151,7 @@ data Value a
 
 instance Vars a => Vars (Value a) where
     vars (Cons _ args) = concatMap vars args
-    vars (HNF _ ptrs) = ptrs
+    vars (HNF _ ptrs) = []
     vars (ValOther x) = vars x
     vars _ = []
     {-# INLINE vars #-}

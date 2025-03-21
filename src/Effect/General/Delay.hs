@@ -33,25 +33,27 @@ import Unsafe.Coerce (unsafeCoerce)
 import qualified Data.IntMap as IntMap
 import Data.IntMap ((!))
 import Curry.FlatCurry (VarIndex)
-import Effect.General.Memoization (Ptr)
+
+
+newtype DPtr = DPtr VarIndex deriving Show
 
 data Delaying v :: Type -> (Type -> Type) -> Type where
-   Delay :: Delaying v Ptr (OneSub v)
-   Retrieve :: Ptr -> Delaying v v NoSub
+   Delay :: Delaying v DPtr (OneSub v)
+   Retrieve :: DPtr -> Delaying v v NoSub
 
 delay
    :: forall m sig sigs sigl v
     . (EffectCons m sig sigs sigl Id, Delaying v :<<<<: sigl)
    => m v
-   -> m Ptr
-delay t = logCall >> injectL (Delay :: Delaying v Ptr (OneSub v)) (Id ()) (\One _ -> fmap Id t) (return . unId)
+   -> m DPtr
+delay t = logCall >> injectL (Delay :: Delaying v DPtr (OneSub v)) (Id ()) (\One _ -> fmap Id t) (return . unId)
 {-# INLINE delay #-}
 
-retrieve :: (EffectCons m sig sigs sigl Id, Delaying v :<<<<: sigl) => Ptr -> m v
+retrieve :: (EffectCons m sig sigs sigl Id, Delaying v :<<<<: sigl) => DPtr -> m v
 retrieve e = logCall >> injectL (Retrieve e) (Id ()) (\x -> case x of {}) (return . unId)
 {-# INLINE retrieve #-}
 
--- transfer :: (EffectCons m sig sigs sigl Id, Delaying v :<<<<: sigl) => [Ptr] -> m ()
+-- transfer :: (EffectCons m sig sigs sigl Id, Delaying v :<<<<: sigl) => [DPtr] -> m ()
 -- transfer ptrs = logCall >> do
    -- es <- mapM retrieve ptrs
    -- mapM_ thunk es
@@ -89,8 +91,8 @@ instance (Functor l, EffectMonad m sig sigs sigl (StateL (DelayStore l v) l), Sh
       go th hhx = do
          (th', hx) <- unDC hhx th
          return (unDC hx th')
-   con (L (Node (Inl3 Delay) l st k)) = DC $ \(TS fresh im) -> ctrace ("delayed " ++ show fresh) $ unDC (k (fresh <$ l)) (TS (fresh + 1) (IntMap.insert fresh (unsafeCoerce $ st One) im))
-   con (L (Node (Inl3 (Retrieve p)) l _ k)) = DC $ \ts@(TS fresh th) -> ctrace ("retrievelookup " ++ show (IntMap.keys th)) $ do
+   con (L (Node (Inl3 Delay) l st k)) = DC $ \(TS fresh im) -> ctrace ("delayed " ++ show fresh) $ unDC (k (DPtr fresh <$ l)) (TS (fresh + 1) (IntMap.insert fresh (unsafeCoerce $ st One) im))
+   con (L (Node (Inl3 (Retrieve (DPtr p))) l _ k)) = DC $ \ts@(TS fresh th) -> ctrace ("retrievelookup " ++ show (IntMap.keys th)) $ do
          unDC (unsafeCoerce $ (th ! p) l) (TS fresh (IntMap.delete p th))
    con (L (Node (Inr3 op) l st k)) = DC $ \th ->
       con $

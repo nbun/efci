@@ -61,9 +61,9 @@ fun qn ps = logCallWith (show qn) >> do
         if isExternal fdecl
             then callExternal fdecl ps
             else do
-                let (vs, _, _) = fdclRule fdecl
+                -- let (vs, _, _) = fdclRule fdecl
                 let e = getBody qn
-                let' (zip vs ps) e
+                app e ps
 
 callExternal
     :: (EffectCons m sig sigs sigl Id, Functions sig sigs sigl a)
@@ -158,27 +158,43 @@ data CombType
     deriving (Show, Eq)
 
 data Partial a
-    = PartCall QName CombType [Ptr]
-    | FApply a ((QName, CombType, [Ptr]) -> a)
+    = PartCall QName CombType [DPtr]
+    | FApply a ((QName, CombType, [DPtr]) -> a)
+    | Abs [VarIndex] DPtr
+    | App a (([VarIndex], DPtr) -> a)
 
 instance Functor Partial where
     fmap _ (PartCall qn ct ptrs) = PartCall qn ct ptrs
     fmap f (FApply x k) = FApply (f x) (f . k)
+    fmap f (Abs vs ptr) = Abs vs ptr
+    fmap f (App x k) = App (f x) (f . k)
     {-# INLINE fmap #-}
 
 data Closure a
-    = Closure QName CombType [Ptr]
+    = Closure QName CombType [DPtr]
+    | Lambda [VarIndex] DPtr
     | Other a
     deriving (Show)
 
 instance Vars a => Vars (Closure a) where
-    vars (Closure _ _ ptrs) = ptrs
+    vars (Closure _ _ ptrs) = []
     vars (Other x) = vars x
+    vars (Lambda vs ptr) = []
 
 instance Functor Closure where
     fmap _ (Closure qn ct ptrs) = Closure qn ct ptrs
     fmap f (Other x) = Other (f x)
+    fmap f (Lambda vs ptr) = Lambda vs ptr
     {-# INLINE fmap #-}
+
+lambda :: (EffectCons m sig sigs sigl Id, Partial :<: sigs, Delaying a :<<<<: sigl) => [VarIndex] -> m a -> m a
+lambda vs e = logCall >> do
+    ptr <- delay e
+    injectS (Abs vs ptr)
+
+app :: (EffectCons m sig sigs sigl Id, Partial :<: sigs, Let sig sigl a, Delaying a :<<<<: sigl) => m a -> [m a] -> m a
+app lam args = logCall >> injectS (App (fmap return lam) k)
+  where k (vs, ptr) = return $ let' (zip vs args) (retrieve ptr)
 
 partial
     :: (EffectCons m sig sigs sigl Id, Delaying a :<<<<: sigl, Partial :<: sigs)
@@ -245,6 +261,14 @@ instance
                     (Closure qn missing ptrs) -> do
                         t' <- unPC $ k (qn, missing, ptrs)
                         (lift . fmap unPC) t'
+        algP (Abs vs ptr) = PC $ return $ Lambda vs ptr
+        algP (App lam k) = PC $ do
+            t <- unPC lam
+            case t of
+                Other x -> unPC x
+                (Lambda vs ptr) -> do
+                    t' <- unPC $ k (vs, ptr)
+                    (lift . fmap unPC) t'
 
         sfwd op = PC $ con $ S $ Enter $ fmap (fmap lift . unPC . fmap unPC) op
     con (L (Node op l st k)) = PC $ con $ L $ Node op (ClosureL $ Other l) (st' st) k'
@@ -307,14 +331,14 @@ unify e1 e2 =
     cnt :: (Value (), Value ()) -> m a
     cnt (HNF qn1 args1, HNF qn2 args2)
         | qn1 == qn2 = do
-            let args1' = map (force) args1
-            let args2' = map (force) args2
+            let args1' = map retrieve args1
+            let args2' = map retrieve args2
             ands $ zipWith unify args1' args2'
     cnt (Free i, Free j) = do
         modify @CStore (addC i (VarC j))
         cons ("Prelude", "True") []
     cnt (Free i, HNF qn args) = do
-        let args' = map (force) args
+        let args' = map retrieve args
         vs <- freshNames (length args)
         scope <- currentScope
         let fvs = map (fvar scope) vs

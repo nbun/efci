@@ -40,7 +40,7 @@ import Effect.FlatCurry.Function (
     Partial,
     apply',
     fun,
-    partial,
+    partial, lambda,
  )
 import qualified Effect.FlatCurry.Function (CombType (..))
 import Effect.FlatCurry.IO (IOAction)
@@ -55,6 +55,7 @@ import Signature
 import Type (AEFuncDecl (..), AEProg (..), AERule (..))
 import Effect.General.State (get, put)
 import Effect.General.Delay (Delaying)
+import Data.Maybe (fromJust)
 
 data VarKind
     = CombVar
@@ -122,17 +123,19 @@ fcyExpr2ae frees expr = let rec = fcyExpr2ae frees in
             liftM2 (?) (rec e1) (rec e2)
         ACase _ ct e brs -> do
             let vs = map fst $ concatMap (patVars . (\(ABranch pat _) -> pat)) brs
-            rename vs
+            vs' <- rename vs
+            let r = zip vs vs'
             e' <- rec e
             brs' <-
                 mapM
-                    (\(ABranch pat e') -> fmap (patf pat,) (rec e'))
+                    (\(ABranch pat e') -> fmap (newPat r pat,) (rec e'))
                     brs
             scope <- currentScope
             return $ case' scope e' brs'
           where
-            patf (APattern _ (qn, _) vars) = APattern () (qn, ()) (map void vars)
-            patf (ALPattern _ l) = ALPattern () l
+            newPat r (APattern _ (qn, _) vars) = APattern () (qn, ()) newVars
+                where newVars = map (\(v, _) -> (fromJust $ lookup v r , ())) vars
+            newPat _ (ALPattern _ l) = ALPattern () l
         ATyped _ e t -> rec e -- type annotations not required
 
 insertBinds :: VarKind -> VarKindMap -> [(VarIndex, ann)] -> VarKindMap
@@ -160,6 +163,6 @@ fcyRule2ae (ARule _ vars e) =
     let (vs, _) = unzip vars
         e' = do
             vs' <- rename vs
-            join $ fcyExpr2ae [] e
+            join $ fmap (lambda vs') (fcyExpr2ae [] e)
      in AERule vs e'
 fcyRule2ae (AExternal _ s) = AEExternal s

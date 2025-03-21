@@ -29,6 +29,7 @@ import Signature
 import GHC.Types.Unique.Supply
 import Data.Unique (Unique)
 import GHC.Types.Unique
+import Debug.Trace (trace)
 
 data StateF (tag :: Type) s a
     = Get (s -> a)
@@ -155,6 +156,7 @@ rename vs = logCall >> do
         let (us, sup') = foldr (\v (us, sup) -> let (u, sup') = takeUniqFromSupply sup in (u:us, sup')) ([], sup) vs
         let vs' = map (fromIntegral . getKey) us
         put @Rename (nextScope, newVar, rs ++ zip vs vs', sup', funVars)
+        trace ("rename: " ++ show vs ++ " -> " ++ show vs') $ return ()
         return vs'
 {-# INLINE rename #-}
 
