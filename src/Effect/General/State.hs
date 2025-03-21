@@ -31,7 +31,11 @@ import GHC.Stack (callStack, getCallStack)
 import GHC.Types.Unique
 import GHC.Types.Unique.Supply
 import Signature
-import qualified Control.DeepSeq
+import System.IO.Unsafe (unsafePerformIO)
+import GHC.StableName
+import Type (analyzeVarIndex)
+import Control.DeepSeq (force)
+import Data.Bifunctor (Bifunctor(first))
 
 data StateF (tag :: Type) s a
     = Get (s -> a)
@@ -56,7 +60,7 @@ put
      . (EffectCons m sig sigs sigl l, Identify tag, StateF tag s :<: sig)
     => s
     -> m ()
-put !s = logCallWith (identify @tag) >> injectA (Put @tag s (return ()))
+put s = logCallWith (identify @tag) >> injectA (Put @tag s (return ()))
 {-# INLINE put #-}
 
 modify
@@ -78,7 +82,7 @@ instance Identify Rename where
 
 type Renaming = StateF Rename RState
 
-type RState = ([(VarIndex, VarIndex)], UniqSupply)
+type RState = ([(VarIndex, Int)], UniqSupply)
 
 freshNames
     :: (EffectCons m sig sigs sigl l, Renaming :<: sig)
@@ -107,7 +111,8 @@ lookupRenaming v =
     logCall >> do
         (rs, _) :: RState <- get @Rename
         case lookup v rs of
-            Just v' -> return v'
+            -- Just !v' -> return v'
+            Just !v' -> trace (analyzeVarIndex "lookup" v') (return v')
             Nothing -> error $ "lookupRenaming: " ++ show v ++ " in "
 {-# INLINE lookupRenaming #-}
 
@@ -115,10 +120,16 @@ rename :: (EffectCons m sig sigs sigl l, Renaming :<: sig) => [VarIndex] -> m [V
 rename vs =
     logCall >> do
         (rs, sup) :: RState <- get @Rename
-        let (rs', sup') = foldr (\v (us, sup) -> let (!u, sup') = takeUniqFromSupply sup in ((v, fromIntegral (getKey u)) : us, sup')) ([], sup) vs
-        Control.DeepSeq.deepseq rs (put @Rename ((rs ++ rs', sup')))
-        -- trace ("rename: " ++ show rs ++ show rs') $ return ()
-        return (map snd rs')
+        let (!vs', sup') = first Control.DeepSeq.force (takeNfromSupply (length vs) sup)
+        put @Rename ((rs ++ zip vs vs', sup'))
+        trace (concatMap (analyzeVarIndex "rename") vs') (return ())
+        return vs'
+  where
+    takeNfromSupply 0 sup = ([], sup)
+    takeNfromSupply n sup = let (!u, sup') = takeUniqFromSupply sup
+                                !i = fromIntegral (getKey u)
+                                (is, sup'') = takeNfromSupply (n - 1) sup'
+                            in (i : is, sup'')
 {-# INLINE rename #-}
 
 runState

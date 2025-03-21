@@ -17,6 +17,8 @@ import qualified Data.Map as Map
 import Effect.General.Memoization
 import Effect.General.State
 import Signature
+import Debug.Trace (trace)
+import Type (analyzeVarIndex)
 
 type Let sig sigl a =
     (Renaming :<: sig, Thunking a :<<<<: sigl)

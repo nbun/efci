@@ -20,6 +20,7 @@
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE BangPatterns #-}
 
 module Effect.General.Memoization where
 
@@ -45,9 +46,7 @@ import System.Mem.StableName
 import GHC.Weak
 import System.IO.Unsafe (unsafePerformIO)
 import Control.Monad.Primitive
-
-
-
+import Type (analyzeVarIndex)
 
 data Thunking v :: Type -> (Type -> Type) -> Type where
    Thunk :: Ptr -> Thunking v () (OneSub v)
@@ -70,7 +69,7 @@ thunk
    => Ptr
    -> m v
    -> m ()
-thunk ptr t = logCall >> injectL (Thunk ptr :: Thunking v () (OneSub v)) (Id ()) (\One _ -> fmap Id t) (return . unId)
+thunk ptr t = logCall >> (injectL (Thunk ptr :: Thunking v () (OneSub v)) (Id ()) (\One _ -> fmap Id t) (return . unId))
 {-# INLINE thunk #-}
 
 force :: (EffectCons m sig sigs sigl Id, Thunking v :<<<<: sigl) => Ptr -> m v
@@ -88,11 +87,11 @@ runGC = logCall >> injectL (RunGC :: Thunking v () NoSub) (Id ()) (\x -> case x 
 {-# INLINE runGC #-}
 
 runLazy :: (Functor l, Show (l v), Show (l ()), m ~ Prog (Sig sig sigs sigl (StateL (ThunkStore l v) l)), Monad m) => Prog (Sig sig sigs (Thunking v :+++: sigl) l) b -> m b
-runLazy = fmap snd . \p -> hLazy p (TS (-2^10) HashMap.empty)
+runLazy = fmap snd . \p -> hLazy p (TS (2^31) HashMap.empty)
 {-# INLINE runLazy #-}
 
 runLazySmart :: (Functor l, Show (l v), Show (l ()), m ~ SmartProg (Sig sig sigs sigl (StateL (ThunkStore l v) l)), Monad m) => SmartProg (Sig sig sigs (Thunking v :+++: sigl) l) b -> m b
-runLazySmart = fmap (\(s, r) -> strace (showTS s) r)  . \p -> hLazySmart p (TS (-2^10) HashMap.empty)
+runLazySmart = fmap (\(s, r) -> strace (showTS s) r)  . \p -> hLazySmart p (TS (2^31) HashMap.empty)
 {-# INLINE runLazySmart #-}
 
 hLazy
@@ -173,18 +172,24 @@ data ThunkStore l v = forall m. TS Int (TSM m l v) --(HashMap.HashMap (Entry m l
 type TSM m l v = HashMap.HashMap (StableName VarIndex) (Weak (Entry m l v))
 
 addEntry :: VarIndex -> Entry m l v -> TSM m l v -> TSM m l v
-addEntry i p th = unsafePerformIO $ do
-  sn <- makeStableName $! i
+addEntry !i p th = unsafePerformIO $ do
+  trace (analyzeVarIndex "memoadd" i) (return ())
+  sn <- makeStableName i
+--   putStrLn ("Add VarIndex " ++ show i ++ " with stable name hash " ++ show (hashStableName sn))
   w <- mkWeak i (unsafeCoerce p) Nothing
   return (HashMap.insert sn w th)
 
 lookupEntry :: VarIndex -> TSM m l v -> Entry m l v
-lookupEntry i th = unsafePerformIO $ keepAlive i $ do
-  sn <- makeStableName $! i
-  w <- deRefWeak (th HashMap.! sn)
-  case w of
-    Just v -> return v
-    Nothing -> error ("Weak pointer " ++ show i ++ " is dead!")
+lookupEntry !i th = unsafePerformIO $ keepAlive i $ do
+  trace (analyzeVarIndex "memolookup" i) (return ())
+  sn <- makeStableName i
+  case HashMap.lookup sn th of
+    Just w -> do
+      m <- deRefWeak w
+      case m of
+        Just v -> return (unsafeCoerce v)
+        Nothing -> error ("Weak pointer " ++ show i ++ " is dead!")
+    Nothing -> error ("VarIndex " ++ show i ++ " with stable hash " ++ show (hashStableName sn) ++ " not found in " ++ show (map hashStableName $ HashMap.keys th))
 
 newtype MC m l v a = MC {unMC :: ThunkStore l v -> m (ThunkStore l v, a)}
 

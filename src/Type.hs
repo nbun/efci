@@ -5,6 +5,7 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE BangPatterns #-}
 
 module Type where
 
@@ -19,6 +20,9 @@ import qualified Curry.FlatCurry.Type as CFT (OpDecl (..))
 import Data.Map (Map)
 import Curry.FlatCurry.Annotated.Type
 import Data.List (nub)
+import System.IO.Unsafe (unsafePerformIO)
+import GHC.StableName
+import GHC.HeapView (getClosureData)
 
 findFDcl :: [AProg a] -> QName -> AFuncDecl a
 findFDcl ps qn@(mod, _) = case res of
@@ -99,3 +103,9 @@ data AERule a
   = AERule [VarIndex] a
   | AEExternal String
   deriving (Functor, Show)
+
+analyzeVarIndex :: String -> VarIndex -> String
+analyzeVarIndex loc i = unsafePerformIO $ do
+  sn <- makeStableName i
+  cl <- getClosureData i
+  return $ loc ++ " VarIndex " ++ show i ++ " with stable name hash " ++ show (hashStableName sn)  ++ " and closure type " ++ show cl ++ "\n"
