@@ -18,7 +18,7 @@ import Effect.FlatCurry.Constructor (Value (..))
 import Effect.FlatCurry.Function (Closure (..), decArgs)
 import Effect.General.Error (Error (..))
 import Effect.General.Memoization (Ptr)
-import Effect.General.State (Constraints, Scope, TraceInfo)
+import Effect.General.State (Constraints, TraceInfo)
 import Data.Functor (void)
 -- import Debug.Trace (traceShowId, trace)
 import Type (findFDcl)
@@ -29,6 +29,18 @@ import Control.Monad.Except (runExceptT, MonadError (throwError))
 
 trace _ x = x
 traceShowId = id
+
+
+-- findPolyDicts :: Scope -> [(TypeExpr, Ptr)] -> [((Scope, TypeExpr), Ptr)]
+-- findPolyDicts s = mapMaybe isDict
+--   where
+--     isDict
+--         ( FuncType
+--                 (TCons ("Prelude", "()") [])
+--                 (TCons ("Prelude", "_Dict#Data") [TVar i])
+--             , ptr
+--             ) = Just ((s, TVar i), ptr)
+--     isDict _ = Nothing
 
 -- IO ([TraceInfo], Error [(Constraints, Value (Closure a))])
 

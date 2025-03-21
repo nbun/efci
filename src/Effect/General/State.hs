@@ -22,14 +22,14 @@ import qualified Data.IntMap as IntMap
 import Data.Kind (Type)
 import Data.List (sortBy)
 import qualified Data.Map as Map
+import Data.Unique (Unique)
 import Debug (tracingActive)
+import Debug.Trace (trace)
 import Free
 import GHC.Stack (callStack, getCallStack)
-import Signature
-import GHC.Types.Unique.Supply
-import Data.Unique (Unique)
 import GHC.Types.Unique
-import Debug.Trace (trace)
+import GHC.Types.Unique.Supply
+import Signature
 
 data StateF (tag :: Type) s a
     = Get (s -> a)
@@ -74,17 +74,9 @@ data Rename
 instance Identify Rename where
     identify = "Rename"
 
-type Scope = Int
+type Renaming = StateF Rename RState
 
-type Renaming =
-    StateF Rename (Scope, VarIndex, [(VarIndex, VarIndex)], UniqSupply, [VarIndex])
-
-addScope
-    :: Scope -> [VarIndex] -> [VarIndex] -> [((Scope, VarIndex), VarIndex)]
-addScope scope vs vs' =
-    let scopes = repeat scope
-     in zip (zip scopes vs) vs'
-{-# INLINE addScope #-}
+type RState = ([(VarIndex, VarIndex)], UniqSupply)
 
 freshNames
     :: (EffectCons m sig sigs sigl l, Renaming :<: sig)
@@ -93,56 +85,36 @@ freshNames
 freshNames 0 = logCall >> return []
 freshNames n =
     logCall >> do
-        (nextScope :: Scope, nextVar :: VarIndex, rs :: [(VarIndex, VarIndex)], sup :: UniqSupply, funVars :: [VarIndex]) <- get @Rename
-        let (vs', sup') = foldr (\_ (us, sup) -> let (u, sup') = takeUniqFromSupply sup in (fromIntegral (getKey u):us, sup')) ([], sup) [1..n]
-        put @Rename (nextScope, nextVar, rs, sup', funVars) 
+        (rs, sup) :: RState <- get @Rename
+        let (vs', sup') = foldr (\_ (us, sup) -> let (u, sup') = takeUniqFromSupply sup in (fromIntegral (getKey u) : us, sup')) ([], sup) [1 .. n]
+        put @Rename (rs, sup')
         return vs'
 {-# INLINE freshNames #-}
 
-newScope
-    :: (EffectCons m sig sigs sigl l, Renaming :<: sig)
-    => m Scope
-newScope =
-    logCall >> do
-        (nextScope, newVar, rs, s, funVars)
-            :: (Scope, VarIndex, [(VarIndex, VarIndex)], UniqSupply, [VarIndex]) <-
-            get @Rename
-        put @Rename (nextScope + 1, newVar, rs, s, funVars)
-        return nextScope
-{-# INLINE newScope #-}
-
-currentScope
-    :: (EffectCons m sig sigs sigl l, Renaming :<: sig)
-    => m Scope
-currentScope =
-    logCall >> do
-        (nextScope, _, _, _, _)
-            :: (Scope, VarIndex, [(VarIndex, VarIndex)], UniqSupply, [VarIndex]) <-
-            get @Rename
-        return (nextScope - 1)
-{-# INLINE currentScope #-}
-
 modifyRenaming :: (EffectCons m sig sigs sigl l, Renaming :<: sig) => ([(VarIndex, VarIndex)] -> [(VarIndex, VarIndex)]) -> m ()
-modifyRenaming f = logCall >> do
-        (nextScope, newVar, rs, s, funVars)
-            :: (Scope, VarIndex, [(VarIndex, VarIndex)], UniqSupply, [VarIndex]) <-
+modifyRenaming f =
+    logCall >> do
+        (rs, sup)
+            :: RState <-
             get @Rename
-        put @Rename (nextScope, newVar, f rs, s, funVars)
+        put @Rename (f rs, sup)
         return ()
 
 lookupRenaming :: (EffectCons m sig sigs sigl l, Renaming :<: sig) => VarIndex -> m VarIndex
-lookupRenaming v = logCall >> do
-        s@(_, _, rs, _, _) :: (Scope, VarIndex, [(VarIndex, VarIndex)], UniqSupply, [VarIndex]) <- get @Rename
+lookupRenaming v =
+    logCall >> do
+        (rs, _) :: RState <- get @Rename
         case lookup v rs of
             Just v' -> return v'
             Nothing -> error $ "lookupRenaming: " ++ show v ++ " in "
 {-# INLINE lookupRenaming #-}
 
 rename :: (EffectCons m sig sigs sigl l, Renaming :<: sig) => [VarIndex] -> m [VarIndex]
-rename vs = logCall >> do
-        s@(nextScope, newVar, rs, sup, funVars) :: (Scope, VarIndex, [(VarIndex, VarIndex)], UniqSupply, [VarIndex]) <- get @Rename
-        let (rs', sup') = foldr (\v (us, sup) -> let (u, sup') = takeUniqFromSupply sup in ((v,fromIntegral (getKey u)):us, sup')) ([], sup) vs
-        put @Rename (nextScope, newVar, rs ++ rs', sup', funVars)
+rename vs =
+    logCall >> do
+        s@(rs, sup) :: RState <- get @Rename
+        let (rs', sup') = foldr (\v (us, sup) -> let (u, sup') = takeUniqFromSupply sup in ((v, fromIntegral (getKey u)) : us, sup')) ([], sup) vs
+        put @Rename (rs ++ rs', sup')
         -- trace ("rename: " ++ show rs ++ show rs') $ return ()
         return (map snd rs')
 {-# INLINE rename #-}
@@ -304,11 +276,3 @@ statistics ti = sortBy (\(_, n) (_, m) -> compare n m) (foldr f [] ti)
             Just n -> (name, n + 1) : filter ((/= name) . fst) acc
             Nothing -> (name, 1) : acc
 {-# INLINE statistics #-}
-
-data LiveVar
-
-instance Identify LiveVar where
-    identify = "LiveVar"
-
-type LiveVars = StateF LiveVar [(Scope, VarIndex)]
-

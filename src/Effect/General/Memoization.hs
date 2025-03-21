@@ -28,7 +28,7 @@ import Free
 import Data.Bifunctor (second)
 import Data.Either (rights, lefts, isRight, isLeft, fromRight)
 import Data.Kind (Type)
-import Effect.General.State (StateL (..), EffectCons, logCall, StateF (..), Renaming, Identify (..), Scope, modify, get, LiveVars, LiveVar, put)
+import Effect.General.State (StateL (..), EffectCons, logCall, StateF (..), Renaming, Identify (..), modify, get, put)
 import Signature
 import Debug (ctrace, strace)
 import Unsafe.Coerce (unsafeCoerce)
@@ -41,15 +41,12 @@ import Data.Maybe (fromJust, mapMaybe)
 import Data.List (nub)
 import Control.Monad (join)
 
-type ScpVarIndex = (Scope, VarIndex)
-type Ptr' = VarIndex
-
 data Thunking v :: Type -> (Type -> Type) -> Type where
    Thunk :: Ptr -> Thunking v () (OneSub v)
    Store :: Thunking v Ptr (OneSub v)
    Force :: Ptr -> Thunking v v NoSub
    Redirect :: [(Ptr, Ptr)] -> Thunking v () NoSub
-   RunGC :: [ScpVarIndex] -> Thunking v () NoSub
+   RunGC :: Thunking v () NoSub
 
 store
    :: forall m sig sigs sigl v
@@ -78,8 +75,8 @@ redirect ps = logCall >> injectL (Redirect ps :: Thunking v () NoSub) (Id ()) (\
 
 type Ptr = Int
 
-runGC :: forall v m sig sigs sigl. (EffectCons m sig sigs sigl Id, Thunking v :<<<<: sigl) => [ScpVarIndex] -> m ()
-runGC ptrs = logCall >> injectL (RunGC ptrs :: Thunking v () NoSub) (Id ()) (\x -> case x of {}) (return . unId)
+runGC :: forall v m sig sigs sigl. (EffectCons m sig sigs sigl Id, Thunking v :<<<<: sigl) => m ()
+runGC = logCall >> injectL (RunGC :: Thunking v () NoSub) (Id ()) (\x -> case x of {}) (return . unId)
 {-# INLINE runGC #-}
 
 runLazy :: (Functor l, Show (l v), Show (l ()), m ~ Prog (Sig sig sigs sigl (StateL (ThunkStore l v) l)), Monad m) => Prog (Sig sig sigs (Thunking v :+++: sigl) l) b -> m b
@@ -124,7 +121,7 @@ instance (Functor l, EffectMonad m sig sigs sigl (StateL (ThunkStore l v) l), Sh
       Evaluated lv -> ctrace ("memoized " ++ show p ++ show lv) $ unMC (k lv) ts
       Redirected p' -> ctrace ("redirect " ++ show p ++ " -> " ++ show p') $ unMC (con $ L $ Node (Inl3 (Force p')) l st k) ts
    con (L (Node (Inl3 (Redirect ps)) l _ k)) = MC $ \ts@(TS fresh th) -> ctrace ("redirect " ++ show ps) $ unMC (k l) (TS fresh (foldr (\(p, p') th' -> IntMap.insert p (Redirected p') th') th ps)) 
-   con (L (Node (Inl3 (RunGC vs)) l _ k)) = MC $ \ts@(TS _ _) -> undefined
+   con (L (Node (Inl3 (RunGC)) l _ k)) = MC $ \ts@(TS _ _) -> undefined
       -- let ptrs = mapMaybe (\v -> Map.lookup v rm) vs 
       -- in unMC (k l) (garbageCollector ptrs ts)
    con (L (Node (Inr3 op) l st k)) = MC $ \th ->
@@ -181,7 +178,7 @@ showTS (TS i m) = show i ++ " \n"
 instance (Show (l v)) => Show (ThunkStore l v) where
    show = showTS
 
-garbageCollector :: (Show (l v)) => [Ptr'] -> ThunkStore l v -> ThunkStore l v
+garbageCollector :: (Show (l v)) => [Ptr] -> ThunkStore l v -> ThunkStore l v
 garbageCollector ptrs ts@(TS i im) = undefined --TS i (Map.filterWithKey (\k _ -> k `elem` allPtrs) im)
 --   where
 --    allPtrs = trace ("GC start: " ++ show ptrs ++ "\n" ++ showTS ts ) go (nub ptrs)

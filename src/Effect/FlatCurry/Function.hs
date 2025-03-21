@@ -110,17 +110,6 @@ callExternal fdecl args = logCall >> case (externalName fdecl, args) of
                 ++ show (length args)
                 ++ " arguments"
 
-findPolyDicts :: Scope -> [(TypeExpr, Ptr)] -> [((Scope, TypeExpr), Ptr)]
-findPolyDicts s = mapMaybe isDict
-  where
-    isDict
-        ( FuncType
-                (TCons ("Prelude", "()") [])
-                (TCons ("Prelude", "_Dict#Data") [TVar i])
-            , ptr
-            ) = Just ((s, TVar i), ptr)
-    isDict _ = Nothing
-
 fdclRule :: AEFuncDecl a -> ([VarIndex], [TypeExpr], a)
 fdclRule (AEFunc qn _ _ t r) = case r of
     AERule vs e -> (vs, argTypes' t, e)

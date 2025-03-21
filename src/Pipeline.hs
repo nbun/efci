@@ -41,8 +41,7 @@ runCurryEffects ps e = mkSplitUniqSupply 'a' >>= \sup -> pipeline sup e'
       . runError
       . runND
       . (\x -> hState @CStore x Map.empty)
-      . runState @Rename ((0, 0, [], sup, []))
-      . runState @LocalBindings Map.empty
+      . runState @Rename ([], sup)
       . runLazy
       . runCons
       . runPartial
@@ -60,8 +59,7 @@ runSmartCurryEffects ps e = mkSplitUniqSupply 'a' >>= \sup -> pipeline sup e'
       . runErrorSmart
       . runNDSmart
       . (\x -> hStateSmart @CStore x Map.empty)
-      . runStateSmart @Rename ((0, 0, [], sup, []))
-      . runStateSmart @LocalBindings Map.empty
+      . runStateSmart @Rename (([], sup))
       . runLazySmart
       . runConsSmart
       . runPartialSmart
@@ -140,90 +138,90 @@ parOnce "" = ""
 parOnce s@('(':_) = s
 parOnce s = '(':s ++ ")"
 
-type L a = StateL [TraceInfo]
-                      (ErrorL
-                         (ListL
-                            (StateL
-                               Constraints
-                                  (StateL
-                                     (Scope, VarIndex)
-                                     (StateL
-                                        Ptrs
-                                        (StateL
-                                           (ThunkStore (ValueL (ClosureL Id)) a)
-                                           (ValueL (ClosureL Id))))))))
+-- type L a = StateL [TraceInfo]
+--                       (ErrorL
+--                          (ListL
+--                             (StateL
+--                                Constraints
+--                                   (StateL
+--                                      (Scope, VarIndex)
+--                                      (StateL
+--                                         Ptrs
+--                                         (StateL
+--                                            (ThunkStore (ValueL (ClosureL Id)) a)
+--                                            (ValueL (ClosureL Id))))))))
 
-type Co = (Cod (STC LocalBindings Ptrs
-            (Cod (STC Rename (Scope, VarIndex)
-                (Cod (STC CStore Constraints
-                  (Cod (NDC
-                    (Cod (EC
-                      (Cod (STC Trace [TraceInfo]
-                        (Cod (IOC T2))))))))))))))
+-- type Co = (Cod (STC LocalBindings Ptrs
+--             (Cod (STC Rename (Scope, VarIndex)
+--                 (Cod (STC CStore Constraints
+--                   (Cod (NDC
+--                     (Cod (EC
+--                       (Cod (STC Trace [TraceInfo]
+--                         (Cod (IOC T2))))))))))))))
 
-type T2 = StateL [TraceInfo] (ErrorL
-                         (ListL
-                            (StateL
-                               Constraints
-                                  (StateL
-                                     (Scope, VarIndex)
-                                     (StateL Ptrs (ValueL (ClosureL Id)))))))
+-- type T2 = StateL [TraceInfo] (ErrorL
+--                          (ListL
+--                             (StateL
+--                                Constraints
+--                                   (StateL
+--                                      (Scope, VarIndex)
+--                                      (StateL Ptrs (ValueL (ClosureL Id)))))))
 
-type M a =           Cod
-                         (H (Cod
-                               (PC
-                                  (Cod
-                                     (CC
-                                        (Cod
-                                           (MC
-                                              (Cod
-                                                 (STC
-                                                    LocalBindings
-                                                    Ptrs
-                                                    (Cod
-                                                       (STC
-                                                          Rename
-                                                          (Scope, VarIndex)
-                                                                (Cod
-                                                                   (STC
-                                                                      CStore
-                                                                      Constraints
-                                                                      (Cod
-                                                                         (NDC
-                                                                            (Cod
-                                                                               (EC
-                                                                                  (Cod
-                                                                                    (STC Trace [TraceInfo]
-                                                                                      (Cod
-                                                                                        (IOC
-                                                                                          (L 
-                                                                                             a)))))))))))))))
-                                              (ValueL (ClosureL Id))
-                                              a))))))
-                            Id
-                            a)
+-- type M a =           Cod
+--                          (H (Cod
+--                                (PC
+--                                   (Cod
+--                                      (CC
+--                                         (Cod
+--                                            (MC
+--                                               (Cod
+--                                                  (STC
+--                                                     LocalBindings
+--                                                     Ptrs
+--                                                     (Cod
+--                                                        (STC
+--                                                           Rename
+--                                                           (Scope, VarIndex)
+--                                                                 (Cod
+--                                                                    (STC
+--                                                                       CStore
+--                                                                       Constraints
+--                                                                       (Cod
+--                                                                          (NDC
+--                                                                             (Cod
+--                                                                                (EC
+--                                                                                   (Cod
+--                                                                                     (STC Trace [TraceInfo]
+--                                                                                       (Cod
+--                                                                                         (IOC
+--                                                                                           (L 
+--                                                                                              a)))))))))))))))
+--                                               (ValueL (ClosureL Id))
+--                                               a))))))
+--                             Id
+--                             a)
 
--- {-# SPECIALISE runCurryEffectsC :: [AEProg ((M ()) ())]
---                  -> (M ()) ()
---                  -> IO (Error [(Constraints, Value (Closure ()))]) #-}
+-- -- {-# SPECIALISE runCurryEffectsC :: [AEProg ((M ()) ())]
+-- --                  -> (M ()) ()
+-- --                  -> IO (Error [(Constraints, Value (Closure ()))]) #-}
 
-runCurryEffectsC :: forall a.
-                 (Show a)
-                 => [AEProg ((M a) a)]
-                 -> (M a) a
-                 -> IO ([TraceInfo], Error [(Constraints, Value (Closure a))])
-runCurryEffectsC ps e = unIOC (pipeline e' ) -- :: IOC (L Co a) ([TraceInfo], Error [(Constraints, Value (Closure a))]))
-  where
-    e' = initDecls ps >> e
-    pipeline = finish
-      . runStateC @Trace []
-      . runErrorC
-      . runNDC
-      . runStateC @CStore Map.empty
-      . runStateC' @Rename ((0, 0))
-      . runStateC' @LocalBindings Map.empty
-      . runLazyC
-      . runConsC
-      . runPartialC
-      . runDeclC []
-    {-# INLINE pipeline #-}
+-- runCurryEffectsC :: forall a.
+--                  (Show a)
+--                  => [AEProg ((M a) a)]
+--                  -> (M a) a
+--                  -> IO ([TraceInfo], Error [(Constraints, Value (Closure a))])
+-- runCurryEffectsC ps e = unIOC (pipeline e' ) -- :: IOC (L Co a) ([TraceInfo], Error [(Constraints, Value (Closure a))]))
+--   where
+--     e' = initDecls ps >> e
+--     pipeline = finish
+--       . runStateC @Trace []
+--       . runErrorC
+--       . runNDC
+--       . runStateC @CStore Map.empty
+--       . runStateC' @Rename ((0, 0))
+--       . runStateC' @LocalBindings Map.empty
+--       . runLazyC
+--       . runConsC
+--       . runPartialC
+--       . runDeclC []
+--     {-# INLINE pipeline #-}

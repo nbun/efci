@@ -16,18 +16,10 @@ import Curry.FlatCurry.Type (VarIndex)
 import qualified Data.Map as Map
 import Effect.General.Memoization
 import Effect.General.State
-import Free
 import Signature
 
-data LocalBindings
-
-instance Identify LocalBindings where
-    identify = "LocalBindings"
-
-type Ptrs = Map.Map (Scope, VarIndex) Ptr
-
 type Let sig sigl a =
-    (StateF LocalBindings Ptrs :<: sig, Renaming :<: sig, Thunking a :<<<<: sigl)
+    (Renaming :<: sig, Thunking a :<<<<: sigl)
 
 lvar
     :: (Let sig sigl a, EffectCons m sig sigs sigl Id)

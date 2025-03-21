@@ -102,7 +102,7 @@ instance Identify CaseState where
 
 case'
     :: forall m sig sigs sigl a
-     . (EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl, Renaming :<: sig, CaseScope :<: sigs, ND :<: sig, ConstraintStore :<: sig, ConsF :<: sig, StateF LocalBindings Ptrs :<: sig)
+     . (EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl, Renaming :<: sig, CaseScope :<: sigs, ND :<: sig, ConstraintStore :<: sig, ConsF :<: sig)
     => m a
     -> [(APattern (), m a)]
     -> m a
