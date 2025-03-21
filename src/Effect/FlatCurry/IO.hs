@@ -28,6 +28,7 @@ import Effect.General.Memoization (Thunking)
 import Free
 import Signature
 import Effect.General.State (EffectCons, logCall)
+import Effect.General.Delay
 
 data IOAction a
   = PutChar Char a
@@ -81,7 +82,7 @@ readFileIO :: forall sig sigs sigl m a. ( IOAction :<: sig
               , ConsF :<: sig
               , CaseScope :<: sigs
               , Thunking a :<<<<: sigl
-              , EffectCons m sig sigs sigl Id)
+              , EffectCons m sig sigs sigl Id, Delaying a :<<<<: sigl)
            => m a
            -> m a
 readFileIO fp = logCall >> injectS (External [fmap return fp] (return . f))

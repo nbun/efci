@@ -54,6 +54,7 @@ import Free
 import Signature
 import Type (AEFuncDecl (..), AEProg (..), AERule (..))
 import Effect.General.State (get, put)
+import Effect.General.Delay (Delaying)
 
 data VarKind
     = CombVar
@@ -66,7 +67,7 @@ type VarKindMap = Map.Map VarIndex VarKind
 
 type AEffects = '[ConsF, StateF LocalBindings Ptrs, Renaming, ConstraintStore, ND, Err, StateF Trace [TraceInfo], IOAction]
 type SEffects = '[Partial, CaseScope]
-type LEffects v = DeclF v :+++: (Thunking v :+++: LVoid)
+type LEffects v = DeclF v :+++: (Delaying v :+++: (Thunking v :+++: LVoid))
 
 type CurryEffects v = Sig AEffects SEffects (LEffects v) Id
 
@@ -86,9 +87,8 @@ fcyExpr2ae frees expr = let rec = fcyExpr2ae frees in
             scope <- currentScope
             return $ fvar scope i
                  | otherwise -> do
-            scope <- currentScope
-            lookupRenaming i
-            return $ lvar scope i
+            j <- lookupRenaming i
+            return $ lvar j
         ALit _ l -> return $ lit l
         AComb _ FuncCall (("Prelude", "?"), _) [e1, e2] ->
             liftM2 (?) (rec e1) (rec e2)
@@ -98,7 +98,7 @@ fcyExpr2ae frees expr = let rec = fcyExpr2ae frees in
         AComb _ callType (qn, _) args -> do
             args' <- mapM rec args
             case callType of
-                FuncCall -> return $ fun qn (Left args')
+                FuncCall -> return $ fun qn args'
                 FuncPartCall i ->
                     return $
                         partial qn (Effect.FlatCurry.Function.FuncPartCall i) args'
@@ -110,11 +110,10 @@ fcyExpr2ae frees expr = let rec = fcyExpr2ae frees in
         -- \$ "FCY2AE.fcyExpr2ae: comb type not supported for " ++ show qn
         ALet _ bs e -> do
             let ((vs, _), es) = first unzip (unzip bs)
-            rename vs
+            vs' <- rename vs
             es' <- mapM rec es
             e' <- rec e
-            scope <- currentScope
-            return $ let' scope (zip vs es') e'
+            return $ let' (zip vs' es') e'
         AFree _ bs e -> do
             let vs = map fst bs
             rename vs
@@ -160,7 +159,7 @@ fcyRule2ae :: (() :<<<: v, TermMonad m (CurryEffects v)) => ARule TypeExpr -> AE
 fcyRule2ae (ARule _ vars e) =
     let (vs, _) = unzip vars
         e' = do
-            rename vs
+            vs' <- rename vs
             join $ fcyExpr2ae [] e
      in AERule vs e'
 fcyRule2ae (AExternal _ s) = AEExternal s

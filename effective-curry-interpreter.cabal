@@ -24,6 +24,7 @@ library
                    , Effect.General.ND
                    , Paths_effective_curry_interpreter
                    , Effect.General.Memoization
+                   , Effect.General.Delay
                    , Effect.General.State
                    , Effect.General.Reader
                    , Effect.FlatCurry.Declarations

@@ -28,6 +28,7 @@ import Effect.FlatCurry.Declarations
 import qualified Data.Map as Map
 import Effect.FlatCurry.Let
 import GHC.Types.Unique.Supply (mkSplitUniqSupply)
+import Effect.General.Delay
 
 runCurryEffects :: (Show a, Vars a)
                 => [AEProg (Prog (CurryEffects a) a)]
@@ -41,9 +42,10 @@ runCurryEffects ps e = mkSplitUniqSupply 'a' >>= \sup -> pipeline sup e'
       . runError
       . runND
       . (\x -> hState @CStore x Map.empty)
-      . runState @Rename ((0, 0, [], sup))
+      . runState @Rename ((0, 0, [], sup, []))
       . runState @LocalBindings Map.empty
       . runLazy
+      . runDelay
       . runCons
       . runPartial
       . runDecl []
@@ -60,9 +62,10 @@ runSmartCurryEffects ps e = mkSplitUniqSupply 'a' >>= \sup -> pipeline sup e'
       . runErrorSmart
       . runNDSmart
       . (\x -> hStateSmart @CStore x Map.empty)
-      . runStateSmart @Rename ((0, 0, [], sup))
+      . runStateSmart @Rename ((0, 0, [], sup, []))
       . runStateSmart @LocalBindings Map.empty
       . runLazySmart
+      . runDelaySmart
       . runConsSmart
       . runPartialSmart
       . runDeclSmart []

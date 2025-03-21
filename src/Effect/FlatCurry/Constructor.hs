@@ -20,11 +20,12 @@ import Data.Maybe (mapMaybe)
 import Effect.FlatCurry.Let
 import Effect.General.Error (Err (..))
 import Effect.General.Memoization
-    ( Ptr, Thunking, thunk, force)
+    ( Ptr, Thunking, force)
 import Effect.General.ND (ND, choose, failed)
 import Effect.General.State
 import Free
 import Signature
+import Effect.General.Delay
 
 data ConsF a
     = FCons QName [Ptr]
@@ -73,14 +74,14 @@ normalform p = logCall >> injectS (Normalize (fmap return p) (fmap return . f))
 {-# INLINE normalform #-}
 
 cons
-    :: (EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl, ConsF :<: sig)
+    :: (EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl, ConsF :<: sig, Delaying a :<<<<: sigl)
     => QName
     -> [m a]
     -> m a
 cons qn ps =
     logCall >> do
-        args <- mapM thunk ps
-        injectA (FCons qn args)
+        ptrs <- mapM delay ps
+        injectA (FCons qn ptrs)
 {-# INLINE cons #-}
 
 thunkedCons
@@ -102,7 +103,7 @@ instance Identify CaseState where
 
 case'
     :: forall m sig sigs sigl a
-     . (EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl, Renaming :<: sig, CaseScope :<: sigs, ND :<: sig, ConstraintStore :<: sig, ConsF :<: sig, StateF LocalBindings Ptrs :<: sig)
+     . (EffectCons m sig sigs sigl Id, Delaying a :<<<<: sigl, Thunking a :<<<<: sigl, Renaming :<: sig, CaseScope :<: sigs, ND :<: sig, ConstraintStore :<: sig, ConsF :<: sig, StateF LocalBindings Ptrs :<: sig)
     => Scope
     -> m a
     -> [(APattern (), m a)]
@@ -119,8 +120,9 @@ case' scope cp brs =
       where
         match (HNF qn args) (APattern _ (pqn, _) argVars, e)
             | pqn == qn =
-                Just $
-                    letThunked scope (zip (map fst argVars) args) e
+                Just $ do
+                    let es = map retrieve args
+                    let' (zip (map fst argVars) es) e
             | otherwise = Nothing
         match (Lit l) (ALPattern _ lp, e)
             | l == lp = Just e
@@ -131,7 +133,7 @@ case' scope cp brs =
                     vs <- freshNames (length argVars)
                     let fvs = map (fvar scope) vs
                     modify @CStore (addC i (ConsC pqn (map (scope,) vs)))
-                    let' scope (zip (map fst argVars) fvs) e
+                    let' (zip (map fst argVars) fvs) e
                 (ALPattern _ lp, e) -> do
                     modify @CStore (addC i (LitC lp))
                     e
@@ -282,7 +284,7 @@ compInt
        , Thunking v :<<<<: sigl
        , ConsF :<: sig
        , CaseScope :<: sigs
-       , EffectCons m sig sigs sigl Id
+       , EffectCons m sig sigs sigl Id, Delaying v :<<<<: sigl
        )
     => (Integer -> Integer -> Bool)
     -> m v
@@ -300,7 +302,7 @@ compChar
        , Thunking v :<<<<: sigl
        , ConsF :<: sig
        , CaseScope :<: sigs
-       , EffectCons m sig sigs sigl Id
+       , EffectCons m sig sigs sigl Id, Delaying v :<<<<: sigl
        )
     => (Char -> Char -> Bool)
     -> m v
@@ -336,7 +338,7 @@ val2str (Cons ("Prelude", ":") [Lit (Charc c), xs]) = c : val2str xs
 val2str hnf = error $ "hnf2str: " ++ show hnf
 
 str2prog
-    :: (Thunking a :<<<<: sigl, ConsF :<: sig, EffectCons m sig sigs sigl Id)
+    :: (Thunking a :<<<<: sigl, ConsF :<: sig, EffectCons m sig sigs sigl Id, Delaying a :<<<<: sigl)
     => String
     -> m a
 str2prog [] = cons ("Prelude", "[]") []
@@ -349,7 +351,7 @@ fvar
        , Thunking a :<<<<: sigl
        , ConstraintStore :<: sig
        , Renaming :<: sig
-       , EffectCons m sig sigs sigl Id
+       , EffectCons m sig sigs sigl Id, Delaying a :<<<<: sigl
        )
     => Scope
     -> VarIndex

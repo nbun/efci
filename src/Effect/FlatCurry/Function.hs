@@ -34,12 +34,14 @@ import Effect.General.State
 import Free
 import Signature
 import Type (AEFuncDecl (..), AEProg (..), AERule (..))
+import Effect.General.Delay
 
 
 type Functions sig sigs sigl a =
     ( '[ConsF, Err, IOAction, ConstraintStore, ND] :.: sig
     , '[Partial, CaseScope] :.: sigs
     , Thunking a :<<<<: sigl
+    , Delaying a :<<<<: sigl
     , Renaming :<: sig
     , DeclF a :<<<<: sigl
     , () :<<<: a
@@ -50,21 +52,18 @@ fun
     :: forall sig sigs sigl m a
      . (EffectCons m sig sigs sigl Id, Functions sig sigs sigl a)
     => QName
-    -> Either [m a] [Ptr]
+    -> [m a]
     -> m a
-fun qn ps = logCallWith (either (const "") (const "thunked") ps) >> do
-        scope <- newScope
+fun qn ps = logCallWith (show qn) >> do
         modifyRenaming (const [])
         (ar, vis, ty, r) <- getInfo @a qn
         let fdecl = AEFunc qn ar vis ty r
         if isExternal fdecl
-            then callExternal fdecl (either id (map (force)) ps)
+            then callExternal fdecl ps
             else do
                 let (vs, _, _) = fdclRule fdecl
-                    e = getBody qn
-                case ps of
-                    Left prgs -> let' scope (zip vs prgs) e
-                    Right ptrs -> letThunked scope (zip vs ptrs) e
+                let e = getBody qn
+                let' (zip vs ps) e
 
 callExternal
     :: (EffectCons m sig sigs sigl Id, Functions sig sigs sigl a)
@@ -182,14 +181,14 @@ instance Functor Closure where
     {-# INLINE fmap #-}
 
 partial
-    :: (EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl, Partial :<: sigs)
+    :: (EffectCons m sig sigs sigl Id, Delaying a :<<<<: sigl, Partial :<: sigs)
     => QName
     -> CombType
     -> [m a]
     -> m a
 partial qn combtype args =
     logCall >> do
-        ptrs <- mapM thunk args
+        ptrs <- mapM delay args
         injectS $ PartCall qn combtype ptrs
 
 missingArgs :: CombType -> Int
@@ -207,14 +206,14 @@ apply'
     -> m a
 apply' f x =
     logCall >> do
-        ptr <- thunk x
+        ptr <- delay x
         injectS $ FApply (fmap return f) (return . k ptr)
   where
     k p (qn, combtype, ptrs) =
         let ptrs' = ptrs ++ [p]
          in case combtype of
                 FuncPartCall 1 -> do
-                    fun qn (Right ptrs')
+                    fun qn (map retrieve ptrs')
                 ConsPartCall 1 -> thunkedCons qn ptrs'
                 _ -> injectS $ PartCall qn (decArgs combtype) ptrs'
 
@@ -337,4 +336,4 @@ ands
 ands [] = cons ("Prelude", "True") []
 ands [x] = x
 ands (x : xs) = do
-    fun ("Prelude", "&&") (Left [x, ands xs])
+    fun ("Prelude", "&&") [x, ands xs]
