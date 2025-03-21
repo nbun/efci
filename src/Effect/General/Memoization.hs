@@ -83,11 +83,11 @@ runGC ptrs = logCall >> injectL (RunGC ptrs :: Thunking v () NoSub) (Id ()) (\x 
 {-# INLINE runGC #-}
 
 runLazy :: (Functor l, Show (l v), Show (l ()), m ~ Prog (Sig sig sigs sigl (StateL (ThunkStore l v) l)), Monad m) => Prog (Sig sig sigs (Thunking v :+++: sigl) l) b -> m b
-runLazy = fmap snd . \p -> hLazy p (TS (2^10) IntMap.empty)
+runLazy = fmap snd . \p -> hLazy p (TS (-2^10) IntMap.empty)
 {-# INLINE runLazy #-}
 
 runLazySmart :: (Functor l, Show (l v), Show (l ()), m ~ SmartProg (Sig sig sigs sigl (StateL (ThunkStore l v) l)), Monad m) => SmartProg (Sig sig sigs (Thunking v :+++: sigl) l) b -> m b
-runLazySmart = fmap (\(s, r) -> strace (showTS s) r)  . \p -> hLazySmart p (TS (2^10) IntMap.empty)
+runLazySmart = fmap (\(s, r) -> strace (showTS s) r)  . \p -> hLazySmart p (TS (-2^10) IntMap.empty)
 {-# INLINE runLazySmart #-}
 
 hLazy
