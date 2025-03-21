@@ -72,7 +72,7 @@ declutter (ti, Error s) = (ti, [RError s])
 declutter (ti, EOther xs) = (ti, map addBindings xs)
   where
     addBindings (bs, v)
-      | Map.null bs || all (\(_,i) -> i > 999) (Map.keys bs) = declutterHNF v
+      | Map.null bs || all (\i -> i > 999) (Map.keys bs) = declutterHNF v
       | otherwise = RBindings bs (declutterHNF v)
 
 declutterHNF :: Show a => Value (Closure a) -> Result
@@ -89,7 +89,7 @@ data Result = RLit Literal
             | Unevaluated
             | RClosure QName CombType
             | RError String
-            | RFree (Scope, VarIndex)
+            | RFree VarIndex
             | ROther String
             | RBindings Constraints Result
   deriving (Show, Eq)
@@ -121,7 +121,7 @@ instance Pretty Result where
     "{" ++ intercalate ", " (map pretty (Map.toList cs)) ++ "} " ++ pretty r
   pretty (ROther s) = s
 
-instance Pretty ((Scope, VarIndex), CValue) where
+instance Pretty (VarIndex, CValue) where
   pretty (i, LitC l) = '_':show i ++ " -> " ++ show l
   pretty (i, VarC j) = '_':show i ++ " -> " ++ show j
   pretty (i, ConsC qn []) = '_':show i ++ " -> " ++ snd qn

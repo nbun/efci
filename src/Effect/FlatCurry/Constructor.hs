@@ -30,7 +30,7 @@ data ConsF a
     = FCons QName [Ptr]
     | FStrictCons QName [a]
     | FLit Literal
-    | FFree (Scope, VarIndex)
+    | FFree VarIndex
 
 instance Functor ConsF where
     fmap _ (FCons qn args) = FCons qn args
@@ -103,11 +103,10 @@ instance Identify CaseState where
 case'
     :: forall m sig sigs sigl a
      . (EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl, Renaming :<: sig, CaseScope :<: sigs, ND :<: sig, ConstraintStore :<: sig, ConsF :<: sig, StateF LocalBindings Ptrs :<: sig)
-    => Scope
-    -> m a
+    => m a
     -> [(APattern (), m a)]
     -> m a
-case' scope cp brs =
+case' cp brs =
     logCall
         >> injectS (Case (fmap return cp) (return . cnt))
   where
@@ -130,8 +129,8 @@ case' scope cp brs =
             case pat of
                 (APattern _ (pqn, _) argVars, e) -> do
                     vs <- freshNames (length argVars)
-                    let fvs = map (fvar scope) vs
-                    modify @CStore (addC i (ConsC pqn (map (scope,) vs)))
+                    let fvs = map fvar vs
+                    modify @CStore (addC i (ConsC pqn vs))
                     let' (zip (map fst argVars) fvs) e
                 (ALPattern _ lp, e) -> do
                     modify @CStore (addC i (LitC lp))
@@ -144,7 +143,7 @@ data Value a
     = Cons QName [Value a]
     | HNF QName [Ptr]
     | Lit Literal
-    | Free (Scope, VarIndex)
+    | Free VarIndex
     | ValOther a
     deriving (Show)
 
@@ -341,13 +340,12 @@ fvar
        , Renaming :<: sig
        , EffectCons m sig sigs sigl Id
        )
-    => Scope
-    -> VarIndex
+    => VarIndex
     -> m a
-fvar scope i =
+fvar i =
     logCall >> do
         cs <- get @CStore
-        applyC cs (scope, i)
+        applyC cs i
   where
     applyC store n = case lookupC n store of
         Just (ConsC qn vs) -> do

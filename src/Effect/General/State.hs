@@ -93,10 +93,9 @@ freshNames
 freshNames 0 = logCall >> return []
 freshNames n =
     logCall >> do
-        (nextScope :: Scope, nextVar, rs :: [(VarIndex, VarIndex)], s :: UniqSupply, funVars :: [VarIndex]) <- get @Rename
-        let end = nextVar - (n - 1)
-        let vs' = [nextVar, (nextVar - 1) .. end]
-        put @Rename (nextScope, end - 1, rs, s, funVars) 
+        (nextScope :: Scope, nextVar :: VarIndex, rs :: [(VarIndex, VarIndex)], sup :: UniqSupply, funVars :: [VarIndex]) <- get @Rename
+        let (vs', sup') = foldr (\_ (us, sup) -> let (u, sup') = takeUniqFromSupply sup in (fromIntegral (getKey u):us, sup')) ([], sup) [1..n]
+        put @Rename (nextScope, nextVar, rs, sup', funVars) 
         return vs'
 {-# INLINE freshNames #-}
 
@@ -138,17 +137,6 @@ lookupRenaming v = logCall >> do
             Just v' -> return v'
             Nothing -> error $ "lookupRenaming: " ++ show v ++ " in "
 {-# INLINE lookupRenaming #-}
-
-putFunVars :: (EffectCons m sig sigs sigl l, Renaming :<: sig) => [VarIndex] -> m ()
-putFunVars funVars = logCall >> do
-        (nextScope, newVar, rs, sup, _) :: (Scope, VarIndex, [(VarIndex, VarIndex)], UniqSupply, [VarIndex]) <- get @Rename
-        put @Rename (nextScope, newVar, rs, sup, funVars)
-        return ()
-
-getFunVars :: (EffectCons m sig sigs sigl l, Renaming :<: sig) => m [VarIndex]
-getFunVars = logCall >> do
-        (nextScope, newVar, rs, sup, funVars) :: (Scope, VarIndex, [(VarIndex, VarIndex)], UniqSupply, [VarIndex]) <- get @Rename
-        return funVars
 
 rename :: (EffectCons m sig sigs sigl l, Renaming :<: sig) => [VarIndex] -> m [VarIndex]
 rename vs = logCall >> do
@@ -253,18 +241,18 @@ instance (Functor l) => Functor (StateL s l) where
 -- constraint store --
 
 data CValue
-    = VarC (Scope, VarIndex)
-    | ConsC QName [(Scope, VarIndex)]
+    = VarC VarIndex
+    | ConsC QName [VarIndex]
     | LitC Literal
     deriving (Show, Eq)
 
-type Constraints = Map.Map (Scope, VarIndex) CValue
+type Constraints = Map.Map VarIndex CValue
 
-lookupC :: (Scope, VarIndex) -> Constraints -> Maybe CValue
+lookupC :: VarIndex -> Constraints -> Maybe CValue
 lookupC = Map.lookup
 {-# INLINE lookupC #-}
 
-addC :: (Scope, VarIndex) -> CValue -> Constraints -> Constraints
+addC :: VarIndex -> CValue -> Constraints -> Constraints
 addC = Map.insert
 {-# INLINE addC #-}
 

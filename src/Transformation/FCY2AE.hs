@@ -84,8 +84,8 @@ fcyExpr2ae
 fcyExpr2ae frees expr = let rec = fcyExpr2ae frees in
     case expr of
         AVar _ i | i `elem` frees -> do
-            scope <- currentScope
-            return $ fvar scope i
+            j <- lookupRenaming i
+            return $ fvar j
                  | otherwise -> do
             j <- lookupRenaming i
             return $ lvar j
@@ -129,8 +129,7 @@ fcyExpr2ae frees expr = let rec = fcyExpr2ae frees in
                 mapM
                     (\(ABranch pat e') -> fmap (newPat r pat,) (rec e'))
                     brs
-            scope <- currentScope
-            return $ case' scope e' brs'
+            return $ case' e' brs'
           where
             newPat r (APattern _ (qn, _) vars) = APattern () (qn, ()) newVars
                 where newVars = map (\(v, _) -> (fromJust $ lookup v r , ())) vars
