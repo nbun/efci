@@ -155,7 +155,7 @@ rename vs = logCall >> do
         s@(nextScope, newVar, rs, sup, funVars) :: (Scope, VarIndex, [(VarIndex, VarIndex)], UniqSupply, [VarIndex]) <- get @Rename
         let (rs', sup') = foldr (\v (us, sup) -> let (u, sup') = takeUniqFromSupply sup in ((v,fromIntegral (getKey u)):us, sup')) ([], sup) vs
         put @Rename (nextScope, newVar, rs ++ rs', sup', funVars)
-        trace ("rename: " ++ show rs ++ show rs') $ return ()
+        -- trace ("rename: " ++ show rs ++ show rs') $ return ()
         return (map snd rs')
 {-# INLINE rename #-}
 
@@ -245,11 +245,6 @@ instance (Monad m) => Pointed (STC tag s m) where
     {-# INLINE point #-}
 
 newtype StateL s l a = StateL {unStateL :: (s, l a)} deriving (Show)
-
-instance Vars (l a) => Vars (StateL s l a) where
-    vars (StateL (_, l)) = vars l
-    {-# INLINE vars #-}
-
 
 instance (Functor l) => Functor (StateL s l) where
     fmap f (StateL (s, la)) = StateL (s, fmap f la)

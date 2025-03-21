@@ -34,14 +34,12 @@ import Effect.General.State
 import Free
 import Signature
 import Type (AEFuncDecl (..), AEProg (..), AERule (..))
-import Effect.General.Delay
 
 
 type Functions sig sigs sigl a =
     ( '[ConsF, Err, IOAction, ConstraintStore, ND] :.: sig
     , '[Partial, CaseScope] :.: sigs
     , Thunking a :<<<<: sigl
-    , Delaying a :<<<<: sigl
     , Renaming :<: sig
     , DeclF a :<<<<: sigl
     , () :<<<: a
@@ -64,6 +62,17 @@ fun qn ps = logCallWith (show qn) >> do
                 -- let (vs, _, _) = fdclRule fdecl
                 let e = getBody qn
                 app e ps
+
+thunkedFun :: forall sig sigs sigl m a. (EffectCons m sig sigs sigl Id, Functions sig sigs sigl a) => QName -> [Ptr] -> m a
+thunkedFun qn ptrs = logCallWith (show qn) >> do
+    modifyRenaming (const [])
+    (ar, vis, ty, r) <- getInfo @a qn
+    let fdecl = AEFunc qn ar vis ty r
+    if isExternal fdecl
+        then callExternal fdecl (map force ptrs)
+        else do
+            let e = getBody qn
+            thunkedApp e ptrs
 
 callExternal
     :: (EffectCons m sig sigs sigl Id, Functions sig sigs sigl a)
@@ -158,10 +167,10 @@ data CombType
     deriving (Show, Eq)
 
 data Partial a
-    = PartCall QName CombType [DPtr]
-    | FApply a ((QName, CombType, [DPtr]) -> a)
-    | Abs [VarIndex] DPtr
-    | App a (([VarIndex], DPtr) -> a)
+    = PartCall QName CombType [Ptr]
+    | FApply a ((QName, CombType, [Ptr]) -> a)
+    | Abs [VarIndex] Ptr
+    | App a (([VarIndex], Ptr) -> a)
 
 instance Functor Partial where
     fmap _ (PartCall qn ct ptrs) = PartCall qn ct ptrs
@@ -171,15 +180,10 @@ instance Functor Partial where
     {-# INLINE fmap #-}
 
 data Closure a
-    = Closure QName CombType [DPtr]
-    | Lambda [VarIndex] DPtr
+    = Closure QName CombType [Ptr]
+    | Lambda [VarIndex] Ptr
     | Other a
     deriving (Show)
-
-instance Vars a => Vars (Closure a) where
-    vars (Closure _ _ ptrs) = []
-    vars (Other x) = vars x
-    vars (Lambda vs ptr) = []
 
 instance Functor Closure where
     fmap _ (Closure qn ct ptrs) = Closure qn ct ptrs
@@ -187,24 +191,28 @@ instance Functor Closure where
     fmap f (Lambda vs ptr) = Lambda vs ptr
     {-# INLINE fmap #-}
 
-lambda :: (EffectCons m sig sigs sigl Id, Partial :<: sigs, Delaying a :<<<<: sigl) => [VarIndex] -> m a -> m a
+lambda :: (EffectCons m sig sigs sigl Id, Partial :<: sigs, Thunking a :<<<<: sigl) => [VarIndex] -> m a -> m a
 lambda vs e = logCall >> do
-    ptr <- delay e
+    ptr <- store e
     injectS (Abs vs ptr)
 
-app :: (EffectCons m sig sigs sigl Id, Partial :<: sigs, Let sig sigl a, Delaying a :<<<<: sigl) => m a -> [m a] -> m a
+app :: (EffectCons m sig sigs sigl Id, Partial :<: sigs, Let sig sigl a) => m a -> [m a] -> m a
 app lam args = logCall >> injectS (App (fmap return lam) k)
-  where k (vs, ptr) = return $ let' (zip vs args) (retrieve ptr)
+  where k (vs, ptr) = return $ let' (zip vs args) (force ptr)
+
+thunkedApp :: (EffectCons m sig sigs sigl Id, Partial :<: sigs, Let sig sigl a) => m a -> [Ptr] -> m a
+thunkedApp lam ptrs = logCall >> injectS (App (fmap return lam) k)
+  where k (vs, ptr) = return $ thunkedLet' (zip vs ptrs) (force ptr)
 
 partial
-    :: (EffectCons m sig sigs sigl Id, Delaying a :<<<<: sigl, Partial :<: sigs)
+    :: (EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl, Partial :<: sigs)
     => QName
     -> CombType
     -> [m a]
     -> m a
 partial qn combtype args =
     logCall >> do
-        ptrs <- mapM delay args
+        ptrs <- mapM store args
         injectS $ PartCall qn combtype ptrs
 
 missingArgs :: CombType -> Int
@@ -222,14 +230,14 @@ apply'
     -> m a
 apply' f x =
     logCall >> do
-        ptr <- delay x
+        ptr <- store x
         injectS $ FApply (fmap return f) (return . k ptr)
   where
     k p (qn, combtype, ptrs) =
         let ptrs' = ptrs ++ [p]
          in case combtype of
                 FuncPartCall 1 -> do
-                    fun qn (map retrieve ptrs')
+                    thunkedFun qn ptrs'
                 ConsPartCall 1 -> thunkedCons qn ptrs'
                 _ -> injectS $ PartCall qn (decArgs combtype) ptrs'
 
@@ -308,9 +316,6 @@ instance Lift ClosureL Closure where
 newtype ClosureL l a = ClosureL {unClosureL :: Closure (l a)}
     deriving (Functor, Show)
 
-instance Vars (Closure (l a)) => Vars (ClosureL l a) where
-    vars (ClosureL c) = vars c
-
 -- unification --
 
 unify
@@ -331,14 +336,14 @@ unify e1 e2 =
     cnt :: (Value (), Value ()) -> m a
     cnt (HNF qn1 args1, HNF qn2 args2)
         | qn1 == qn2 = do
-            let args1' = map retrieve args1
-            let args2' = map retrieve args2
+            let args1' = map force args1
+            let args2' = map force args2
             ands $ zipWith unify args1' args2'
     cnt (Free i, Free j) = do
         modify @CStore (addC i (VarC j))
         cons ("Prelude", "True") []
     cnt (Free i, HNF qn args) = do
-        let args' = map retrieve args
+        let args' = map force args
         vs <- freshNames (length args)
         scope <- currentScope
         let fvs = map (fvar scope) vs

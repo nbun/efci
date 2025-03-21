@@ -28,9 +28,8 @@ import Effect.FlatCurry.Declarations
 import qualified Data.Map as Map
 import Effect.FlatCurry.Let
 import GHC.Types.Unique.Supply (mkSplitUniqSupply)
-import Effect.General.Delay
 
-runCurryEffects :: (Show a, Vars a)
+runCurryEffects :: (Show a)
                 => [AEProg (Prog (CurryEffects a) a)]
                 -> Prog (CurryEffects a) a
                 -> IO ([TraceInfo], Error [(Constraints, Value (Closure a))])
@@ -45,12 +44,11 @@ runCurryEffects ps e = mkSplitUniqSupply 'a' >>= \sup -> pipeline sup e'
       . runState @Rename ((0, 0, [], sup, []))
       . runState @LocalBindings Map.empty
       . runLazy
-      . runDelay
       . runCons
       . runPartial
       . runDecl []
 
-runSmartCurryEffects :: (Show a, Vars a)
+runSmartCurryEffects :: (Show a)
                 => [AEProg (SmartProg (CurryEffects a) a)]
                 -> SmartProg (CurryEffects a) a
                 -> IO ([TraceInfo], Error [(Constraints, Value (Closure a))])
@@ -65,7 +63,6 @@ runSmartCurryEffects ps e = mkSplitUniqSupply 'a' >>= \sup -> pipeline sup e'
       . runStateSmart @Rename ((0, 0, [], sup, []))
       . runStateSmart @LocalBindings Map.empty
       . runLazySmart
-      . runDelaySmart
       . runConsSmart
       . runPartialSmart
       . runDeclSmart []
@@ -211,7 +208,7 @@ type M a =           Cod
 --                  -> IO (Error [(Constraints, Value (Closure ()))]) #-}
 
 runCurryEffectsC :: forall a.
-                 (Show a, Vars a)
+                 (Show a)
                  => [AEProg ((M a) a)]
                  -> (M a) a
                  -> IO ([TraceInfo], Error [(Constraints, Value (Closure a))])

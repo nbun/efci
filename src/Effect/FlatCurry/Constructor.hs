@@ -20,15 +20,14 @@ import Data.Maybe (mapMaybe)
 import Effect.FlatCurry.Let
 import Effect.General.Error (Err (..))
 import Effect.General.Memoization
-    ( Ptr, Thunking, force)
+    ( Ptr, Thunking, force, store)
 import Effect.General.ND (ND, choose, failed)
 import Effect.General.State
 import Free
 import Signature
-import Effect.General.Delay
 
 data ConsF a
-    = FCons QName [DPtr]
+    = FCons QName [Ptr]
     | FStrictCons QName [a]
     | FLit Literal
     | FFree (Scope, VarIndex)
@@ -42,7 +41,7 @@ instance Functor ConsF where
 
 data CaseScope a
     = Case a (Value () -> a)
-    | Normalize a ((QName, [DPtr]) -> a)
+    | Normalize a ((QName, [Ptr]) -> a)
     | External [a] ([Value ()] -> a)
     | Unify a a ((Value (), Value ()) -> a)
 
@@ -60,7 +59,7 @@ data Mode
 
 normalform
     :: ( ConsF :<: sig
-       , Delaying a :<<<<: sigl
+       , Thunking a :<<<<: sigl
        , CaseScope :<: sigs
        , EffectCons m sig sigs sigl Id
        )
@@ -69,25 +68,25 @@ normalform
 normalform p = logCall >> injectS (Normalize (fmap return p) (fmap return . f))
   where
     f (qn, ptrs) = do
-        let args = map ((normalform . retrieve)) ptrs
+        let args = map ((normalform . force)) ptrs
         injectA (FStrictCons qn args)
 {-# INLINE normalform #-}
 
 cons
-    :: (EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl, ConsF :<: sig, Delaying a :<<<<: sigl)
+    :: (EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl, ConsF :<: sig)
     => QName
     -> [m a]
     -> m a
 cons qn ps =
     logCall >> do
-        ptrs <- mapM delay ps
+        ptrs <- mapM store ps
         injectA (FCons qn ptrs)
 {-# INLINE cons #-}
 
 thunkedCons
     :: (EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl, ConsF :<: sig)
     => QName
-    -> [DPtr]
+    -> [Ptr]
     -> m a
 thunkedCons qn args = logCall >> injectA (FCons qn args)
 {-# INLINE thunkedCons #-}
@@ -103,7 +102,7 @@ instance Identify CaseState where
 
 case'
     :: forall m sig sigs sigl a
-     . (EffectCons m sig sigs sigl Id, Delaying a :<<<<: sigl, Thunking a :<<<<: sigl, Renaming :<: sig, CaseScope :<: sigs, ND :<: sig, ConstraintStore :<: sig, ConsF :<: sig, StateF LocalBindings Ptrs :<: sig)
+     . (EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl, Renaming :<: sig, CaseScope :<: sigs, ND :<: sig, ConstraintStore :<: sig, ConsF :<: sig, StateF LocalBindings Ptrs :<: sig)
     => Scope
     -> m a
     -> [(APattern (), m a)]
@@ -121,7 +120,7 @@ case' scope cp brs =
         match (HNF qn args) (APattern _ (pqn, _) argVars, e)
             | pqn == qn =
                 Just $ do
-                    let es = map retrieve args
+                    let es = map force args
                     let' (zip (map fst argVars) es) e
             | otherwise = Nothing
         match (Lit l) (ALPattern _ lp, e)
@@ -143,18 +142,11 @@ case' scope cp brs =
 
 data Value a
     = Cons QName [Value a]
-    | HNF QName [DPtr]
+    | HNF QName [Ptr]
     | Lit Literal
     | Free (Scope, VarIndex)
     | ValOther a
     deriving (Show)
-
-instance Vars a => Vars (Value a) where
-    vars (Cons _ args) = concatMap vars args
-    vars (HNF _ ptrs) = []
-    vars (ValOther x) = vars x
-    vars _ = []
-    {-# INLINE vars #-}
 
 instance Functor Value where
     fmap f (Cons qn args) = Cons qn (map (fmap f) args)
@@ -166,10 +158,6 @@ instance Functor Value where
 
 newtype ValueL l a = ValueL {unValueL :: Value (l a)}
     deriving (Show)
-
-instance Vars (Value (l a)) => Vars (ValueL l a) where
-    vars (ValueL v) = vars v
-    {-# INLINE vars #-}
 
 instance (Functor l) => Functor (ValueL l) where
     fmap f (ValueL x) = ValueL (fmap (fmap f) x)
@@ -284,7 +272,7 @@ compInt
        , Thunking v :<<<<: sigl
        , ConsF :<: sig
        , CaseScope :<: sigs
-       , EffectCons m sig sigs sigl Id, Delaying v :<<<<: sigl
+       , EffectCons m sig sigs sigl Id
        )
     => (Integer -> Integer -> Bool)
     -> m v
@@ -302,7 +290,7 @@ compChar
        , Thunking v :<<<<: sigl
        , ConsF :<: sig
        , CaseScope :<: sigs
-       , EffectCons m sig sigs sigl Id, Delaying v :<<<<: sigl
+       , EffectCons m sig sigs sigl Id
        )
     => (Char -> Char -> Bool)
     -> m v
@@ -338,7 +326,7 @@ val2str (Cons ("Prelude", ":") [Lit (Charc c), xs]) = c : val2str xs
 val2str hnf = error $ "hnf2str: " ++ show hnf
 
 str2prog
-    :: (Thunking a :<<<<: sigl, ConsF :<: sig, EffectCons m sig sigs sigl Id, Delaying a :<<<<: sigl)
+    :: (Thunking a :<<<<: sigl, ConsF :<: sig, EffectCons m sig sigs sigl Id)
     => String
     -> m a
 str2prog [] = cons ("Prelude", "[]") []
@@ -351,7 +339,7 @@ fvar
        , Thunking a :<<<<: sigl
        , ConstraintStore :<: sig
        , Renaming :<: sig
-       , EffectCons m sig sigs sigl Id, Delaying a :<<<<: sigl
+       , EffectCons m sig sigs sigl Id
        )
     => Scope
     -> VarIndex

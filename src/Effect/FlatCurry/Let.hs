@@ -47,3 +47,9 @@ let' bs e =
         mapM_ (uncurry thunk) bs
         e
 {-# INLINE let' #-}
+
+thunkedLet' :: forall sig sigs sigl m a. (Let sig sigl a, EffectCons m sig sigs sigl Id) => [(VarIndex, Ptr)] -> m a -> m a
+thunkedLet' bs e = logCall >> do
+    redirect @a bs
+    e
+{-# INLINE thunkedLet' #-}

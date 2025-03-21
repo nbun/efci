@@ -46,8 +46,18 @@ type Ptr' = VarIndex
 
 data Thunking v :: Type -> (Type -> Type) -> Type where
    Thunk :: Ptr -> Thunking v () (OneSub v)
+   Store :: Thunking v Ptr (OneSub v)
    Force :: Ptr -> Thunking v v NoSub
+   Redirect :: [(Ptr, Ptr)] -> Thunking v () NoSub
    RunGC :: [ScpVarIndex] -> Thunking v () NoSub
+
+store
+   :: forall m sig sigs sigl v
+    . (EffectCons m sig sigs sigl Id, Thunking v :<<<<: sigl)
+   => m v
+   -> m Ptr
+store t = logCall >> injectL (Store :: Thunking v Ptr (OneSub v)) (Id ()) (\One _ -> fmap Id t) (return . unId)
+{-# INLINE store #-}
 
 thunk
    :: forall m sig sigs sigl v
@@ -62,23 +72,27 @@ force :: (EffectCons m sig sigs sigl Id, Thunking v :<<<<: sigl) => Ptr -> m v
 force e = logCall >> injectL (Force e) (Id ()) (\x -> case x of {}) (return . unId)
 {-# INLINE force #-}
 
+redirect :: forall v m sig sigs sigl. (EffectCons m sig sigs sigl Id, Thunking v :<<<<: sigl) => [(Ptr, Ptr)] -> m ()
+redirect ps = logCall >> injectL (Redirect ps :: Thunking v () NoSub) (Id ()) (\x -> case x of {}) (return . unId)
+{-# INLINE redirect #-}
+
 type Ptr = Int
 
 runGC :: forall v m sig sigs sigl. (EffectCons m sig sigs sigl Id, Thunking v :<<<<: sigl) => [ScpVarIndex] -> m ()
 runGC ptrs = logCall >> injectL (RunGC ptrs :: Thunking v () NoSub) (Id ()) (\x -> case x of {}) (return . unId)
 {-# INLINE runGC #-}
 
-runLazy :: (Functor l, Show (l v), Show (l ()), m ~ Prog (Sig sig sigs sigl (StateL (ThunkStore l v) l)), Monad m, Vars (l v)) => Prog (Sig sig sigs (Thunking v :+++: sigl) l) b -> m b
-runLazy = fmap snd . \p -> hLazy p (TS 0 IntMap.empty)
+runLazy :: (Functor l, Show (l v), Show (l ()), m ~ Prog (Sig sig sigs sigl (StateL (ThunkStore l v) l)), Monad m) => Prog (Sig sig sigs (Thunking v :+++: sigl) l) b -> m b
+runLazy = fmap snd . \p -> hLazy p (TS (2^10) IntMap.empty)
 {-# INLINE runLazy #-}
 
-runLazySmart :: (Functor l, Show (l v), Show (l ()), m ~ SmartProg (Sig sig sigs sigl (StateL (ThunkStore l v) l)), Monad m, Vars (l v)) => SmartProg (Sig sig sigs (Thunking v :+++: sigl) l) b -> m b
-runLazySmart = fmap (\(s, r) -> strace (showTS s) r)  . \p -> hLazySmart p (TS 0 IntMap.empty)
+runLazySmart :: (Functor l, Show (l v), Show (l ()), m ~ SmartProg (Sig sig sigs sigl (StateL (ThunkStore l v) l)), Monad m) => SmartProg (Sig sig sigs (Thunking v :+++: sigl) l) b -> m b
+runLazySmart = fmap (\(s, r) -> strace (showTS s) r)  . \p -> hLazySmart p (TS (2^10) IntMap.empty)
 {-# INLINE runLazySmart #-}
 
 hLazy
    :: forall m n sig sigs sigl l v a
-    . (Functor l, Show (l v), Show (l ()), m ~ Prog (Sig sig sigs sigl (StateL (ThunkStore l v) l)), Monad m, Vars (l v))
+    . (Functor l, Show (l v), Show (l ()), m ~ Prog (Sig sig sigs sigl (StateL (ThunkStore l v) l)), Monad m)
    => Prog (Sig sig sigs (Thunking v :+++: sigl) l) a
    -> ThunkStore l v
    -> m (ThunkStore l v, a)
@@ -87,26 +101,29 @@ hLazy = unMC . fold point con
 
 hLazySmart
    :: forall m n sig sigs sigl l v a
-    . (Functor l, Show (l v), Show (l ()), m ~ SmartProg (Sig sig sigs sigl (StateL (ThunkStore l v) l)), Monad m, Vars (l v))
+    . (Functor l, Show (l v), Show (l ()), m ~ SmartProg (Sig sig sigs sigl (StateL (ThunkStore l v) l)), Monad m)
    => SmartProg (Sig sig sigs (Thunking v :+++: sigl) l) a
    -> ThunkStore l v
    -> m (ThunkStore l v, a)
 hLazySmart = unMC . smartFold point con
 {-# INLINE hLazySmart #-}
 
-instance (Functor l, EffectMonad m sig sigs sigl (StateL (ThunkStore l v) l), Show (l v), Vars (l v)) => TermAlgebra (MC m l v) (Sig sig sigs (Thunking v :+++: sigl) l) where
+instance (Functor l, EffectMonad m sig sigs sigl (StateL (ThunkStore l v) l), Show (l v)) => TermAlgebra (MC m l v) (Sig sig sigs (Thunking v :+++: sigl) l) where
    con (A (Algebraic op)) = MC $ \th -> con $ A $ Algebraic $ fmap (\x -> unMC x th) op
    con (S (Enter op)) = MC $ \th -> con $ S $ Enter $ fmap (go th) op
      where
       go th hhx = do
          (th', hx) <- unMC hhx th
          return (unMC hx th')
-   con (L (Node (Inl3 (Thunk ptr)) l st k)) = MC $ \(TS fresh im) -> ctrace ("thunked " ++ show ptr) $ unMC (k l) (TS fresh (IntMap.insert ptr (Left (unsafeCoerce $ st One)) im))
-   con (L (Node (Inl3 (Force p)) l _ k)) = MC $ \ts@(TS _ th) -> ctrace ("forcelookup " ++ show (IntMap.keys th)) $ case th ! p of
-      Left t -> do
+   con (L (Node (Inl3 (Thunk ptr)) l st k)) = MC $ \(TS fresh im) -> ctrace ("thunked " ++ show ptr) $ unMC (k l) (TS fresh (IntMap.insert ptr (Thunked (unsafeCoerce $ st One)) im))
+   con (L (Node (Inl3 Store) l st k)) = MC $ \(TS fresh im) -> ctrace ("stored " ++ show fresh) $ unMC (k (fresh <$ l)) (TS (fresh - 1) (IntMap.insert fresh (Thunked (unsafeCoerce $ st One)) im))
+   con (L (Node (Inl3 (Force p)) l st k)) = MC $ \ts@(TS _ th) -> ctrace ("forcelookup " ++ show (IntMap.keys th)) $ case th ! p of
+      Thunked t -> do
          (TS fresh' th', lv) <- unMC (unsafeCoerce $ t l) ts
-         unMC (k lv) (ctrace ("evaluate " ++ show p ++ show lv) (TS fresh' (IntMap.insert p (Right lv) th')))
-      Right lv -> ctrace ("memoized " ++ show p ++ show lv) $ unMC (k lv) ts
+         unMC (k lv) (ctrace ("evaluate " ++ show p ++ show lv) (TS fresh' (IntMap.insert p (Evaluated lv) th')))
+      Evaluated lv -> ctrace ("memoized " ++ show p ++ show lv) $ unMC (k lv) ts
+      Redirected p' -> ctrace ("redirect " ++ show p ++ " -> " ++ show p') $ unMC (con $ L $ Node (Inl3 (Force p')) l st k) ts
+   con (L (Node (Inl3 (Redirect ps)) l _ k)) = MC $ \ts@(TS fresh th) -> ctrace ("redirect " ++ show ps) $ unMC (k l) (TS fresh (foldr (\(p, p') th' -> IntMap.insert p (Redirected p') th') th ps)) 
    con (L (Node (Inl3 (RunGC vs)) l _ k)) = MC $ \ts@(TS _ _) -> undefined
       -- let ptrs = mapMaybe (\v -> Map.lookup v rm) vs 
       -- in unMC (k l) (garbageCollector ptrs ts)
@@ -124,7 +141,7 @@ instance (Functor l, EffectMonad m sig sigs sigl (StateL (ThunkStore l v) l), Sh
       gen'Memo x th = return (th, x)
    {-# INLINE var #-}
 
-runLazyC :: (EffectMonad m sig sigs sigl (StateL (ThunkStore l v) l), Functor l, Show (l v), Vars (l v)) => Cod (MC m l v) a -> m a
+runLazyC :: (EffectMonad m sig sigs sigl (StateL (ThunkStore l v) l), Functor l, Show (l v)) => Cod (MC m l v) a -> m a
 runLazyC p = (\(s, r) -> ctrace (showTS s) r) <$> unMC (runCod var p) (TS 0 IntMap.empty)
 -- runLazyC th p = snd <$> unMC (runCod var p) th
 {-# INLINE runLazyC #-}
@@ -133,7 +150,17 @@ instance (Monad m) => Pointed (MC m l v) where
    point x = MC $ \th -> return (th, x)
    {-# INLINE point #-}
 
-data ThunkStore l v = forall m. TS Int (IntMap.IntMap (Either (l () -> MC m l v (l v)) (l v)))
+data Entry m l v = Thunked (l () -> MC m l v (l v)) | Evaluated (l v) | Redirected Ptr
+
+isThunked, isEvaluated, isRedirected :: Entry m l v -> Bool
+isThunked (Thunked _) = True
+isThunked _ = False
+isEvaluated (Evaluated _) = True
+isEvaluated _ = False
+isRedirected (Redirected _) = True
+isRedirected _ = False
+
+data ThunkStore l v = forall m. TS Int (IntMap.IntMap (Entry m l v))
 
 newtype MC m l v a = MC {unMC :: ThunkStore l v -> m (ThunkStore l v, a)}
 
@@ -143,10 +170,12 @@ instance (Functor m) => Functor (MC m l v) where
 
 showTS :: (Show (l v)) => ThunkStore l v -> String
 showTS (TS i m) = show i ++ " \n"
-  ++ concatMap ((++ "\n") . show . (\(i, (Right lv)) -> (i, (lv)))) ((filter (\(_, (e)) -> isRight e)) (IntMap.toList m))
-  ++ concatMap ((++ "\n") . show . (\(i, (Left lv)) -> (i, ("-")))) ((filter (\(_, (e)) -> isLeft e)) (IntMap.toList m))
-  ++ "\n evaluated: " ++ show (length (filter (\(e) -> isRight e) $ map snd (IntMap.toList m)))
-  ++ " thunks: " ++ show (length ((filter (\(e) -> isLeft e)) $ map snd (IntMap.toList m)))
+  ++ concatMap ((++ "\n") . show . (\(i, (Evaluated lv)) -> (i, (lv)))) ((filter (\(_, (e)) -> isEvaluated e)) (IntMap.toList m))
+  ++ concatMap ((++ "\n") . show . (\(i, (Thunked lv)) -> (i, ("-")))) ((filter (\(_, (e)) -> isThunked e)) (IntMap.toList m))
+  ++ concatMap ((++ "\n") . show . (\(i, (Redirected lv)) -> (i, ("-")))) ((filter (\(_, (e)) -> isRedirected e)) (IntMap.toList m))
+  ++ "\n evaluated: " ++ show (length (filter (\(e) -> isEvaluated e) $ map snd (IntMap.toList m)))
+  ++ " thunks: " ++ show (length ((filter (\(e) -> isThunked e)) $ map snd (IntMap.toList m)))
+  ++ " redirects: " ++ show (length ((filter (\(e) -> isRedirected e)) $ map snd (IntMap.toList m)))
 {-# INLINE showTS #-}
 
 instance (Show (l v)) => Show (ThunkStore l v) where

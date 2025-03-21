@@ -3,7 +3,7 @@ module Debug where
 import Debug.HTrace (htrace)
 
 debug :: Bool
-debug = True
+debug = False
 
 tracingActive :: Bool
 tracingActive = False

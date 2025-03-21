@@ -54,7 +54,6 @@ import Free
 import Signature
 import Type (AEFuncDecl (..), AEProg (..), AERule (..))
 import Effect.General.State (get, put)
-import Effect.General.Delay (Delaying)
 import Data.Maybe (fromJust)
 
 data VarKind
@@ -68,7 +67,7 @@ type VarKindMap = Map.Map VarIndex VarKind
 
 type AEffects = '[ConsF, StateF LocalBindings Ptrs, Renaming, ConstraintStore, ND, Err, StateF Trace [TraceInfo], IOAction]
 type SEffects = '[Partial, CaseScope]
-type LEffects v = DeclF v :+++: (Delaying v :+++: (Thunking v :+++: LVoid))
+type LEffects v = DeclF v :+++: ((Thunking v :+++: LVoid))
 
 type CurryEffects v = Sig AEffects SEffects (LEffects v) Id
 
