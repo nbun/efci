@@ -44,6 +44,6 @@ let'
     -> m a
 let' bs e =
     logCall >> do
-        mapM_ (uncurry thunk2) bs
+        mapM_ (uncurry thunk) bs
         e
 {-# INLINE let' #-}

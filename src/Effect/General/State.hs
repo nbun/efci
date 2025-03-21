@@ -153,11 +153,10 @@ getFunVars = logCall >> do
 rename :: (EffectCons m sig sigs sigl l, Renaming :<: sig) => [VarIndex] -> m [VarIndex]
 rename vs = logCall >> do
         s@(nextScope, newVar, rs, sup, funVars) :: (Scope, VarIndex, [(VarIndex, VarIndex)], UniqSupply, [VarIndex]) <- get @Rename
-        let (us, sup') = foldr (\v (us, sup) -> let (u, sup') = takeUniqFromSupply sup in (u:us, sup')) ([], sup) vs
-        let vs' = map (fromIntegral . getKey) us
-        put @Rename (nextScope, newVar, rs ++ zip vs vs', sup', funVars)
-        trace ("rename: " ++ show vs ++ " -> " ++ show vs') $ return ()
-        return vs'
+        let (rs', sup') = foldr (\v (us, sup) -> let (u, sup') = takeUniqFromSupply sup in ((v,fromIntegral (getKey u)):us, sup')) ([], sup) vs
+        put @Rename (nextScope, newVar, rs ++ rs', sup', funVars)
+        trace ("rename: " ++ show rs ++ show rs') $ return ()
+        return (map snd rs')
 {-# INLINE rename #-}
 
 runState

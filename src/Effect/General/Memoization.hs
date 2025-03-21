@@ -49,22 +49,14 @@ data Thunking v :: Type -> (Type -> Type) -> Type where
    Force :: Ptr -> Thunking v v NoSub
    RunGC :: [ScpVarIndex] -> Thunking v () NoSub
 
--- thunk
---    :: forall m sig sigs sigl v
---     . (EffectCons m sig sigs sigl Id, Thunking v :<<<<: sigl)
---    => m v
---    -> m Ptr'
--- thunk t = logCall >> injectL (Thunk :: Thunking v Ptr (OneSub v)) (Id ()) (\One _ -> fmap Id t) (return . unId)
--- {-# INLINE thunk #-}
-
-thunk2
+thunk
    :: forall m sig sigs sigl v
     . (EffectCons m sig sigs sigl Id, Thunking v :<<<<: sigl)
    => Ptr
    -> m v
    -> m ()
-thunk2 ptr t = logCall >> injectL (Thunk ptr :: Thunking v () (OneSub v)) (Id ()) (\One _ -> fmap Id t) (return . unId)
-{-# INLINE thunk2 #-}
+thunk ptr t = logCall >> injectL (Thunk ptr :: Thunking v () (OneSub v)) (Id ()) (\One _ -> fmap Id t) (return . unId)
+{-# INLINE thunk #-}
 
 force :: (EffectCons m sig sigs sigl Id, Thunking v :<<<<: sigl) => Ptr -> m v
 force e = logCall >> injectL (Force e) (Id ()) (\x -> case x of {}) (return . unId)
@@ -109,7 +101,7 @@ instance (Functor l, EffectMonad m sig sigs sigl (StateL (ThunkStore l v) l), Sh
       go th hhx = do
          (th', hx) <- unMC hhx th
          return (unMC hx th')
-   con (L (Node (Inl3 (Thunk ptr)) l st k)) = MC $ \(TS fresh im) -> ctrace ("thunked2 " ++ show ptr) $ unMC (k l) (TS fresh (IntMap.insert ptr (Left (unsafeCoerce $ st One)) im))
+   con (L (Node (Inl3 (Thunk ptr)) l st k)) = MC $ \(TS fresh im) -> ctrace ("thunked " ++ show ptr) $ unMC (k l) (TS fresh (IntMap.insert ptr (Left (unsafeCoerce $ st One)) im))
    con (L (Node (Inl3 (Force p)) l _ k)) = MC $ \ts@(TS _ th) -> ctrace ("forcelookup " ++ show (IntMap.keys th)) $ case th ! p of
       Left t -> do
          (TS fresh' th', lv) <- unMC (unsafeCoerce $ t l) ts

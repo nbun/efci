@@ -92,7 +92,7 @@ instance (Functor l, EffectMonad m sig sigs sigl (StateL (DelayStore l v) l), Sh
          (th', hx) <- unDC hhx th
          return (unDC hx th')
    con (L (Node (Inl3 Delay) l st k)) = DC $ \(TS fresh im) -> ctrace ("delayed " ++ show fresh) $ unDC (k (DPtr fresh <$ l)) (TS (fresh + 1) (IntMap.insert fresh (unsafeCoerce $ st One) im))
-   con (L (Node (Inl3 (Retrieve (DPtr p))) l _ k)) = DC $ \ts@(TS fresh th) -> ctrace ("retrievelookup " ++ show (IntMap.keys th)) $ do
+   con (L (Node (Inl3 (Retrieve (DPtr p))) l _ k)) = DC $ \ts@(TS fresh th) -> ctrace ("retrieve " ++ show p ++ " " ++ show (IntMap.keys th)) $ do
          unDC (unsafeCoerce $ (th ! p) l) (TS fresh (IntMap.delete p th))
    con (L (Node (Inr3 op) l st k)) = DC $ \th ->
       con $

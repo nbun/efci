@@ -1,4 +1,4 @@
--- {-# OPTIONS_FRONTEND -ddump-flat #-}--
+{-# OPTIONS_FRONTEND -ddump-flat #-}
 module Arith where
 
 fac :: Int -> Int
