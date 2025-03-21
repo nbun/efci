@@ -13,7 +13,7 @@ import System.Directory (setCurrentDirectory)
 main :: IO ()
 main = do
   setCurrentDirectory "examples"
-  res <- mapM (\(mod, expr, expected) -> execute defaultToolOpts (Left (mod, expr))) progs
+  res <- mapM (\(mod, expr, expected) -> putStrLn (mod ++ " " ++ expr) >> execute defaultToolOpts (Left (mod, expr))) progs
   let tests = zipWith (\(imp, expr, expected) result -> (imp, expr, expected, result)) progs res
   hspec $ mapM_ (\(_, expr, expected, result) -> parallel $ it expr $ assertEqual "" expected (map withoutBindings result)) tests
 
