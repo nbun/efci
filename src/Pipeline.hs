@@ -28,42 +28,45 @@ import Effect.FlatCurry.Declarations
 import qualified Data.Map as Map
 import Effect.FlatCurry.Let
 import GHC.Types.Unique.Supply (mkSplitUniqSupply)
+import GHC.Plugins (splitUniqSupply)
 
 runCurryEffects :: (Show a)
                 => [AEProg (Prog (CurryEffects a) a)]
                 -> Prog (CurryEffects a) a
                 -> IO ([TraceInfo], Error [(Constraints, Value (Closure a))])
-runCurryEffects ps e = mkSplitUniqSupply 'a' >>= \sup -> pipeline sup e'
-  where
-    e' = initDecls ps >> e
-    pipeline sup = runIO
-      . (\x -> hState @Trace x ([] :: [TraceInfo]))
-      . runError
-      . runND
-      . (\x -> hState @CStore x Map.empty)
-      . runState @Rename ([], sup)
-      . runLazy
-      . runCons
-      . runPartial
-      . runDecl []
+runCurryEffects ps e = do
+  sup <- mkSplitUniqSupply 'a'
+  let (sup1, sup2) = splitUniqSupply sup
+      pipeline = runIO
+        . (\x -> hState @Trace x ([] :: [TraceInfo]))
+        . runError
+        . runND
+        . (\x -> hState @CStore x Map.empty)
+        . runState @Rename ([], sup1)
+        . runLazy sup2
+        . runCons
+        . runPartial
+        . runDecl []
+  pipeline (initDecls ps >> e)
 
 runSmartCurryEffects :: (Show a)
                 => [AEProg (SmartProg (CurryEffects a) a)]
                 -> SmartProg (CurryEffects a) a
                 -> IO ([TraceInfo], Error [(Constraints, Value (Closure a))])
-runSmartCurryEffects ps e = mkSplitUniqSupply 'a' >>= \sup -> pipeline sup e'
-  where
-    e' = initDecls ps >> e
-    pipeline sup = runIOSmart
-      . (\x -> hStateSmart @Trace x ([] :: [TraceInfo]))
-      . runErrorSmart
-      . runNDSmart
-      . (\x -> hStateSmart @CStore x Map.empty)
-      . runStateSmart @Rename (([], sup))
-      . runLazySmart
-      . runConsSmart
-      . runPartialSmart
-      . runDeclSmart []
+runSmartCurryEffects ps e = do
+  sup <- mkSplitUniqSupply 'a'
+  let (sup1, sup2) = splitUniqSupply sup
+      pipeline = runIOSmart
+        . (\x -> hStateSmart @Trace x ([] :: [TraceInfo]))
+        . runErrorSmart
+        . runNDSmart
+        . (\x -> hStateSmart @CStore x Map.empty)
+        . runStateSmart @Rename ([], sup1)
+        . runLazySmart sup2
+        . runConsSmart
+        . runPartialSmart
+        . runDeclSmart []
+  pipeline (initDecls ps >> e)
 
 declutter :: Show a => ([TraceInfo], Error [(Constraints, Value (Closure a))]) -> ([TraceInfo], [Result])
 declutter (ti, Error s) = (ti, [RError s])

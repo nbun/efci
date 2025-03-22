@@ -23,6 +23,8 @@ import Data.List (nub)
 import System.IO.Unsafe (unsafePerformIO)
 import GHC.StableName
 import GHC.HeapView (getClosureData)
+import GHC.Types.Unique.Supply
+import GHC.Types.Unique (getKey)
 
 findFDcl :: [AProg a] -> QName -> AFuncDecl a
 findFDcl ps qn@(mod, _) = case res of
@@ -114,3 +116,8 @@ getHash :: a -> Int
 getHash ptr = unsafePerformIO $ do
   sn <- makeStableName ptr
   return (hashStableName sn)
+
+freshVarIndex :: UniqSupply -> (VarIndex, UniqSupply)
+freshVarIndex sup = let (!u, sup') = takeUniqFromSupply sup
+                        !i = fromIntegral (getKey u)
+                    in (i, sup')

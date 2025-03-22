@@ -46,8 +46,9 @@ import System.Mem.StableName
 import GHC.Weak
 import System.IO.Unsafe (unsafePerformIO)
 import Control.Monad.Primitive
-import Type (analyzeVarIndex, getHash)
+import Type (analyzeVarIndex, getHash, freshVarIndex)
 import System.Mem (performGC)
+import GHC.Types.Unique.Supply
 
 data Thunking v :: Type -> (Type -> Type) -> Type where
    Thunk :: Ptr -> Thunking v () (OneSub v)
@@ -103,12 +104,12 @@ runGC :: forall v m sig sigs sigl. (EffectCons m sig sigs sigl Id, Thunking v :<
 runGC = logCall >> injectL (RunGC :: Thunking v () NoSub) (Id ()) (\x -> case x of {}) (return . unId)
 {-# INLINE runGC #-}
 
-runLazy :: (Functor l, Show (l v), Show (l ()), m ~ Prog (Sig sig sigs sigl (StateL (ThunkStore l v) l)), Monad m) => Prog (Sig sig sigs (Thunking v :+++: sigl) l) b -> m b
-runLazy = fmap snd . \p -> hLazy p (TS (-2^10) HashMap.empty)
+runLazy :: (Functor l, Show (l v), Show (l ()), m ~ Prog (Sig sig sigs sigl (StateL (ThunkStore l v) l)), Monad m) => UniqSupply -> Prog (Sig sig sigs (Thunking v :+++: sigl) l) b -> m b
+runLazy sup = fmap (\(s, r) -> strace (showTS s) r) . \p -> hLazy p (TS sup HashMap.empty)
 {-# INLINE runLazy #-}
 
-runLazySmart :: (Functor l, Show (l v), Show (l ()), m ~ SmartProg (Sig sig sigs sigl (StateL (ThunkStore l v) l)), Monad m) => SmartProg (Sig sig sigs (Thunking v :+++: sigl) l) b -> m b
-runLazySmart = fmap (\(s, r) -> strace (showTS s) r)  . \p -> hLazySmart p (TS (-2^10) HashMap.empty)
+runLazySmart :: (Functor l, Show (l v), Show (l ()), m ~ SmartProg (Sig sig sigs sigl (StateL (ThunkStore l v) l)), Monad m) => UniqSupply -> SmartProg (Sig sig sigs (Thunking v :+++: sigl) l) b -> m b
+runLazySmart sup = fmap (\(s, r) -> strace (showTS s) r)  . \p -> hLazySmart p (TS sup HashMap.empty)
 {-# INLINE runLazySmart #-}
 
 hLazy
@@ -136,16 +137,18 @@ instance (Functor l, EffectMonad m sig sigs sigl (StateL (ThunkStore l v) l), Sh
       go th hhx = do
          (th', hx) <- unMC hhx th
          return (unMC hx th')
-   con (L (Node (Inl3 (Thunk ptr)) l st k)) = MC $ \(TS fresh im) -> ctrace ("thunked " ++ show ptr) $ unMC (k l) (TS fresh (addEntry ptr (Thunked (unsafeCoerce $ st One)) im))
-   con (L (Node (Inl3 Store) l st k)) = MC $ \(TS !fresh im) -> ctrace ("stored " ++ show fresh) $ unMC (k (fresh <$ l)) (TS (fresh - 1) (addEntry fresh (Thunked (unsafeCoerce $ st One)) (maybePurge fresh im)))
-     where maybePurge fresh im = if fresh `mod` 200 == 0 then im else im
+   con (L (Node (Inl3 (Thunk ptr)) l st k)) = MC $ \(TS sup im) -> ctrace ("thunked " ++ show ptr) $ unMC (k l) (TS sup (addEntry ptr (Thunked (unsafeCoerce $ st One)) im))
+   con (L (Node (Inl3 Store) l st k)) = MC $ \(TS sup im) -> ctrace ("stored ") $ 
+     let (!fresh, sup') = freshVarIndex sup
+         maybePurge im = if fresh `mod` 200 == 0 then im else im
+     in unMC (k (fresh <$ l)) (TS sup' (addEntry fresh (Thunked (unsafeCoerce $ st One)) (maybePurge im)))
    con (L (Node (Inl3 (Force p)) l st k)) = MC $ \ts@(TS _ th) -> ctrace ("forcelookup " {- ++ show (HashMap.keys th)-}) $ case lookupEntry p th of
       Thunked t -> do
-         (TS fresh' th', lv) <- unMC (unsafeCoerce $ t l) ts
-         unMC (k lv) (ctrace ("evaluate " ++ show p ++ show lv) (TS fresh' (addEntry p (Evaluated lv) th')))
+         (TS sup' th', lv) <- unMC (unsafeCoerce $ t l) ts
+         unMC (k lv) (ctrace ("evaluate " ++ show p ++ show lv) (TS sup' (addEntry p (Evaluated lv) th')))
       Evaluated lv -> ctrace ("memoized " ++ show p ++ show lv) $ unMC (k lv) ts
       Redirected p' -> ctrace ("redirect " ++ show p ++ " -> " ++ show p') $ unMC (con $ L $ Node (Inl3 (Force p')) l st k) ts
-   con (L (Node (Inl3 (Redirect ps)) l _ k)) = MC $ \ts@(TS fresh th) -> ctrace ("redirect " ++ show ps) $ unMC (k l) (TS fresh (foldr (\(p, p') th' -> addEntry p (Redirected p') th') th ps)) 
+   con (L (Node (Inl3 (Redirect ps)) l _ k)) = MC $ \ts@(TS sup th) -> ctrace ("redirect " ++ show ps) $ unMC (k l) (TS sup (foldr (\(p, p') th' -> addEntry p (Redirected p') th') th ps)) 
    con (L (Node (Inl3 (RunGC)) l _ k)) = MC $ \ts@(TS _ _) -> undefined
       -- let ptrs = mapMaybe (\v -> Map.lookup v rm) vs 
       -- in unMC (k l) (garbageCollector ptrs ts)
@@ -163,8 +166,8 @@ instance (Functor l, EffectMonad m sig sigs sigl (StateL (ThunkStore l v) l), Sh
       gen'Memo x th = return (th, x)
    {-# INLINE var #-}
 
-runLazyC :: (EffectMonad m sig sigs sigl (StateL (ThunkStore l v) l), Functor l, Show (l v)) => Cod (MC m l v) a -> m a
-runLazyC p = (\(s, r) -> ctrace (showTS s) r) <$> unMC (runCod var p) (TS 0 HashMap.empty)
+runLazyC :: (EffectMonad m sig sigs sigl (StateL (ThunkStore l v) l), Functor l, Show (l v)) => UniqSupply -> Cod (MC m l v) a -> m a
+runLazyC sup p = (\(s, r) -> ctrace (showTS s) r) <$> unMC (runCod var p) (TS sup HashMap.empty)
 -- runLazyC th p = snd <$> unMC (runCod var p) th
 {-# INLINE runLazyC #-}
 
@@ -186,7 +189,7 @@ isRedirected _ = False
 
 -- makeStableName = return . Just
 
-data ThunkStore l v = forall m. TS Int (TSM m l v) --(HashMap.HashMap (Entry m l v))
+data ThunkStore l v = forall m. TS UniqSupply (TSM m l v) --(HashMap.HashMap (Entry m l v))
 type TSM m l v = HashMap.HashMap (StableName VarIndex) (Weak (Entry m l v))
 
 addEntry :: VarIndex -> Entry m l v -> TSM m l v -> TSM m l v
