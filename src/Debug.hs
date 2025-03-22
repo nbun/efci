@@ -15,7 +15,7 @@ ctrace s =
         else id
 
 statistics :: Bool
-statistics = False
+statistics = True
 
 strace :: String -> a -> a
 strace s =

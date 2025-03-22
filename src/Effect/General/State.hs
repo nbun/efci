@@ -111,8 +111,8 @@ lookupRenaming v =
     logCall >> do
         (rs, _) :: RState <- get @Rename
         case lookup v rs of
-            -- Just !v' -> return v'
-            Just !v' -> trace (analyzeVarIndex "lookup" v') (return v')
+            Just !v' -> return v'
+            -- Just !v' -> trace (analyzeVarIndex "lookup" v') (return v')
             Nothing -> error $ "lookupRenaming: " ++ show v ++ " in "
 {-# INLINE lookupRenaming #-}
 
@@ -122,7 +122,7 @@ rename vs =
         (rs, sup) :: RState <- get @Rename
         let (!vs', sup') = first Control.DeepSeq.force (takeNfromSupply (length vs) sup)
         put @Rename ((rs ++ zip vs vs', sup'))
-        trace (concatMap (analyzeVarIndex "rename") vs') (return ())
+        -- trace (concatMap (analyzeVarIndex "rename") vs') (return ())
         return vs'
   where
     takeNfromSupply 0 sup = ([], sup)

@@ -109,3 +109,8 @@ analyzeVarIndex loc i = unsafePerformIO $ do
   sn <- makeStableName i
   cl <- getClosureData i
   return $ loc ++ " VarIndex " ++ show i ++ " with stable name hash " ++ show (hashStableName sn)  ++ " and closure type " ++ show cl ++ "\n"
+
+getHash :: a -> Int
+getHash ptr = unsafePerformIO $ do
+  sn <- makeStableName ptr
+  return (hashStableName sn)

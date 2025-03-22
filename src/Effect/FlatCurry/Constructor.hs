@@ -25,6 +25,7 @@ import Effect.General.ND (ND, choose, failed)
 import Effect.General.State
 import Free
 import Signature
+import Type (getHash)
 
 data ConsF a
     = FCons QName [Ptr]
@@ -145,7 +146,13 @@ data Value a
     | Lit Literal
     | Free VarIndex
     | ValOther a
-    deriving (Show)
+
+instance Show a => Show (Value a) where
+    show (Cons qn args) = show qn ++ " " ++ show args
+    show (HNF qn ptrs) = show qn ++ " " ++ show (map getHash ptrs)
+    show (Lit l) = show l
+    show (Free i) = show i
+    show (ValOther x) = show x
 
 instance Functor Value where
     fmap f (Cons qn args) = Cons qn (map (fmap f) args)
