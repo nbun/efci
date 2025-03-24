@@ -80,7 +80,7 @@ benchmark benchmark-prac-haskell-bench
   type:           exitcode-stdio-1.0
   hs-source-dirs: benchmarks
   main-is:        Main.hs
-  ghc-options:    -O2 -fspecialise -fcross-module-specialise -flate-specialise -threaded
+  ghc-options:    -O2 -fspecialise -fcross-module-specialise -flate-specialise
   build-depends:  base
                 , criterion
                 , effective-curry-interpreter

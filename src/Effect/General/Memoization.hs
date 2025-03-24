@@ -140,7 +140,7 @@ instance (Functor l, EffectMonad m sig sigs sigl (StateL (ThunkStore l v) l), Sh
    con (L (Node (Inl3 (Thunk ptr)) l st k)) = MC $ \(TS sup im) -> ctrace ("thunked " ++ show ptr) $ unMC (k l) (TS sup (addEntry ptr (Thunked (unsafeCoerce $ st One)) im))
    con (L (Node (Inl3 Store) l st k)) = MC $ \(TS sup im) -> ctrace ("stored ") $ 
      let (!fresh, sup') = freshVarIndex sup
-         maybePurge im = if fresh `mod` 1000 == 0 then majorPurge im else im
+         maybePurge im = if fresh `mod` 10000 == 0 then purge im else im
      in unMC (k (fresh <$ l)) (TS sup' (addEntry fresh (Thunked (unsafeCoerce $ st One)) (maybePurge im)))
    con (L (Node (Inl3 (Force p)) l st k)) = MC $ \ts@(TS _ th) -> ctrace ("forcelookup " {- ++ show (HashMap.keys th)-}) $ case lookupEntry p th of
       Thunked t -> do
@@ -153,10 +153,6 @@ instance (Functor l, EffectMonad m sig sigs sigl (StateL (ThunkStore l v) l), Sh
              Redirected p' -> skipRedirects th p'
              _ -> p    
     unMC (k l) (TS sup (foldr (\(p, p') th' -> addEntry p (Redirected (skipRedirects th' p')) th') th ps))
-
-   con (L (Node (Inl3 (RunGC)) l _ k)) = MC $ \ts@(TS _ _) -> undefined
-      -- let ptrs = mapMaybe (\v -> Map.lookup v rm) vs 
-      -- in unMC (k l) (garbageCollector ptrs ts)
    con (L (Node (Inr3 op) l st k)) = MC $ \th ->
       con $
          L $
@@ -190,24 +186,17 @@ isEvaluated _ = False
 isRedirected (Redirected _) = True
 isRedirected _ = False
 
--- type StableName = Maybe
-
--- makeStableName = return . Just
-
 data ThunkStore l v = forall m. TS UniqSupply (TSM m l v) --(HashMap.HashMap (Entry m l v))
 type TSM m l v = HashMap.HashMap (StableName VarIndex) (Weak (Entry m l v))
 
 addEntry :: VarIndex -> Entry m l v -> TSM m l v -> TSM m l v
 addEntry !i p th = unsafePerformIO $ do
---   trace (analyzeVarIndex "memoadd" i) (return ())
   sn <- makeStableName i
---   putStrLn ("Add VarIndex " ++ show i ++ " with stable name hash " ++ show (hashStableName sn))
   w <- mkWeak i (unsafeCoerce p) Nothing
   return (HashMap.insert sn w th)
 
 lookupEntry :: VarIndex -> TSM m l v -> Entry m l v
 lookupEntry !i th = unsafePerformIO $ keepAlive i $ do
---   trace (analyzeVarIndex "memolookup" i) (return ())
   sn <- makeStableName i
   case HashMap.lookup sn th of
     Just w -> do
@@ -218,7 +207,7 @@ lookupEntry !i th = unsafePerformIO $ keepAlive i $ do
     Nothing -> error $ analyzeVarIndex "Stable name not found: " i
 
 purge :: TSM m l v -> TSM m l v
-purge m = unsafePerformIO $ traceMarkerIO "Purge" >> putStrLn stats >> return m'
+purge m = unsafePerformIO $ strace stats (return m')
   where
     m' = HashMap.filter (isAlive) m
     old = HashMap.size m
@@ -255,16 +244,6 @@ showTS (TS i im) = let m = HashMap.map (\w -> fromJust $ unsafePerformIO $ deRef
     where cmp ('(':s1) ('(':s2) = compare (read (takeInt s1) :: Int) (read (takeInt s2) :: Int)
           takeInt = takeWhile (/= ',')
 {-# INLINE showTS #-}
-
--- toHashedValue :: Value a -> Value a
--- toHashedValue (Cons qn args) = Cons qn (map toHashedValue args)
--- toHashedValue (HNF qn ptrs) = HNF qn (map getHash ptrs)
---   where getHash ptr = unsafePerformIO $ do
-         --  sn <- makeStableName ptr
-         --  return (hashStableName sn)
--- toHashedValue (Lit l) = Lit l
--- toHashedValue (Free i) = Free i
--- toHashedValue (ValOther x) = ValOther x
 
 instance (Show (l v)) => Show (ThunkStore l v) where
    show = showTS
