@@ -139,8 +139,7 @@ instance (Functor l, EffectMonad m sig sigs sigl (StateL (ThunkStore l v) l), Sh
    con (L (Node (Inl3 (Thunk ptr)) l st k)) = MC $ \(TS sup im) -> ctrace ("thunked " ++ show ptr) $ unMC (k l) (TS sup (addEntry ptr (Thunked (unsafeCoerce $ st One)) im))
    con (L (Node (Inl3 Store) l st k)) = MC $ \(TS sup im) -> ctrace ("stored ") $ 
      let (!fresh, sup') = freshVarIndex sup
-         maybePurge im = if fresh `mod` 10000 == 0 then purge im else im
-     in unMC (k (fresh <$ l)) (TS sup' (addEntry fresh (Thunked (unsafeCoerce $ st One)) (maybePurge im)))
+     in unMC (k (fresh <$ l)) (TS sup' (addEntry fresh (Thunked (unsafeCoerce $ st One)) im))
    con (L (Node (Inl3 (Force p)) l st k)) = MC $ \ts@(TS _ th) -> ctrace ("forcelookup " {- ++ show (IntMap.keys th)-}) $ case lookupEntry p th of
       Thunked t -> do
          (TS sup' th', lv) <- unMC (unsafeCoerce $ t l) ts
@@ -191,7 +190,8 @@ type TSM m l v = IntMap.IntMap (Weak (Entry m l v))
 addEntry :: VarIndex -> Entry m l v -> TSM m l v -> TSM m l v
 addEntry !i p th = unsafePerformIO $ do
   w <- mkWeak i (unsafeCoerce p) Nothing
-  return (IntMap.insert i w th)
+  let th' = if i `mod` 20000 == 0 then purge th else th
+  return (IntMap.insert i w th')
 
 lookupEntry :: VarIndex -> TSM m l v -> Entry m l v
 lookupEntry !i th = unsafePerformIO $ keepAlive i $ do
@@ -206,9 +206,10 @@ lookupEntry !i th = unsafePerformIO $ keepAlive i $ do
 purge :: TSM m l v -> TSM m l v
 purge m = unsafePerformIO $ strace stats (return m')
   where
-    m' = IntMap.filter (isAlive) m
+    m' = IntMap.filter isAlive m
     old = IntMap.size m
-    stats = "Purged " ++ show (old - IntMap.size m') ++ " dead weak pointers of " ++ show old ++ " total pointers"
+    new = IntMap.size m'
+    stats = if old == 0 then "" else "Purged " ++ show (old - new) ++ " dead pointers of total " ++ show old ++ " pointers"
     isAlive w = case unsafePerformIO $ deRefWeak w of
                  Just _ -> True
                  Nothing -> False
