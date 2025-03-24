@@ -22,8 +22,8 @@ import qualified Data.Map as Map
 import Data.Maybe (mapMaybe)
 
 import Curry.FlatCurry.Annotated.Goodies (argTypes)
-import Effect.FlatCurry.Constructor
-import Effect.FlatCurry.Declarations (DeclF, getBody, getInfo)
+import Effect.FlatCurry.Constructor hiding (External)
+import Effect.FlatCurry.Declarations (DeclF, getBody)
 import Effect.FlatCurry.IO
 import Effect.FlatCurry.Let
 import Effect.General.Error
@@ -33,7 +33,8 @@ import Effect.General.Reader
 import Effect.General.State
 import Free
 import Signature
-import Type (AEFuncDecl (..), AEProg (..), AERule (..))
+import Type (AEFuncDecl (..), AEProg (..), Args (..))
+import Control.Monad (void)
 
 
 type Functions sig sigs sigl a =
@@ -50,75 +51,48 @@ fun
     :: forall sig sigs sigl m a
      . (EffectCons m sig sigs sigl Id, Functions sig sigs sigl a)
     => QName
-    -> [m a]
+    -> Args m a
     -> m a
-fun qn ps = logCallWith (show qn) >> do
-        modifyRenaming (const [])
-        (ar, vis, ty, r) <- getInfo @a qn
-        let fdecl = AEFunc qn ar vis ty r
-        if isExternal fdecl
-            then callExternal fdecl ps
-            else do
-                -- let (vs, _, _) = fdclRule fdecl
-                let e = getBody qn
-                app e ps
-
-thunkedFun :: forall sig sigs sigl m a. (EffectCons m sig sigs sigl Id, Functions sig sigs sigl a) => QName -> [Ptr] -> m a
-thunkedFun qn ptrs = logCallWith (show qn) >> do
-    modifyRenaming (const [])
-    (ar, vis, ty, r) <- getInfo @a qn
-    let fdecl = AEFunc qn ar vis ty r
-    if isExternal fdecl
-        then callExternal fdecl (map force ptrs)
-        else do
-            let e = getBody qn
-            thunkedApp e ptrs
+fun qn args = logCallWith (show qn) >> do
+  modifyRenaming (const [])
+  apply (getBody qn) args
 
 callExternal
     :: (EffectCons m sig sigs sigl Id, Functions sig sigs sigl a)
-    => AEFuncDecl v
-    -> [m a]
+    => String
+    -> Args m a
     -> m a
-callExternal fdecl args = logCall >> case (externalName fdecl, args) of
-    ("Prelude.plusInt", [px, py]) -> arithInt (+) px py
-    ("Prelude.minusInt", [px, py]) -> arithInt (-) px py
-    ("Prelude.timesInt", [px, py]) -> arithInt (*) px py
-    ("Prelude.divInt", [px, py]) -> arithInt div px py
-    ("Prelude.modInt", [px, py]) -> arithInt mod px py
-    ("Prelude.eqInt", [px, py]) -> compInt (==) px py
-    ("Prelude.ltEqInt", [px, py]) -> compInt (<=) px py
-    ("Prelude.eqChar", [px, py]) -> compChar (==) px py
-    ("Prelude.returnIO", [px]) -> px
-    ( "Prelude.bindIO"
-        , [px, pf]
-        ) -> px >>= \x -> apply' pf (return x)
-    ("Prelude.getChar", []) -> getCharIO
-    ("Prelude.prim_putChar", [pc]) -> putCharIO pc
-    ("Prelude.prim_writeFile", [pfp, ps]) -> writeFileIO pfp (normalform ps)
-    ("Prelude.prim_appendFile", [pfp, ps]) -> appendFileIO pfp (normalform ps)
-    ("Prelude.prim_readFile", [pfp]) -> readFileIO pfp
-    ("Prelude.ensureNotFree", [p]) -> p
-    ("Prelude.$!", [pf, px]) -> apply' pf px
-    ("Prelude.$##", [pf, px]) -> apply' pf (normalform px)
-    ("Prelude.prim_error", [p]) -> err p
-    ("Prelude.=:=", [px, py]) -> unify px py
-    _ ->
-        error $
-            "Missing definition for "
-                ++ show (externalName fdecl)
-                ++ " with "
-                ++ show (length args)
-                ++ " arguments"
-
-fdclRule :: AEFuncDecl a -> ([VarIndex], [TypeExpr], a)
-fdclRule (AEFunc qn _ _ t r) = case r of
-    AERule vs e -> (vs, argTypes' t, e)
-      where
-        argTypes' (ForallType _ t) = argTypes t
-        argTypes' t = argTypes t
-    AEExternal s ->
-        error $
-            "Syntax.fdclExpr: external rule for " ++ show qn ++ " calling " ++ s
+callExternal f args = logCall >> do
+      let args' = case args of
+                    Progs ps -> ps
+                    Thunks ptrs -> map force ptrs
+      case (f, args') of
+        ("Prelude.plusInt", [px, py]) -> arithInt (+) px py
+        ("Prelude.minusInt", [px, py]) -> arithInt (-) px py
+        ("Prelude.timesInt", [px, py]) -> arithInt (*) px py
+        ("Prelude.divInt", [px, py]) -> arithInt div px py
+        ("Prelude.modInt", [px, py]) -> arithInt mod px py
+        ("Prelude.eqInt", [px, py]) -> compInt (==) px py
+        ("Prelude.ltEqInt", [px, py]) -> compInt (<=) px py
+        ("Prelude.eqChar", [px, py]) -> compChar (==) px py
+        ("Prelude.returnIO", [px]) -> px
+        ( "Prelude.bindIO"
+            , [px, pf]
+            ) -> px >>= \x -> applyPartial pf (return x)
+        ("Prelude.getChar", []) -> getCharIO
+        ("Prelude.prim_putChar", [pc]) -> putCharIO pc
+        ("Prelude.prim_writeFile", [pfp, ps]) -> writeFileIO pfp (normalform ps)
+        ("Prelude.prim_appendFile", [pfp, ps]) -> appendFileIO pfp (normalform ps)
+        ("Prelude.prim_readFile", [pfp]) -> readFileIO pfp
+        ("Prelude.ensureNotFree", [p]) -> p
+        ("Prelude.$!", [pf, px]) -> applyPartial pf px
+        ("Prelude.$##", [pf, px]) -> applyPartial pf (normalform px)
+        ("Prelude.prim_error", [p]) -> err p
+        ("Prelude.=:=", [px, py]) -> unify px py
+        _ ->
+            error $
+                "Missing definition for "
+                    ++ show f
 
 findModule :: [AEProg a] -> QName -> AEFuncDecl a
 findModule ps qn@(mod, _) = case res of
@@ -138,16 +112,6 @@ findModule ps qn@(mod, _) = case res of
 findFuncDecl :: Map.Map QName (AEFuncDecl a) -> QName -> Maybe (AEFuncDecl a)
 findFuncDecl m qn = Map.lookup qn m
 
-isExternal :: AEFuncDecl a -> Bool
-isExternal (AEFunc _ _ _ _ r) = case r of
-    AERule _ _ -> False
-    AEExternal _ -> True
-
-externalName :: AEFuncDecl a -> String
-externalName (AEFunc _ _ _ _ r) = case r of
-    AEExternal s -> s
-    _ -> undefined
-
 -- partial functions --
 
 data CombType
@@ -157,41 +121,38 @@ data CombType
 
 data Partial a
     = PartCall QName CombType [Ptr]
-    | FApply a ((QName, CombType, [Ptr]) -> a)
+    | FApply a (Closure () -> a)
     | Abs [VarIndex] Ptr
-    | App a (([VarIndex], Ptr) -> a)
+    | Ext String
 
 instance Functor Partial where
     fmap _ (PartCall qn ct ptrs) = PartCall qn ct ptrs
     fmap f (FApply x k) = FApply (f x) (f . k)
     fmap f (Abs vs ptr) = Abs vs ptr
-    fmap f (App x k) = App (f x) (f . k)
+    fmap _ (Ext s) = Ext s
     {-# INLINE fmap #-}
 
 data Closure a
     = Closure QName CombType [Ptr]
     | Lambda [VarIndex] Ptr
+    | External String
     | Other a
     deriving (Show)
 
 instance Functor Closure where
     fmap _ (Closure qn ct ptrs) = Closure qn ct ptrs
     fmap f (Other x) = Other (f x)
-    fmap f (Lambda vs ptr) = Lambda vs ptr
+    fmap _ (Lambda vs ptr) = Lambda vs ptr
+    fmap _ (External s) = External s
     {-# INLINE fmap #-}
+
+external :: (EffectCons m sig sigs sigl Id, Partial :<: sigs, Thunking a :<<<<: sigl) => String -> m a
+external s = logCall >> injectS (Ext s)
 
 lambda :: (EffectCons m sig sigs sigl Id, Partial :<: sigs, Thunking a :<<<<: sigl) => [VarIndex] -> m a -> m a
 lambda vs e = logCall >> do
     ptr <- store e
     injectS (Abs vs ptr)
-
-app :: (EffectCons m sig sigs sigl Id, Partial :<: sigs, Let sig sigl a) => m a -> [m a] -> m a
-app lam args = logCall >> injectS (App (fmap return lam) k)
-  where k (vs, ptr) = return $ let' (zip vs args) (force ptr)
-
-thunkedApp :: (EffectCons m sig sigs sigl Id, Partial :<: sigs, Let sig sigl a) => m a -> [Ptr] -> m a
-thunkedApp lam ptrs = logCall >> injectS (App (fmap return lam) k)
-  where k (vs, ptr) = return $ thunkedLet' (zip vs ptrs) (force ptr)
 
 partial
     :: (EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl, Partial :<: sigs)
@@ -212,23 +173,32 @@ decArgs :: CombType -> CombType
 decArgs (FuncPartCall i) = FuncPartCall (i - 1)
 decArgs (ConsPartCall i) = ConsPartCall (i - 1)
 
-apply'
+applyPartial
     :: (EffectCons m sig sigs sigl Id, Functions sig sigs sigl a)
     => m a
     -> m a
     -> m a
-apply' f x =
+applyPartial f x =
     logCall >> do
         ptr <- store x
         injectS $ FApply (fmap return f) (return . k ptr)
   where
-    k p (qn, combtype, ptrs) =
-        let ptrs' = ptrs ++ [p]
+    k ptr (Closure qn combtype ptrs) =
+        let ptrs' = ptrs ++ [ptr]
          in case combtype of
                 FuncPartCall 1 -> do
-                    thunkedFun qn ptrs'
+                    fun qn (Thunks ptrs')
                 ConsPartCall 1 -> thunkedCons qn ptrs'
                 _ -> injectS $ PartCall qn (decArgs combtype) ptrs'
+    k _ _ = undefined
+
+apply :: (EffectCons m sig sigs sigl Id, Functions sig sigs sigl a) => m a -> Args m a -> m a
+apply lam args = logCall >> do
+    injectS $ FApply (fmap return lam) (return . k)
+  where
+    k (Lambda vs ptr) = let' vs args (force ptr)
+    k (External s) = callExternal s args
+    k _ = undefined
 
 runPartial
     :: forall sig sigs sigl l a
@@ -252,21 +222,14 @@ instance
         algP (PartCall qn combtype args) = PC $ return $ Closure qn combtype args
         algP (FApply f k) = PC $
             do
-                t <- unPC f
-                case t of
+                cl <- unPC f
+                case cl of
                     Other x -> unPC x
-                    (Closure qn missing ptrs) -> do
-                        t' <- unPC $ k (qn, missing, ptrs)
+                    _ -> do
+                        t' <- unPC $ k (void cl)
                         (lift . fmap unPC) t'
         algP (Abs vs ptr) = PC $ return $ Lambda vs ptr
-        algP (App lam k) = PC $ do
-            t <- unPC lam
-            case t of
-                Other x -> unPC x
-                (Lambda vs ptr) -> do
-                    t' <- unPC $ k (vs, ptr)
-                    (lift . fmap unPC) t'
-
+        algP (Ext s) = PC $ return $ External s
         sfwd op = PC $ con $ S $ Enter $ fmap (fmap lift . unPC . fmap unPC) op
     con (L (Node op l st k)) = PC $ con $ L $ Node op (ClosureL $ Other l) (st' st) k'
       where
@@ -297,9 +260,13 @@ instance (Functor m) => Functor (PC m) where
 
 instance Lift ClosureL Closure where
     lift (Closure qn ct ptrs) = return $ Closure qn ct ptrs
+    lift (Lambda vs ptr) = return $ Lambda vs ptr
+    lift (External s) = return $ External s
     lift (Other x) = x
 
     lift2 (Closure qn ct ptrs) = return $ ClosureL $ Closure qn ct ptrs
+    lift2 (Lambda vs ptr) = return $ ClosureL $ Lambda vs ptr
+    lift2 (External s) = return $ ClosureL $ External s
     lift2 (Other x) = x
 
 newtype ClosureL l a = ClosureL {unClosureL :: Closure (l a)}
@@ -353,4 +320,4 @@ ands
 ands [] = cons ("Prelude", "True") []
 ands [x] = x
 ands (x : xs) = do
-    fun ("Prelude", "&&") [x, ands xs]
+    fun ("Prelude", "&&") (Progs [x, ands xs])

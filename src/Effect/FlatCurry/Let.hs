@@ -18,7 +18,7 @@ import Effect.General.Memoization
 import Effect.General.State
 import Signature
 import Debug.Trace (trace)
-import Type (analyzeVarIndex)
+import Type (analyzeVarIndex, Args (..))
 
 type Let sig sigl a =
     (Renaming :<: sig, Thunking a :<<<<: sigl)
@@ -32,18 +32,12 @@ lvar ptr = do
 {-# INLINE lvar #-}
 
 let'
-    :: (EffectCons m sig sigs sigl Id, Let sig sigl a)
-    => [(VarIndex, m a)]
+    :: forall m sig sigs sigl a. (EffectCons m sig sigs sigl Id, Let sig sigl a)
+    => [VarIndex]
+    -> Args m a
     -> m a
     -> m a
-let' bs e =
-    logCall >> do
-        mapM_ (uncurry thunk) bs
-        e
+let' vs args e = logCall >> case args of
+  Progs ps -> mapM_ (uncurry thunk) (zip vs ps) >> e
+  Thunks ptrs -> redirect @a (zip vs ptrs) >> e
 {-# INLINE let' #-}
-
-thunkedLet' :: forall sig sigs sigl m a. (Let sig sigl a, EffectCons m sig sigs sigl Id) => [(VarIndex, Ptr)] -> m a -> m a
-thunkedLet' bs e = logCall >> do
-    redirect @a bs
-    e
-{-# INLINE thunkedLet' #-}

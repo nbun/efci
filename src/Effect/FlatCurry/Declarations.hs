@@ -22,7 +22,7 @@
 
 module Effect.FlatCurry.Declarations where
 
-import Type (AEProg (..), AEFuncDecl (AEFunc), fdclBody, fdclVars, AERule (AERule, AEExternal))
+import Type (AEProg (..), AEFuncDecl (AEFunc), fdclBody)
 import Curry.FlatCurry.Annotated.Type (QName, VarIndex, TypeExpr, Visibility, ARule (AExternal))
 import qualified Data.Map as Map
 import Control.Monad (ap, void)
@@ -32,7 +32,6 @@ import Effect.General.State (EffectCons, logCall)
 import Debug.Trace (trace, traceShowId)
 
 data DeclF v :: * -> (* -> *) -> * where
-  DeclInfo  :: QName ->  DeclF v (Int, Visibility, TypeExpr, AERule ()) NoSub
   DeclBody  :: QName ->  DeclF v v                                      NoSub
   Init      :: [AEProg ()]   ->  DeclF v ()                             (ManySub v)
 
@@ -68,8 +67,7 @@ hDeclSmart  = unH . smartFold point con
 {-# INLINE hDeclSmart #-}
 
 addBody :: (ManySub v v -> l () -> H m l v (l v)) -> AEFuncDecl a -> AEFuncDecl (l () -> H m l v (l v))
-addBody get (AEFunc qn ar vis ty (AERule vs _)) = AEFunc qn ar vis ty (AERule vs (get (Many qn)))
-addBody _   (AEFunc qn ar vis ty (AEExternal s)) = AEFunc qn ar vis ty (AEExternal s)
+addBody get (AEFunc qn ar vis ty _) = AEFunc qn ar vis ty (get (Many qn))
 
 instance (Functor l, EffectMonad m sig sigs sigl l, Show (l v)) => TermAlgebra (H m l v) (Sig sig sigs (DeclF v :+++: sigl) l) where
   con (A (Algebraic op)) = H $ \th -> con $ A $ Algebraic $ fmap (\x -> unH x th) op
@@ -77,9 +75,6 @@ instance (Functor l, EffectMonad m sig sigs sigl l, Show (l v)) => TermAlgebra (
       where go th hhx = do
                  hx <- unH hhx th
                  return (unH hx th)
-  con (L (Node (Inl3 (DeclInfo qn)) l _ k)) = H $ \th -> do
-    let (AEFunc _ ar vis ty r) = findModule th qn
-    unH (k ((ar, vis, ty, void r) <$ l)) th
   con (L (Node (Inl3 (DeclBody qn)) l _ k)) = H $ \th -> do
            lv <- unH (fdclBody (findModule th qn) l) th
           --  undefined lv
@@ -103,13 +98,6 @@ runDeclC th p = unH (runCod var p) th
 instance (Monad m) => Pointed (H m l v) where
    point x = H $ \_ -> return x
    {-# INLINE point #-}
-
-getInfo :: forall a sig sigs sigl m.
-    (EffectCons m sig sigs sigl Id)
-    => (DeclF a :<<<<: sigl)
-    => QName -> m (Int, Visibility, TypeExpr, AERule ())
-getInfo qn = logCall >> injectL (DeclInfo qn :: DeclF a _ _) (Id ()) (\x -> case x of) (return . unId)
-{-# INLINE getInfo #-}
 
 getBody :: forall sig sigs sigl m a.
     (EffectCons m sig sigs sigl Id)

@@ -25,7 +25,7 @@ import Effect.General.ND (ND, choose, failed)
 import Effect.General.State
 import Free
 import Signature
-import Type (getHash)
+import Type (getHash, Args (..))
 
 data ConsF a
     = FCons QName [Ptr]
@@ -121,7 +121,7 @@ case' cp brs =
             | pqn == qn =
                 Just $ do
                     let es = map force args
-                    let' (zip (map fst argVars) es) e
+                    let' (map fst argVars) (Progs es) e
             | otherwise = Nothing
         match (Lit l) (ALPattern _ lp, e)
             | l == lp = Just e
@@ -130,9 +130,9 @@ case' cp brs =
             case pat of
                 (APattern _ (pqn, _) argVars, e) -> do
                     vs <- freshNames (length argVars)
-                    let fvs = map fvar vs
+                    let fvs = Progs $ map fvar vs
                     modify @CStore (addC i (ConsC pqn vs))
-                    let' (zip (map fst argVars) fvs) e
+                    let' (map fst argVars) fvs e
                 (ALPattern _ lp, e) -> do
                     modify @CStore (addC i (LitC lp))
                     e

@@ -92,19 +92,14 @@ data AEProg a
       [CFT.OpDecl]
   deriving (Functor, Show)
 
-data AEFuncDecl a = AEFunc QName Int Visibility TypeExpr (AERule a)
+data AEFuncDecl a = AEFunc QName Int Visibility TypeExpr a
   deriving (Functor, Show)
 
 fdclBody :: AEFuncDecl a -> a
-fdclBody (AEFunc _ _ _ _ (AERule _ a)) = a
+fdclBody (AEFunc _ _ _ _ a) = a
 
-fdclVars :: AEFuncDecl a -> [VarIndex]
-fdclVars (AEFunc _ _ _ _ (AERule vs _)) = vs
-
-data AERule a
-  = AERule [VarIndex] a
-  | AEExternal String
-  deriving (Functor, Show)
+-- fdclVars :: AEFuncDecl a -> [VarIndex]
+-- fdclVars (AEFunc _ _ _ _ (AERule vs _)) = vs
 
 analyzeVarIndex :: String -> VarIndex -> String
 analyzeVarIndex loc i = unsafePerformIO $ do
@@ -121,3 +116,6 @@ freshVarIndex :: UniqSupply -> (VarIndex, UniqSupply)
 freshVarIndex sup = let (!u, sup') = takeUniqFromSupply sup
                         !i = fromIntegral (getKey u)
                     in (i, sup')
+
+data Args m a = Progs [m a] | Thunks [Ptr]
+type Ptr = Int

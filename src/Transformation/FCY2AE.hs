@@ -38,9 +38,9 @@ import Effect.FlatCurry.Constructor
 import Effect.FlatCurry.Declarations (DeclF)
 import Effect.FlatCurry.Function (
     Partial,
-    apply',
+    applyPartial,
     fun,
-    partial, lambda,
+    partial, lambda, external,
  )
 import qualified Effect.FlatCurry.Function (CombType (..))
 import Effect.FlatCurry.IO (IOAction)
@@ -52,7 +52,7 @@ import Effect.General.Reader
 import Effect.General.State hiding (get, put)
 import Free
 import Signature
-import Type (AEFuncDecl (..), AEProg (..), AERule (..))
+import Type (AEFuncDecl (..), AEProg (..), Args (..))
 import Effect.General.State (get, put)
 import Data.Maybe (fromJust)
 
@@ -94,11 +94,11 @@ fcyExpr2ae frees expr = let rec = fcyExpr2ae frees in
             liftM2 (?) (rec e1) (rec e2)
         AComb _ FuncCall (("Prelude", "failed"), _) [] -> return failed
         AComb _ FuncCall (("Prelude", "apply"), _) [fe, ee] ->
-            liftM2 apply' (rec fe) (rec ee)
+            liftM2 applyPartial (rec fe) (rec ee)
         AComb _ callType (qn, _) args -> do
             args' <- mapM rec args
             case callType of
-                FuncCall -> return $ fun qn args'
+                FuncCall -> return $ fun qn (Progs args')
                 FuncPartCall i ->
                     return $
                         partial qn (Effect.FlatCurry.Function.FuncPartCall i) args'
@@ -113,7 +113,7 @@ fcyExpr2ae frees expr = let rec = fcyExpr2ae frees in
             vs' <- rename vs
             es' <- mapM rec es
             e' <- rec e
-            return $ let' (zip vs' es') e'
+            return $ let' vs' (Progs es') e'
         AFree _ bs e -> do
             let vs = map fst bs
             rename vs
@@ -156,11 +156,8 @@ fcyFDecl2ae
     :: (() :<<<: v, TermMonad m (CurryEffects v)) => AFuncDecl TypeExpr -> AEFuncDecl (m v)
 fcyFDecl2ae (AFunc qn arity vis ty r) = AEFunc qn arity vis ty (fcyRule2ae r)
 
-fcyRule2ae :: (() :<<<: v, TermMonad m (CurryEffects v)) => ARule TypeExpr -> AERule (m v)
-fcyRule2ae (ARule _ vars e) =
-    let (vs, _) = unzip vars
-        e' = do
-            vs' <- rename vs
-            join $ fmap (lambda vs') (fcyExpr2ae [] e)
-     in AERule vs e'
-fcyRule2ae (AExternal _ s) = AEExternal s
+fcyRule2ae :: (() :<<<: v, TermMonad m (CurryEffects v)) => ARule TypeExpr -> m v
+fcyRule2ae (ARule _ vars e) = do
+  vs' <- rename (fst $ unzip vars)
+  join $ fmap (lambda vs') (fcyExpr2ae [] e)
+fcyRule2ae (AExternal _ s) = external s
