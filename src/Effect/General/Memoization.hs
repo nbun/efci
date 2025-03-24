@@ -140,7 +140,7 @@ instance (Functor l, EffectMonad m sig sigs sigl (StateL (ThunkStore l v) l), Sh
    con (L (Node (Inl3 (Thunk ptr)) l st k)) = MC $ \(TS sup im) -> ctrace ("thunked " ++ show ptr) $ unMC (k l) (TS sup (addEntry ptr (Thunked (unsafeCoerce $ st One)) im))
    con (L (Node (Inl3 Store) l st k)) = MC $ \(TS sup im) -> ctrace ("stored ") $ 
      let (!fresh, sup') = freshVarIndex sup
-         maybePurge im = if fresh `mod` 200 == 0 then im else im
+         maybePurge im = if fresh `mod` 1000 == 0 then majorPurge im else im
      in unMC (k (fresh <$ l)) (TS sup' (addEntry fresh (Thunked (unsafeCoerce $ st One)) (maybePurge im)))
    con (L (Node (Inl3 (Force p)) l st k)) = MC $ \ts@(TS _ th) -> ctrace ("forcelookup " {- ++ show (HashMap.keys th)-}) $ case lookupEntry p th of
       Thunked t -> do
@@ -148,7 +148,12 @@ instance (Functor l, EffectMonad m sig sigs sigl (StateL (ThunkStore l v) l), Sh
          unMC (k lv) (ctrace ("evaluate " ++ show p ++ show lv) (TS sup' (addEntry p (Evaluated lv) th')))
       Evaluated lv -> ctrace ("memoized " ++ show p ++ show lv) $ unMC (k lv) ts
       Redirected p' -> ctrace ("redirect " ++ show p ++ " -> " ++ show p') $ unMC (con $ L $ Node (Inl3 (Force p')) l st k) ts
-   con (L (Node (Inl3 (Redirect ps)) l _ k)) = MC $ \ts@(TS sup th) -> ctrace ("redirect " ++ show ps) $ unMC (k l) (TS sup (foldr (\(p, p') th' -> addEntry p (Redirected p') th') th ps)) 
+   con (L (Node (Inl3 (Redirect ps)) l _ k)) = MC $ \ts@(TS sup th) -> ctrace ("redirect " ++ show ps) $ do
+    let skipRedirects th p = case lookupEntry p th of
+             Redirected p' -> skipRedirects th p'
+             _ -> p    
+    unMC (k l) (TS sup (foldr (\(p, p') th' -> addEntry p (Redirected (skipRedirects th' p')) th') th ps))
+
    con (L (Node (Inl3 (RunGC)) l _ k)) = MC $ \ts@(TS _ _) -> undefined
       -- let ptrs = mapMaybe (\v -> Map.lookup v rm) vs 
       -- in unMC (k l) (garbageCollector ptrs ts)
@@ -213,10 +218,11 @@ lookupEntry !i th = unsafePerformIO $ keepAlive i $ do
     Nothing -> error $ analyzeVarIndex "Stable name not found: " i
 
 purge :: TSM m l v -> TSM m l v
-purge m = unsafePerformIO $ (traceMarkerIO "Purge" >> performGC >> putStrLn stats >> return m')
+purge m = unsafePerformIO $ traceMarkerIO "Purge" >> putStrLn stats >> return m'
   where
     m' = HashMap.filter (isAlive) m
-    stats = "Purged " ++ show (HashMap.size m - HashMap.size m') ++ " dead weak pointers"
+    old = HashMap.size m
+    stats = "Purged " ++ show (old - HashMap.size m') ++ " dead weak pointers of " ++ show old ++ " total pointers"
     isAlive w = case unsafePerformIO $ deRefWeak w of
                  Just _ -> True
                  Nothing -> False
@@ -224,7 +230,7 @@ purge m = unsafePerformIO $ (traceMarkerIO "Purge" >> performGC >> putStrLn stat
 majorPurge :: TSM m l v -> TSM m l v
 majorPurge m | HashMap.size m == HashMap.size m' = m'
              | otherwise = majorPurge m'
-   where m' = purge m
+   where m' = unsafePerformIO $ performGC >> return (purge m)
 
 newtype MC m l v a = MC {unMC :: ThunkStore l v -> m (ThunkStore l v, a)}
 
@@ -237,7 +243,8 @@ instance Show (StableName a) where
 
 showTS :: (Show (l v)) => ThunkStore l v -> String
 showTS (TS i im) = let m = HashMap.map (\w -> fromJust $ unsafePerformIO $ deRefWeak w) (majorPurge im) 
-  in concat (sortBy cmp ((map ((++ "\n") . show . (\(i, (Evaluated lv)) -> (i, lv))) ((filter (\(_, (e)) -> isEvaluated e)) (HashMap.toList m)))
+  in "MAJOR PURGE!\n" 
+  ++ concat (sortBy cmp ((map ((++ "\n") . show . (\(i, (Evaluated lv)) -> (i, lv))) ((filter (\(_, (e)) -> isEvaluated e)) (HashMap.toList m)))
   ++ (map ((++ "\n") . show . (\(i, (Thunked lv)) -> (i, ("-")))) ((filter (\(_, (e)) -> isThunked e)) (HashMap.toList m)))
   ++ (map ((++ "\n") . show . (\(i, (Redirected p)) -> (i, ("-> " ++ show (getHash p))))) ((filter (\(_, (e)) -> isRedirected e)) (HashMap.toList m)))))
 

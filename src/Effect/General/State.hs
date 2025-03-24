@@ -34,7 +34,6 @@ import Signature
 import System.IO.Unsafe (unsafePerformIO)
 import GHC.StableName
 import Type (analyzeVarIndex)
-import Control.DeepSeq (force)
 import Data.Bifunctor (Bifunctor(first))
 
 data StateF (tag :: Type) s a
@@ -120,7 +119,7 @@ rename :: (EffectCons m sig sigs sigl l, Renaming :<: sig) => [VarIndex] -> m [V
 rename vs =
     logCall >> do
         (rs, sup) :: RState <- get @Rename
-        let (!vs', sup') = first Control.DeepSeq.force (takeNfromSupply (length vs) sup)
+        let (!vs', sup') = takeNfromSupply (length vs) sup
         put @Rename ((rs ++ zip vs vs', sup'))
         -- trace (concatMap (analyzeVarIndex "rename") vs') (return ())
         return vs'
