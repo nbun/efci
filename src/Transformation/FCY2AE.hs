@@ -38,7 +38,7 @@ import Effect.FlatCurry.Constructor
 import Effect.FlatCurry.Declarations (DeclF)
 import Effect.FlatCurry.Function (
     Partial,
-    applyPartial,
+    apply,
     fun,
     partial, lambda, external,
  )
@@ -52,7 +52,7 @@ import Effect.General.Reader
 import Effect.General.State hiding (get, put)
 import Free
 import Signature
-import Type (AEFuncDecl (..), AEProg (..), Args (..))
+import Type (AEFuncDecl (..), AEProg (..), Args (..), single)
 import Effect.General.State (get, put)
 import Data.Maybe (fromJust)
 
@@ -94,7 +94,7 @@ fcyExpr2ae frees expr = let rec = fcyExpr2ae frees in
             liftM2 (?) (rec e1) (rec e2)
         AComb _ FuncCall (("Prelude", "failed"), _) [] -> return failed
         AComb _ FuncCall (("Prelude", "apply"), _) [fe, ee] ->
-            liftM2 applyPartial (rec fe) (rec ee)
+            liftM2 apply (rec fe) (fmap single (rec ee))
         AComb _ callType (qn, _) args -> do
             args' <- mapM rec args
             case callType of

@@ -119,3 +119,6 @@ freshVarIndex sup = let (!u, sup') = takeUniqFromSupply sup
 
 data Args m a = Progs [m a] | Thunks [Ptr]
 type Ptr = Int
+
+single :: m a -> Args m a
+single x = Progs [x]

@@ -96,14 +96,10 @@ freshNames n =
         return vs'
 {-# INLINE freshNames #-}
 
-modifyRenaming :: (EffectCons m sig sigs sigl l, Renaming :<: sig) => ([(VarIndex, VarIndex)] -> [(VarIndex, VarIndex)]) -> m ()
-modifyRenaming f =
-    logCall >> do
-        (rs, sup)
-            :: RState <-
-            get @Rename
-        put @Rename (f rs, sup)
-        return ()
+newRenamingScope :: (EffectCons m sig sigs sigl l, Renaming :<: sig) => m ()
+newRenamingScope =
+    logCall >> modify @Rename (\((_, sup) :: RState) -> ([], sup))
+{-# INLINE newRenamingScope #-}
 
 lookupRenaming :: (EffectCons m sig sigs sigl l, Renaming :<: sig) => VarIndex -> m VarIndex
 lookupRenaming v =

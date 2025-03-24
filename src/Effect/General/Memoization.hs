@@ -26,21 +26,15 @@ module Effect.General.Memoization where
 
 import Free
 
-import Data.Bifunctor (second)
-import Data.Either (rights, lefts, isRight, isLeft, fromRight)
 import Data.Kind (Type)
-import Effect.General.State (StateL (..), EffectCons, logCall, StateF (..), Renaming, Identify (..), modify, get, put)
+import Effect.General.State (StateL (..), EffectCons, logCall)
 import Signature
 import Debug (ctrace, strace)
 import Unsafe.Coerce (unsafeCoerce)
-import Debug.Trace (trace, traceMarkerIO)
-import Data.Union (prj)
 import qualified Data.IntMap as IntMap
-import Data.IntMap ((!))
 import Curry.FlatCurry (VarIndex)
-import Data.Maybe (fromJust, mapMaybe)
-import Data.List (nub, sortBy, sort)
-import Control.Monad (join)
+import Data.Maybe (fromJust)
+import Data.List (sortBy)
 import System.Mem.StableName
 import GHC.Weak
 import System.IO.Unsafe (unsafePerformIO)
@@ -136,10 +130,12 @@ instance (Functor l, EffectMonad m sig sigs sigl (StateL (ThunkStore l v) l), Sh
       go th hhx = do
          (th', hx) <- unMC hhx th
          return (unMC hx th')
-   con (L (Node (Inl3 (Thunk ptr)) l st k)) = MC $ \(TS sup im) -> ctrace ("thunked " ++ show ptr) $ unMC (k l) (TS sup (addEntry ptr (Thunked (unsafeCoerce $ st One)) im))
-   con (L (Node (Inl3 Store) l st k)) = MC $ \(TS sup im) -> ctrace ("stored ") $ 
+   con (L (Node (Inl3 (Thunk ptr)) l st k)) = MC $ \(TS sup th) -> ctrace ("thunked " ++ show ptr) $ do
+    unMC (k l) (TS sup (addEntry ptr (Thunked (unsafeCoerce $ st One)) th))
+   con (L (Node (Inl3 Store) l st k)) = MC $ \(TS sup th) -> ctrace ("stored ") $ 
      let (!fresh, sup') = freshVarIndex sup
-     in unMC (k (fresh <$ l)) (TS sup' (addEntry fresh (Thunked (unsafeCoerce $ st One)) im))
+         th' = if fresh `mod` 20000 == 0 then purge th else th
+     in unMC (k (fresh <$ l)) (TS sup' (addEntry fresh (Thunked (unsafeCoerce $ st One)) th'))
    con (L (Node (Inl3 (Force p)) l st k)) = MC $ \ts@(TS _ th) -> ctrace ("forcelookup " {- ++ show (IntMap.keys th)-}) $ case lookupEntry p th of
       Thunked t -> do
          (TS sup' th', lv) <- unMC (unsafeCoerce $ t l) ts
@@ -190,8 +186,7 @@ type TSM m l v = IntMap.IntMap (Weak (Entry m l v))
 addEntry :: VarIndex -> Entry m l v -> TSM m l v -> TSM m l v
 addEntry !i p th = unsafePerformIO $ do
   w <- mkWeak i (unsafeCoerce p) Nothing
-  let th' = if i `mod` 20000 == 0 then purge th else th
-  return (IntMap.insert i w th')
+  return (IntMap.insert i w th)
 
 lookupEntry :: VarIndex -> TSM m l v -> Entry m l v
 lookupEntry !i th = unsafePerformIO $ keepAlive i $ do
@@ -204,12 +199,12 @@ lookupEntry !i th = unsafePerformIO $ keepAlive i $ do
     Nothing -> error $ analyzeVarIndex "Stable name not found: " i
 
 purge :: TSM m l v -> TSM m l v
-purge m = unsafePerformIO $ strace stats (return m')
+purge m = strace stats m'
   where
     m' = IntMap.filter isAlive m
     old = IntMap.size m
     new = IntMap.size m'
-    stats = if old == 0 then "" else "Purged " ++ show (old - new) ++ " dead pointers of total " ++ show old ++ " pointers"
+    stats = if old == 0 then "" else "Purged " ++ show (old - new) ++ " dead pointers of total " ++ show old ++ " pointers (now " ++ show new ++ ")"
     isAlive w = case unsafePerformIO $ deRefWeak w of
                  Just _ -> True
                  Nothing -> False

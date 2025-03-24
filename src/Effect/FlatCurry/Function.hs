@@ -33,7 +33,7 @@ import Effect.General.Reader
 import Effect.General.State
 import Free
 import Signature
-import Type (AEFuncDecl (..), AEProg (..), Args (..))
+import Type (AEFuncDecl (..), AEProg (..), Args (..), single)
 import Control.Monad (void)
 
 
@@ -54,63 +54,8 @@ fun
     -> Args m a
     -> m a
 fun qn args = logCallWith (show qn) >> do
-  modifyRenaming (const [])
+  newRenamingScope
   apply (getBody qn) args
-
-callExternal
-    :: (EffectCons m sig sigs sigl Id, Functions sig sigs sigl a)
-    => String
-    -> Args m a
-    -> m a
-callExternal f args = logCall >> do
-      let args' = case args of
-                    Progs ps -> ps
-                    Thunks ptrs -> map force ptrs
-      case (f, args') of
-        ("Prelude.plusInt", [px, py]) -> arithInt (+) px py
-        ("Prelude.minusInt", [px, py]) -> arithInt (-) px py
-        ("Prelude.timesInt", [px, py]) -> arithInt (*) px py
-        ("Prelude.divInt", [px, py]) -> arithInt div px py
-        ("Prelude.modInt", [px, py]) -> arithInt mod px py
-        ("Prelude.eqInt", [px, py]) -> compInt (==) px py
-        ("Prelude.ltEqInt", [px, py]) -> compInt (<=) px py
-        ("Prelude.eqChar", [px, py]) -> compChar (==) px py
-        ("Prelude.returnIO", [px]) -> px
-        ( "Prelude.bindIO"
-            , [px, pf]
-            ) -> px >>= \x -> applyPartial pf (return x)
-        ("Prelude.getChar", []) -> getCharIO
-        ("Prelude.prim_putChar", [pc]) -> putCharIO pc
-        ("Prelude.prim_writeFile", [pfp, ps]) -> writeFileIO pfp (normalform ps)
-        ("Prelude.prim_appendFile", [pfp, ps]) -> appendFileIO pfp (normalform ps)
-        ("Prelude.prim_readFile", [pfp]) -> readFileIO pfp
-        ("Prelude.ensureNotFree", [p]) -> p
-        ("Prelude.$!", [pf, px]) -> applyPartial pf px
-        ("Prelude.$##", [pf, px]) -> applyPartial pf (normalform px)
-        ("Prelude.prim_error", [p]) -> err p
-        ("Prelude.=:=", [px, py]) -> unify px py
-        _ ->
-            error $
-                "Missing definition for "
-                    ++ show f
-
-findModule :: [AEProg a] -> QName -> AEFuncDecl a
-findModule ps qn@(mod, _) = case res of
-    Just fdecl -> fdecl
-    Nothing -> error $ "Function declaration " ++ show qn ++ " not found"
-  where
-    res =
-        foldr
-            ( \(AEProg name _ _ fdecls _) acc ->
-                if name == mod
-                    then findFuncDecl fdecls qn
-                    else acc
-            )
-            Nothing
-            ps
-
-findFuncDecl :: Map.Map QName (AEFuncDecl a) -> QName -> Maybe (AEFuncDecl a)
-findFuncDecl m qn = Map.lookup qn m
 
 -- partial functions --
 
@@ -173,32 +118,62 @@ decArgs :: CombType -> CombType
 decArgs (FuncPartCall i) = FuncPartCall (i - 1)
 decArgs (ConsPartCall i) = ConsPartCall (i - 1)
 
-applyPartial
-    :: (EffectCons m sig sigs sigl Id, Functions sig sigs sigl a)
-    => m a
-    -> m a
-    -> m a
-applyPartial f x =
-    logCall >> do
-        ptr <- store x
-        injectS $ FApply (fmap return f) (return . k ptr)
-  where
-    k ptr (Closure qn combtype ptrs) =
-        let ptrs' = ptrs ++ [ptr]
-         in case combtype of
-                FuncPartCall 1 -> do
-                    fun qn (Thunks ptrs')
-                ConsPartCall 1 -> thunkedCons qn ptrs'
-                _ -> injectS $ PartCall qn (decArgs combtype) ptrs'
-    k _ _ = undefined
-
 apply :: (EffectCons m sig sigs sigl Id, Functions sig sigs sigl a) => m a -> Args m a -> m a
 apply lam args = logCall >> do
     injectS $ FApply (fmap return lam) (return . k)
   where
     k (Lambda vs ptr) = let' vs args (force ptr)
     k (External s) = callExternal s args
+    k (Closure qn combtype ptrs) = do
+        new <- case args of
+                 Progs ps -> mapM store ps
+                 Thunks ptrs' -> return ptrs'
+        let ptrs' = ptrs ++ new
+         in case combtype of
+                FuncPartCall 1 -> do
+                    fun qn (Thunks ptrs')
+                ConsPartCall 1 -> thunkedCons qn ptrs'
+                _ -> injectS $ PartCall qn (decArgs combtype) ptrs'
     k _ = undefined
+
+
+callExternal
+    :: (EffectCons m sig sigs sigl Id, Functions sig sigs sigl a)
+    => String
+    -> Args m a
+    -> m a
+callExternal f args = logCall >> do
+      let args' = case args of
+                    Progs ps -> ps
+                    Thunks ptrs -> map force ptrs
+      case (f, args') of
+        ("Prelude.plusInt", [px, py]) -> arithInt (+) px py
+        ("Prelude.minusInt", [px, py]) -> arithInt (-) px py
+        ("Prelude.timesInt", [px, py]) -> arithInt (*) px py
+        ("Prelude.divInt", [px, py]) -> arithInt div px py
+        ("Prelude.modInt", [px, py]) -> arithInt mod px py
+        ("Prelude.eqInt", [px, py]) -> compInt (==) px py
+        ("Prelude.ltEqInt", [px, py]) -> compInt (<=) px py
+        ("Prelude.eqChar", [px, py]) -> compChar (==) px py
+        ("Prelude.returnIO", [px]) -> px
+        ( "Prelude.bindIO"
+            , [px, pf]
+            ) -> px >>= \x -> apply pf (single (return x))
+        ("Prelude.getChar", []) -> getCharIO
+        ("Prelude.prim_putChar", [pc]) -> putCharIO pc
+        ("Prelude.prim_writeFile", [pfp, ps]) -> writeFileIO pfp (normalform ps)
+        ("Prelude.prim_appendFile", [pfp, ps]) -> appendFileIO pfp (normalform ps)
+        ("Prelude.prim_readFile", [pfp]) -> readFileIO pfp
+        ("Prelude.ensureNotFree", [p]) -> p
+        ("Prelude.$!", [pf, px]) -> apply pf (single px)
+        ("Prelude.$##", [pf, px]) -> apply pf (single $ normalform px)
+        ("Prelude.prim_error", [p]) -> err p
+        ("Prelude.=:=", [px, py]) -> unify px py
+        _ ->
+            error $
+                "Missing definition for "
+                    ++ show f
+
 
 runPartial
     :: forall sig sigs sigl l a
