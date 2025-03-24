@@ -58,7 +58,7 @@ executable efci
   hs-source-dirs:   app
   main-is:          Main.hs
   default-language: Haskell2010
-  ghc-options:      -Wall -O2 -fprof-late -finfo-table-map -fdistinct-constructor-tables -rtsopts 
+  ghc-options:      -Wall -O2 -threaded -fprof-late -finfo-table-map -fdistinct-constructor-tables -rtsopts 
   build-depends:
       base >= 4.11
     , effective-curry-interpreter
@@ -80,7 +80,7 @@ benchmark benchmark-prac-haskell-bench
   type:           exitcode-stdio-1.0
   hs-source-dirs: benchmarks
   main-is:        Main.hs
-  ghc-options:    -O2 -fspecialise -fcross-module-specialise -flate-specialise
+  ghc-options:    -O2 -fspecialise -fcross-module-specialise -flate-specialise -threaded
   build-depends:  base
                 , criterion
                 , effective-curry-interpreter

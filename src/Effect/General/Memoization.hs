@@ -41,7 +41,6 @@ import Curry.FlatCurry (VarIndex)
 import Data.Maybe (fromJust, mapMaybe)
 import Data.List (nub, sortBy, sort)
 import Control.Monad (join)
-import qualified Data.HashMap.Strict as HashMap
 import System.Mem.StableName
 import GHC.Weak
 import System.IO.Unsafe (unsafePerformIO)
@@ -105,11 +104,11 @@ runGC = logCall >> injectL (RunGC :: Thunking v () NoSub) (Id ()) (\x -> case x 
 {-# INLINE runGC #-}
 
 runLazy :: (Functor l, Show (l v), Show (l ()), m ~ Prog (Sig sig sigs sigl (StateL (ThunkStore l v) l)), Monad m) => UniqSupply -> Prog (Sig sig sigs (Thunking v :+++: sigl) l) b -> m b
-runLazy sup = fmap (\(s, r) -> strace (showTS s) r) . \p -> hLazy p (TS sup HashMap.empty)
+runLazy sup = fmap (\(s, r) -> strace (showTS s) r) . \p -> hLazy p (TS sup IntMap.empty)
 {-# INLINE runLazy #-}
 
 runLazySmart :: (Functor l, Show (l v), Show (l ()), m ~ SmartProg (Sig sig sigs sigl (StateL (ThunkStore l v) l)), Monad m) => UniqSupply -> SmartProg (Sig sig sigs (Thunking v :+++: sigl) l) b -> m b
-runLazySmart sup = fmap (\(s, r) -> strace (showTS s) r)  . \p -> hLazySmart p (TS sup HashMap.empty)
+runLazySmart sup = fmap (\(s, r) -> strace (showTS s) r)  . \p -> hLazySmart p (TS sup IntMap.empty)
 {-# INLINE runLazySmart #-}
 
 hLazy
@@ -142,7 +141,7 @@ instance (Functor l, EffectMonad m sig sigs sigl (StateL (ThunkStore l v) l), Sh
      let (!fresh, sup') = freshVarIndex sup
          maybePurge im = if fresh `mod` 10000 == 0 then purge im else im
      in unMC (k (fresh <$ l)) (TS sup' (addEntry fresh (Thunked (unsafeCoerce $ st One)) (maybePurge im)))
-   con (L (Node (Inl3 (Force p)) l st k)) = MC $ \ts@(TS _ th) -> ctrace ("forcelookup " {- ++ show (HashMap.keys th)-}) $ case lookupEntry p th of
+   con (L (Node (Inl3 (Force p)) l st k)) = MC $ \ts@(TS _ th) -> ctrace ("forcelookup " {- ++ show (IntMap.keys th)-}) $ case lookupEntry p th of
       Thunked t -> do
          (TS sup' th', lv) <- unMC (unsafeCoerce $ t l) ts
          unMC (k lv) (ctrace ("evaluate " ++ show p ++ show lv) (TS sup' (addEntry p (Evaluated lv) th')))
@@ -168,7 +167,7 @@ instance (Functor l, EffectMonad m sig sigs sigl (StateL (ThunkStore l v) l), Sh
    {-# INLINE var #-}
 
 runLazyC :: (EffectMonad m sig sigs sigl (StateL (ThunkStore l v) l), Functor l, Show (l v)) => UniqSupply -> Cod (MC m l v) a -> m a
-runLazyC sup p = (\(s, r) -> ctrace (showTS s) r) <$> unMC (runCod var p) (TS sup HashMap.empty)
+runLazyC sup p = (\(s, r) -> ctrace (showTS s) r) <$> unMC (runCod var p) (TS sup IntMap.empty)
 -- runLazyC th p = snd <$> unMC (runCod var p) th
 {-# INLINE runLazyC #-}
 
@@ -186,19 +185,17 @@ isEvaluated _ = False
 isRedirected (Redirected _) = True
 isRedirected _ = False
 
-data ThunkStore l v = forall m. TS UniqSupply (TSM m l v) --(HashMap.HashMap (Entry m l v))
-type TSM m l v = HashMap.HashMap (StableName VarIndex) (Weak (Entry m l v))
+data ThunkStore l v = forall m. TS UniqSupply (TSM m l v) --(IntMap.IntMap (Entry m l v))
+type TSM m l v = IntMap.IntMap (Weak (Entry m l v))
 
 addEntry :: VarIndex -> Entry m l v -> TSM m l v -> TSM m l v
 addEntry !i p th = unsafePerformIO $ do
-  sn <- makeStableName i
   w <- mkWeak i (unsafeCoerce p) Nothing
-  return (HashMap.insert sn w th)
+  return (IntMap.insert i w th)
 
 lookupEntry :: VarIndex -> TSM m l v -> Entry m l v
 lookupEntry !i th = unsafePerformIO $ keepAlive i $ do
-  sn <- makeStableName i
-  case HashMap.lookup sn th of
+  case IntMap.lookup i th of
     Just w -> do
       m <- deRefWeak w
       case m of
@@ -209,15 +206,15 @@ lookupEntry !i th = unsafePerformIO $ keepAlive i $ do
 purge :: TSM m l v -> TSM m l v
 purge m = unsafePerformIO $ strace stats (return m')
   where
-    m' = HashMap.filter (isAlive) m
-    old = HashMap.size m
-    stats = "Purged " ++ show (old - HashMap.size m') ++ " dead weak pointers of " ++ show old ++ " total pointers"
+    m' = IntMap.filter (isAlive) m
+    old = IntMap.size m
+    stats = "Purged " ++ show (old - IntMap.size m') ++ " dead weak pointers of " ++ show old ++ " total pointers"
     isAlive w = case unsafePerformIO $ deRefWeak w of
                  Just _ -> True
                  Nothing -> False
 
 majorPurge :: TSM m l v -> TSM m l v
-majorPurge m | HashMap.size m == HashMap.size m' = m'
+majorPurge m | IntMap.size m == IntMap.size m' = m'
              | otherwise = majorPurge m'
    where m' = unsafePerformIO $ performGC >> return (purge m)
 
@@ -231,16 +228,16 @@ instance Show (StableName a) where
    show sn = show (hashStableName sn)
 
 showTS :: (Show (l v)) => ThunkStore l v -> String
-showTS (TS i im) = let m = HashMap.map (\w -> fromJust $ unsafePerformIO $ deRefWeak w) (majorPurge im) 
+showTS (TS i im) = let m = IntMap.map (\w -> fromJust $ unsafePerformIO $ deRefWeak w) (majorPurge im) 
   in "MAJOR PURGE!\n" 
-  ++ concat (sortBy cmp ((map ((++ "\n") . show . (\(i, (Evaluated lv)) -> (i, lv))) ((filter (\(_, (e)) -> isEvaluated e)) (HashMap.toList m)))
-  ++ (map ((++ "\n") . show . (\(i, (Thunked lv)) -> (i, ("-")))) ((filter (\(_, (e)) -> isThunked e)) (HashMap.toList m)))
-  ++ (map ((++ "\n") . show . (\(i, (Redirected p)) -> (i, ("-> " ++ show (getHash p))))) ((filter (\(_, (e)) -> isRedirected e)) (HashMap.toList m)))))
+  ++ concat (sortBy cmp ((map ((++ "\n") . show . (\(i, (Evaluated lv)) -> (i, lv))) ((filter (\(_, (e)) -> isEvaluated e)) (IntMap.toList m)))
+  ++ (map ((++ "\n") . show . (\(i, (Thunked lv)) -> (i, ("-")))) ((filter (\(_, (e)) -> isThunked e)) (IntMap.toList m)))
+  ++ (map ((++ "\n") . show . (\(i, (Redirected p)) -> (i, ("-> " ++ show (getHash p))))) ((filter (\(_, (e)) -> isRedirected e)) (IntMap.toList m)))))
 
-  ++ "unpurged: " ++ show (HashMap.size im) ++ " purged: " ++ show (HashMap.size m) ++ "\n\n"
-  ++ "evaluated: " ++ show (length (filter (\(e) -> isEvaluated e) $ map snd (HashMap.toList m)))
-  ++ " thunks: " ++ show (length ((filter (\(e) -> isThunked e)) $ map snd (HashMap.toList m)))
-  ++ " redirects: " ++ show (length ((filter (\(e) -> isRedirected e)) $ map snd (HashMap.toList m)))
+  ++ "unpurged: " ++ show (IntMap.size im) ++ " purged: " ++ show (IntMap.size m) ++ "\n\n"
+  ++ "evaluated: " ++ show (length (filter (\(e) -> isEvaluated e) $ map snd (IntMap.toList m)))
+  ++ " thunks: " ++ show (length ((filter (\(e) -> isThunked e)) $ map snd (IntMap.toList m)))
+  ++ " redirects: " ++ show (length ((filter (\(e) -> isRedirected e)) $ map snd (IntMap.toList m)))
     where cmp ('(':s1) ('(':s2) = compare (read (takeInt s1) :: Int) (read (takeInt s2) :: Int)
           takeInt = takeWhile (/= ',')
 {-# INLINE showTS #-}
