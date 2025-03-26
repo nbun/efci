@@ -39,5 +39,5 @@ let'
     -> m a
 let' vs args e = logCall >> case args of
   Progs ps -> mapM_ (uncurry thunk) (zip vs ps) >> e
-  Thunks ptrs -> redirect @a (zip vs ptrs) >> e
+  Thunks ptrs -> mapM_ (redirect @a) (zip vs ptrs) >> e
 {-# INLINE let' #-}

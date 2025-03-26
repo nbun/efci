@@ -47,7 +47,7 @@ data Thunking v :: Type -> (Type -> Type) -> Type where
    Thunk :: Ptr -> Thunking v () (OneSub v)
    Store :: Thunking v Ptr (OneSub v)
    Force :: Ptr -> Thunking v v NoSub
-   Redirect :: [(Ptr, Ptr)] -> Thunking v () NoSub
+   Redirect :: (Ptr, Ptr) -> Thunking v () NoSub
    RunGC :: Thunking v () NoSub
 
 store
@@ -79,7 +79,7 @@ thunk ptr t = logCall >> let res = injectL (Thunk ptr :: Thunking v () (OneSub v
                              A (Algebraic op) -> res
                              S (Enter _) -> res
                              L (Node op _ _ _) -> case prj3 op of
-                              Just (Force ptr' :: Thunking v p c) -> redirect @v [(ptr, ptr')]
+                              Just (Force ptr' :: Thunking v p c) -> redirect @v (ptr, ptr')
                               _ -> res
 {-# INLINE thunk #-}
 
@@ -87,8 +87,8 @@ force :: (EffectCons m sig sigs sigl Id, Thunking v :<<<<: sigl) => Ptr -> m v
 force e = logCall >> injectL (Force e) (Id ()) (\x -> case x of {}) (return . unId)
 {-# INLINE force #-}
 
-redirect :: forall v m sig sigs sigl. (EffectCons m sig sigs sigl Id, Thunking v :<<<<: sigl) => [(Ptr, Ptr)] -> m ()
-redirect ps = logCall >> injectL (Redirect ps :: Thunking v () NoSub) (Id ()) (\x -> case x of {}) (return . unId)
+redirect :: forall v m sig sigs sigl. (EffectCons m sig sigs sigl Id, Thunking v :<<<<: sigl) => (Ptr, Ptr) -> m ()
+redirect p = logCall >> injectL (Redirect p :: Thunking v () NoSub) (Id ()) (\x -> case x of {}) (return . unId)
 {-# INLINE redirect #-}
 
 type Ptr = Int
@@ -136,17 +136,18 @@ instance (Functor l, EffectMonad m sig sigs sigl (StateL (ThunkStore l v) l), Sh
      let (!fresh, sup') = freshVarIndex sup
          th' = if fresh `mod` 20000 == 0 then purge th else th
      in unMC (k (fresh <$ l)) (TS sup' (addEntry fresh (Thunked (unsafeCoerce $ st One)) th'))
-   con (L (Node (Inl3 (Force p)) l st k)) = MC $ \ts@(TS _ th) -> ctrace ("forcelookup " {- ++ show (IntMap.keys th)-}) $ case lookupEntry p th of
-      Thunked t -> do
-         (TS sup' th', lv) <- unMC (unsafeCoerce $ t l) ts
-         unMC (k lv) (ctrace ("evaluate " ++ show p ++ show lv) (TS sup' (addEntry p (Evaluated lv) th')))
-      Evaluated lv -> ctrace ("memoized " ++ show p ++ show lv) $ unMC (k lv) ts
-      Redirected p' -> ctrace ("redirect " ++ show p ++ " -> " ++ show p') $ unMC (con $ L $ Node (Inl3 (Force p')) l st k) ts
-   con (L (Node (Inl3 (Redirect ps)) l _ k)) = MC $ \ts@(TS sup th) -> ctrace ("redirect " ++ show ps) $ do
-    let skipRedirects th p = case lookupEntry p th of
-             Redirected p' -> skipRedirects th p'
-             _ -> p    
-    unMC (k l) (TS sup (foldr (\(p, p') th' -> addEntry p (Redirected (skipRedirects th' p')) th') th ps))
+   con (L (Node (Inl3 (Force p)) l st k)) = MC $ \ts -> ctrace ("force") $ retrieve p ts
+     where retrieve ptr ts@(TS _ th) = case lookupEntry ptr th of
+             Thunked t -> do
+                (TS sup' th', lv) <- unMC (unsafeCoerce $ t l) ts
+                unMC (k lv) (ctrace ("evaluate " ++ show ptr ++ show lv) (TS sup' (addEntry ptr (Evaluated lv) th')))
+             Evaluated lv -> ctrace ("memoized " ++ show ptr ++ show lv) $ unMC (k lv) ts
+             Redirected p' -> ctrace ("redirect " ++ show ptr ++ " -> " ++ show p') $ retrieve p' ts
+   con (L (Node (Inl3 (Redirect (p, p'))) l _ k)) = MC $ \(TS sup th) -> ctrace ("redirect " ++ show (p,p')) $ do
+    let skipRedirects th ptr = case lookupEntry ptr th of
+             Redirected ptr' -> skipRedirects th ptr'
+             _ -> ptr    
+    unMC (k l) (TS sup (addEntry p (Redirected (skipRedirects th p')) th))
    con (L (Node (Inr3 op) l st k)) = MC $ \th ->
       con $
          L $
@@ -196,7 +197,7 @@ lookupEntry !i th = unsafePerformIO $ keepAlive i $ do
       case m of
         Just v -> return (unsafeCoerce v)
         Nothing -> error ("Weak pointer " ++ show i ++ " is dead!")
-    Nothing -> error $ analyzeVarIndex "Stable name not found: " i
+    Nothing -> error $ analyzeVarIndex "VarIndex not found: " i
 
 purge :: TSM m l v -> TSM m l v
 purge m = strace stats m'
@@ -228,7 +229,7 @@ showTS (TS i im) = let m = IntMap.map (\w -> fromJust $ unsafePerformIO $ deRefW
   in "MAJOR PURGE!\n" 
   ++ concat (sortBy cmp ((map ((++ "\n") . show . (\(i, (Evaluated lv)) -> (i, lv))) ((filter (\(_, (e)) -> isEvaluated e)) (IntMap.toList m)))
   ++ (map ((++ "\n") . show . (\(i, (Thunked lv)) -> (i, ("-")))) ((filter (\(_, (e)) -> isThunked e)) (IntMap.toList m)))
-  ++ (map ((++ "\n") . show . (\(i, (Redirected p)) -> (i, ("-> " ++ show (getHash p))))) ((filter (\(_, (e)) -> isRedirected e)) (IntMap.toList m)))))
+  ++ (map ((++ "\n") . show . (\(i, (Redirected p)) -> (i, ("-> " ++ show p)))) ((filter (\(_, (e)) -> isRedirected e)) (IntMap.toList m)))))
 
   ++ "unpurged: " ++ show (IntMap.size im) ++ " purged: " ++ show (IntMap.size m) ++ "\n\n"
   ++ "evaluated: " ++ show (length (filter (\(e) -> isEvaluated e) $ map snd (IntMap.toList m)))

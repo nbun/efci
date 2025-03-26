@@ -132,7 +132,7 @@ apply lam args = logCall >> do
          in case combtype of
                 FuncPartCall 1 -> do
                     fun qn (Thunks ptrs')
-                ConsPartCall 1 -> thunkedCons qn ptrs'
+                ConsPartCall 1 -> cons qn (Thunks ptrs')
                 _ -> injectS $ PartCall qn (decArgs combtype) ptrs'
     k _ = undefined
 
@@ -272,7 +272,7 @@ unify e1 e2 =
             ands $ zipWith unify args1' args2'
     cnt (Free i, Free j) = do
         modify @CStore (addC i (VarC j))
-        cons ("Prelude", "True") []
+        cons ("Prelude", "True") (Progs [])
     cnt (Free i, HNF qn args) = do
         let args' = map force args
         vs <- freshNames (length args)
@@ -281,10 +281,10 @@ unify e1 e2 =
         ands $ zipWith unify fvs args'
     cnt (HNF qn args, Free i) = cnt (Free i, HNF qn args)
     cnt (Lit l1, Lit l2)
-        | l1 == l2 = cons ("Prelude", "True") []
+        | l1 == l2 = cons ("Prelude", "True") (Progs [])
     cnt (Free i, Lit l) = do
         modify @CStore (addC i (LitC l))
-        cons ("Prelude", "True") []
+        cons ("Prelude", "True") (Progs [])
     cnt (Lit l, Free i) = cnt (Free i, Lit l)
     cnt _ = failed
 
@@ -292,7 +292,7 @@ ands
     :: (EffectCons m sig sigs sigl Id, Functions sig sigs sigl a)
     => [m a]
     -> m a
-ands [] = cons ("Prelude", "True") []
+ands [] = cons ("Prelude", "True") (Progs [])
 ands [x] = x
 ands (x : xs) = do
     fun ("Prelude", "&&") (Progs [x, ands xs])

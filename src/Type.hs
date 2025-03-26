@@ -122,3 +122,7 @@ type Ptr = Int
 
 single :: m a -> Args m a
 single x = Progs [x]
+
+foldArgs :: ([m a] -> b) -> ([Ptr] -> b) -> Args m a -> b
+foldArgs f _ (Progs xs) = f xs
+foldArgs _ g (Thunks xs) = g xs

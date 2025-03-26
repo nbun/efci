@@ -25,7 +25,7 @@ import Effect.General.ND (ND, choose, failed)
 import Effect.General.State
 import Free
 import Signature
-import Type (getHash, Args (..))
+import Type (getHash, Args (..), foldArgs)
 
 data ConsF a
     = FCons QName [Ptr]
@@ -76,21 +76,13 @@ normalform p = logCall >> injectS (Normalize (fmap return p) (fmap return . f))
 cons
     :: (EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl, ConsF :<: sig)
     => QName
-    -> [m a]
+    -> Args m a
     -> m a
-cons qn ps =
+cons qn args =
     logCall >> do
-        ptrs <- mapM store ps
+        ptrs <- foldArgs (mapM store) return args
         injectA (FCons qn ptrs)
 {-# INLINE cons #-}
-
-thunkedCons
-    :: (EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl, ConsF :<: sig)
-    => QName
-    -> [Ptr]
-    -> m a
-thunkedCons qn args = logCall >> injectA (FCons qn args)
-{-# INLINE thunkedCons #-}
 
 lit :: (EffectCons m sig sigs sigl l, ConsF :<: sig) => Literal -> m a
 lit l = logCall >> injectA (FLit l)
@@ -119,9 +111,7 @@ case' cp brs =
       where
         match (HNF qn args) (APattern _ (pqn, _) argVars, e)
             | pqn == qn =
-                Just $ do
-                    let es = map force args
-                    let' (map fst argVars) (Progs es) e
+                Just $ let' (map fst argVars) (Thunks args) e
             | otherwise = Nothing
         match (Lit l) (ALPattern _ lp, e)
             | l == lp = Just e
@@ -146,13 +136,7 @@ data Value a
     | Lit Literal
     | Free VarIndex
     | ValOther a
-
-instance Show a => Show (Value a) where
-    show (Cons qn args) = show qn ++ " " ++ show args
-    show (HNF qn ptrs) = show qn ++ " " ++ show (map getHash ptrs)
-    show (Lit l) = show l
-    show (Free i) = show i
-    show (ValOther x) = show x
+    deriving Show
 
 instance Functor Value where
     fmap f (Cons qn args) = Cons qn (map (fmap f) args)
@@ -287,8 +271,8 @@ compInt
 compInt op x y = logCall >> injectS (External [fmap return x, fmap return y] (return . f))
   where
     f [Lit (Intc x), Lit (Intc y)]
-        | x `op` y = cons ("Prelude", "True") []
-        | otherwise = cons ("Prelude", "False") []
+        | x `op` y = cons ("Prelude", "True") (Progs [])
+        | otherwise = cons ("Prelude", "False") (Progs [])
 {-# INLINE compInt #-}
 
 compChar
@@ -306,8 +290,8 @@ compChar op x y =
     logCall >> injectS (External [fmap return x, fmap return y] (return . f))
   where
     f [Lit (Charc x), Lit (Charc y)]
-        | x `op` y = cons ("Prelude", "True") []
-        | otherwise = cons ("Prelude", "False") []
+        | x `op` y = cons ("Prelude", "True") (Progs [])
+        | otherwise = cons ("Prelude", "False") (Progs [])
 {-# INLINE compChar #-}
 
 err
@@ -335,8 +319,8 @@ str2prog
     :: (Thunking a :<<<<: sigl, ConsF :<: sig, EffectCons m sig sigs sigl Id)
     => String
     -> m a
-str2prog [] = cons ("Prelude", "[]") []
-str2prog (c : cs) = cons ("Prelude", ":") [lit (Charc c), str2prog cs]
+str2prog [] = cons ("Prelude", "[]") (Progs [])
+str2prog (c : cs) = cons ("Prelude", ":") (Progs [lit (Charc c), str2prog cs])
 
 -- free variables --
 
@@ -356,7 +340,7 @@ fvar i =
   where
     applyC store n = case lookupC n store of
         Just (ConsC qn vs) -> do
-            cons qn (map (applyC store) vs)
+            cons qn (Progs $ map (applyC store) vs)
         Just (VarC j) -> applyC store j
         Just (LitC l) -> lit l
         _ -> injectA $ FFree n

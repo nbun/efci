@@ -102,7 +102,7 @@ fcyExpr2ae frees expr = let rec = fcyExpr2ae frees in
                 FuncPartCall i ->
                     return $
                         partial qn (Effect.FlatCurry.Function.FuncPartCall i) args'
-                ConsCall -> return $ cons qn args'
+                ConsCall -> return $ cons qn (Progs args')
                 ConsPartCall i ->
                     return $
                         partial qn (Effect.FlatCurry.Function.ConsPartCall i) args'
