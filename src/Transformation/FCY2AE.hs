@@ -52,7 +52,7 @@ import Effect.General.Reader
 import Effect.General.State hiding (get, put)
 import Free
 import Signature
-import Type (AEFuncDecl (..), AEProg (..), Args (..), single)
+import Type (AEFuncDecl (..), AEProg (..), Args (..), single, AEPattern (..))
 import Effect.General.State (get, put)
 import Data.Maybe (fromJust)
 
@@ -131,9 +131,9 @@ fcyExpr2ae frees expr = let rec = fcyExpr2ae frees in
                     brs
             return $ case' e' brs'
           where
-            newPat r (APattern _ (qn, _) vars) = APattern () (qn, ()) newVars
-                where newVars = map (\(v, _) -> (fromJust $ lookup v r , ())) vars
-            newPat _ (ALPattern _ l) = ALPattern () l
+            newPat r (APattern _ (qn, _) vars) = AEPattern qn newVars
+                where newVars = map (\(v, _) -> (fromJust $ lookup v r)) vars
+            newPat _ (ALPattern _ l) = AELPattern l
         ATyped _ e t -> rec e -- type annotations not required
 
 insertBinds :: VarKind -> VarKindMap -> [(VarIndex, ann)] -> VarKindMap

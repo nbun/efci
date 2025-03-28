@@ -20,18 +20,17 @@ import Data.Maybe (mapMaybe)
 import Effect.FlatCurry.Let
 import Effect.General.Error (Err (..))
 import Effect.General.Memoization
-    ( Ptr, Thunking, force, store)
 import Effect.General.ND (ND, choose, failed)
 import Effect.General.State
 import Free
 import Signature
-import Type (getHash, Args (..), foldArgs)
+import Type
 
 data ConsF a
     = FCons QName [Ptr]
     | FStrictCons QName [a]
     | FLit Literal
-    | FFree VarIndex
+    | FFree Ptr
 
 instance Functor ConsF where
     fmap _ (FCons qn args) = FCons qn args
@@ -97,7 +96,7 @@ case'
     :: forall m sig sigs sigl a
      . (EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl, Renaming :<: sig, CaseScope :<: sigs, ND :<: sig, ConstraintStore :<: sig, ConsF :<: sig)
     => m a
-    -> [(APattern (), m a)]
+    -> [(AEPattern, m a)]
     -> m a
 case' cp brs =
     logCall
@@ -109,21 +108,21 @@ case' cp brs =
         [x] -> x
         xs -> choose xs
       where
-        match (HNF qn args) (APattern _ (pqn, _) argVars, e)
+        match (HNF qn args) (AEPattern pqn argPtrs, e)
             | pqn == qn =
-                Just $ let' (map fst argVars) (Thunks args) e
+                Just $ let' argPtrs (Thunks args) e
             | otherwise = Nothing
-        match (Lit l) (ALPattern _ lp, e)
+        match (Lit l) (AELPattern lp, e)
             | l == lp = Just e
             | otherwise = Nothing
         match (Free i) pat = Just $ do
             case pat of
-                (APattern _ (pqn, _) argVars, e) -> do
-                    vs <- freshNames (length argVars)
+                (AEPattern pqn argPtrs, e) -> do
+                    vs <- freshNames (length argPtrs)
                     let fvs = Progs $ map fvar vs
                     modify @CStore (addC i (ConsC pqn vs))
-                    let' (map fst argVars) fvs e
-                (ALPattern _ lp, e) -> do
+                    let' argPtrs fvs e
+                (AELPattern lp, e) -> do
                     modify @CStore (addC i (LitC lp))
                     e
         match v ps =
@@ -134,7 +133,7 @@ data Value a
     = Cons QName [Value a]
     | HNF QName [Ptr]
     | Lit Literal
-    | Free VarIndex
+    | Free Ptr
     | ValOther a
     deriving Show
 
@@ -331,7 +330,7 @@ fvar
        , Renaming :<: sig
        , EffectCons m sig sigs sigl Id
        )
-    => VarIndex
+    => Ptr
     -> m a
 fvar i =
     logCall >> do

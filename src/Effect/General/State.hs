@@ -33,7 +33,7 @@ import GHC.Types.Unique.Supply
 import Signature
 import System.IO.Unsafe (unsafePerformIO)
 import GHC.StableName
-import Type (analyzeVarIndex)
+import Type (analyzeVarIndex, Ptr)
 import Data.Bifunctor (Bifunctor(first))
 
 data StateF (tag :: Type) s a
@@ -81,17 +81,17 @@ instance Identify Rename where
 
 type Renaming = StateF Rename RState
 
-type RState = ([(VarIndex, Int)], UniqSupply)
+type RState = ([(VarIndex, Ptr)], UniqSupply)
 
 freshNames
     :: (EffectCons m sig sigs sigl l, Renaming :<: sig)
     => Int
-    -> m [VarIndex]
+    -> m [Ptr]
 freshNames 0 = logCall >> return []
 freshNames n =
     logCall >> do
         (rs, sup) :: RState <- get @Rename
-        let (vs', sup') = foldr (\_ (us, sup) -> let (u, sup') = takeUniqFromSupply sup in (fromIntegral (getKey u) : us, sup')) ([], sup) [1 .. n]
+        let (!vs', sup') = takeNfromSupply n sup
         put @Rename (rs, sup')
         return vs'
 {-# INLINE freshNames #-}
@@ -101,7 +101,7 @@ newRenamingScope =
     logCall >> modify @Rename (\((_, sup) :: RState) -> ([], sup))
 {-# INLINE newRenamingScope #-}
 
-lookupRenaming :: (EffectCons m sig sigs sigl l, Renaming :<: sig) => VarIndex -> m VarIndex
+lookupRenaming :: (EffectCons m sig sigs sigl l, Renaming :<: sig) => VarIndex -> m Ptr
 lookupRenaming v =
     logCall >> do
         (rs, _) :: RState <- get @Rename
@@ -111,7 +111,7 @@ lookupRenaming v =
             Nothing -> error $ "lookupRenaming: " ++ show v ++ " in "
 {-# INLINE lookupRenaming #-}
 
-rename :: (EffectCons m sig sigs sigl l, Renaming :<: sig) => [VarIndex] -> m [VarIndex]
+rename :: (EffectCons m sig sigs sigl l, Renaming :<: sig) => [VarIndex] -> m [Ptr]
 rename vs =
     logCall >> do
         (rs, sup) :: RState <- get @Rename
@@ -119,13 +119,14 @@ rename vs =
         put @Rename ((rs ++ zip vs vs', sup'))
         -- trace (concatMap (analyzeVarIndex "rename") vs') (return ())
         return vs'
-  where
-    takeNfromSupply 0 sup = ([], sup)
-    takeNfromSupply n sup = let (!u, sup') = takeUniqFromSupply sup
-                                !i = fromIntegral (getKey u)
-                                (is, sup'') = takeNfromSupply (n - 1) sup'
-                            in (i : is, sup'')
 {-# INLINE rename #-}
+
+takeNfromSupply :: Int -> UniqSupply -> ([Ptr], UniqSupply)
+takeNfromSupply 0 sup = ([], sup)
+takeNfromSupply n sup = let (!u, sup') = takeUniqFromSupply sup
+                            !i = fromIntegral (getKey u)
+                            (is, sup'') = takeNfromSupply (n - 1) sup'
+                        in (i : is, sup'')
 
 runState
     :: forall tag sig sigs sigl l s a
@@ -221,18 +222,18 @@ instance (Functor l) => Functor (StateL s l) where
 -- constraint store --
 
 data CValue
-    = VarC VarIndex
-    | ConsC QName [VarIndex]
+    = VarC Ptr
+    | ConsC QName [Ptr]
     | LitC Literal
     deriving (Show, Eq)
 
-type Constraints = Map.Map VarIndex CValue
+type Constraints = Map.Map Ptr CValue
 
-lookupC :: VarIndex -> Constraints -> Maybe CValue
+lookupC :: Ptr -> Constraints -> Maybe CValue
 lookupC = Map.lookup
 {-# INLINE lookupC #-}
 
-addC :: VarIndex -> CValue -> Constraints -> Constraints
+addC :: Ptr -> CValue -> Constraints -> Constraints
 addC = Map.insert
 {-# INLINE addC #-}
 

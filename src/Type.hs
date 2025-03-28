@@ -95,6 +95,14 @@ data AEProg a
 data AEFuncDecl a = AEFunc QName Int Visibility TypeExpr a
   deriving (Functor, Show)
 
+data AEBranchExpr a = AEBranch (APattern a) (AExpr a)
+  deriving (Show)
+
+data AEPattern
+  = AEPattern QName [Ptr]
+  | AELPattern Literal
+  deriving (Show)
+
 fdclBody :: AEFuncDecl a -> a
 fdclBody (AEFunc _ _ _ _ a) = a
 
@@ -112,13 +120,12 @@ getHash ptr = unsafePerformIO $ do
   sn <- makeStableName ptr
   return (hashStableName sn)
 
-freshVarIndex :: UniqSupply -> (VarIndex, UniqSupply)
-freshVarIndex sup = let (!u, sup') = takeUniqFromSupply sup
-                        !i = fromIntegral (getKey u)
-                    in (i, sup')
+type Ptr = Int
+
+-- newtype Ptr = Ptr {-# NOUNPACK #-} Int
+--   deriving (Eq, Ord, Show)
 
 data Args m a = Progs [m a] | Thunks [Ptr]
-type Ptr = Int
 
 single :: m a -> Args m a
 single x = Progs [x]
@@ -126,3 +133,13 @@ single x = Progs [x]
 foldArgs :: ([m a] -> b) -> ([Ptr] -> b) -> Args m a -> b
 foldArgs f _ (Progs xs) = f xs
 foldArgs _ g (Thunks xs) = g xs
+
+freshPtr :: UniqSupply -> (Ptr, UniqSupply)
+freshPtr sup = let (!u, sup') = takeUniqFromSupply sup
+                   !i = fromIntegral (getKey u)
+               in (i, sup')
+{-# INLINE freshPtr #-}
+
+-- ptrKey :: Ptr -> VarIndex
+-- ptrKey (Ptr i) = i
+-- {-# INLINE ptrKey #-}

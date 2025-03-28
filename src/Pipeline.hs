@@ -9,24 +9,20 @@
 
 module Pipeline where
 
-import Curry.FlatCurry (Literal (..), QName, VarIndex, TypeExpr)
-import qualified Data.IntMap as IntMap
+import Curry.FlatCurry (Literal (..), QName, VarIndex)
 import Data.List (intercalate)
 import Effect.FlatCurry.Constructor
 import Effect.FlatCurry.Function
-import Effect.FlatCurry.IO (runIO, IOC (..), runIOSmart)
-import Effect.General.Error (Error (..), runError, ErrorL, EC, runErrorC, runErrorSmart)
+import Effect.FlatCurry.IO (runIO, runIOSmart)
+import Effect.General.Error (Error (..), runError, runErrorSmart)
 import Effect.General.Memoization
-import Effect.General.ND (runND, ListL, NDC, runNDC, runNDSmart)
-import Effect.General.Reader
+import Effect.General.ND (runND, runNDSmart)
 import Effect.General.State
 import Free
-import Signature
 import Transformation.FCY2AE
-import Type (AEProg)
+import Type (AEProg, Ptr (..))
 import Effect.FlatCurry.Declarations
 import qualified Data.Map as Map
-import Effect.FlatCurry.Let
 import GHC.Types.Unique.Supply (mkSplitUniqSupply)
 import GHC.Plugins (splitUniqSupply)
 
@@ -73,7 +69,7 @@ declutter (ti, Error s) = (ti, [RError s])
 declutter (ti, EOther xs) = (ti, map addBindings xs)
   where
     addBindings (bs, v)
-      | Map.null bs || all (\i -> i > 999) (Map.keys bs) = declutterHNF v
+      | Map.null bs || all (\(i) -> i > 999) (Map.keys bs) = declutterHNF v
       | otherwise = RBindings bs (declutterHNF v)
 
 declutterHNF :: Show a => Value (Closure a) -> Result
@@ -90,7 +86,7 @@ data Result = RLit Literal
             | Unevaluated
             | RClosure QName CombType
             | RError String
-            | RFree VarIndex
+            | RFree Ptr
             | ROther String
             | RBindings Constraints Result
   deriving (Show, Eq)
@@ -122,7 +118,7 @@ instance Pretty Result where
     "{" ++ intercalate ", " (map pretty (Map.toList cs)) ++ "} " ++ pretty r
   pretty (ROther s) = s
 
-instance Pretty (VarIndex, CValue) where
+instance Pretty (Ptr, CValue) where
   pretty (i, LitC l) = '_':show i ++ " -> " ++ show l
   pretty (i, VarC j) = '_':show i ++ " -> " ++ show j
   pretty (i, ConsC qn []) = '_':show i ++ " -> " ++ snd qn

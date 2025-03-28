@@ -12,13 +12,10 @@
 
 module Effect.FlatCurry.Let where
 
-import Curry.FlatCurry.Type (VarIndex)
-import qualified Data.Map as Map
 import Effect.General.Memoization
 import Effect.General.State
 import Signature
-import Debug.Trace (trace)
-import Type (analyzeVarIndex, Args (..))
+import Type
 
 type Let sig sigl a =
     (Renaming :<: sig, Thunking a :<<<<: sigl)
@@ -33,7 +30,7 @@ lvar ptr = do
 
 let'
     :: forall m sig sigs sigl a. (EffectCons m sig sigs sigl Id, Let sig sigl a)
-    => [VarIndex]
+    => [Ptr]
     -> Args m a
     -> m a
     -> m a

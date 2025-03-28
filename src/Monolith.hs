@@ -8,27 +8,27 @@
 
 module Monolith where
 
-import Control.Monad (join, liftM2, MonadPlus (..))
-import Control.Monad.State (StateT, evalStateT, get, put, MonadState, MonadTrans (..))
-import qualified Control.Monad.State.Class
-import Curry.FlatCurry.Annotated.Type hiding (Cons)
-import qualified Data.Map as Map
-import Data.Maybe (mapMaybe)
-import Effect.FlatCurry.Constructor (Value (..))
-import Effect.FlatCurry.Function (Closure (..), decArgs)
-import Effect.General.Error (Error (..))
-import Effect.General.Memoization (Ptr)
-import Effect.General.State (Constraints, TraceInfo)
-import Data.Functor (void)
--- import Debug.Trace (traceShowId, trace)
-import Type (findFDcl)
-import Data.Bifunctor (first)
-import qualified Effect.FlatCurry.Function
-import qualified Control.Monad.Except as E
-import Control.Monad.Except (runExceptT, MonadError (throwError))
+-- import Control.Monad (join, liftM2, MonadPlus (..))
+-- import Control.Monad.State (StateT, evalStateT, get, put, MonadState, MonadTrans (..))
+-- import qualified Control.Monad.State.Class
+-- import Curry.FlatCurry.Annotated.Type hiding (Cons)
+-- import qualified Data.Map as Map
+-- import Data.Maybe (mapMaybe)
+-- import Effect.FlatCurry.Constructor (Value (..))
+-- import Effect.FlatCurry.Function (Closure (..), decArgs)
+-- import Effect.General.Error (Error (..))
+-- import Effect.General.Memoization (Ptr)
+-- import Effect.General.State (Constraints, TraceInfo)
+-- import Data.Functor (void)
+-- -- import Debug.Trace (traceShowId, trace)
+-- import Type (findFDcl)
+-- import Data.Bifunctor (first)
+-- import qualified Effect.FlatCurry.Function
+-- import qualified Control.Monad.Except as E
+-- import Control.Monad.Except (runExceptT, MonadError (throwError))
 
-trace _ x = x
-traceShowId = id
+-- trace _ x = x
+-- traceShowId = id
 
 
 -- findPolyDicts :: Scope -> [(TypeExpr, Ptr)] -> [((Scope, TypeExpr), Ptr)]

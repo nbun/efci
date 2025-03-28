@@ -14,14 +14,13 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE TupleSections #-}
+{-# OPTIONS_GHC -fno-unbox-small-strict-fields #-}
+
 
 module Effect.FlatCurry.Function where
 
-import Curry.FlatCurry.Type (QName, TypeExpr (..), VarIndex)
-import qualified Data.Map as Map
-import Data.Maybe (mapMaybe)
+import Curry.FlatCurry.Type (QName, VarIndex)
 
-import Curry.FlatCurry.Annotated.Goodies (argTypes)
 import Effect.FlatCurry.Constructor hiding (External)
 import Effect.FlatCurry.Declarations (DeclF, getBody)
 import Effect.FlatCurry.IO
@@ -29,12 +28,11 @@ import Effect.FlatCurry.Let
 import Effect.General.Error
 import Effect.General.Memoization
 import Effect.General.ND
-import Effect.General.Reader
 import Effect.General.State
 import Free
 import Signature
-import Type (AEFuncDecl (..), AEProg (..), Args (..), single)
 import Control.Monad (void)
+import Type
 
 
 type Functions sig sigs sigl a =
@@ -67,7 +65,7 @@ data CombType
 data Partial a
     = PartCall QName CombType [Ptr]
     | FApply a (Closure () -> a)
-    | Abs [VarIndex] Ptr
+    | Abs [Ptr] Ptr
     | Ext String
 
 instance Functor Partial where
@@ -79,7 +77,7 @@ instance Functor Partial where
 
 data Closure a
     = Closure QName CombType [Ptr]
-    | Lambda [VarIndex] Ptr
+    | Lambda [Ptr] Ptr
     | External String
     | Other a
     deriving (Show)
@@ -94,7 +92,7 @@ instance Functor Closure where
 external :: (EffectCons m sig sigs sigl Id, Partial :<: sigs, Thunking a :<<<<: sigl) => String -> m a
 external s = logCall >> injectS (Ext s)
 
-lambda :: (EffectCons m sig sigs sigl Id, Partial :<: sigs, Thunking a :<<<<: sigl) => [VarIndex] -> m a -> m a
+lambda :: (EffectCons m sig sigs sigl Id, Partial :<: sigs, Thunking a :<<<<: sigl) => [Ptr] -> m a -> m a
 lambda vs e = logCall >> do
     ptr <- store e
     injectS (Abs vs ptr)

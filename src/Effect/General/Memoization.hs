@@ -21,6 +21,7 @@
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE BangPatterns #-}
+{-# OPTIONS_GHC -fno-unbox-small-strict-fields #-}
 
 module Effect.General.Memoization where
 
@@ -39,9 +40,10 @@ import System.Mem.StableName
 import GHC.Weak
 import System.IO.Unsafe (unsafePerformIO)
 import Control.Monad.Primitive
-import Type (analyzeVarIndex, getHash, freshVarIndex)
+import Type 
 import System.Mem (performGC)
 import GHC.Types.Unique.Supply
+import GHC.Types.Unique (getKey)
 
 data Thunking v :: Type -> (Type -> Type) -> Type where
    Thunk :: Ptr -> Thunking v () (OneSub v)
@@ -91,8 +93,6 @@ redirect :: forall v m sig sigs sigl. (EffectCons m sig sigs sigl Id, Thunking v
 redirect p = logCall >> injectL (Redirect p :: Thunking v () NoSub) (Id ()) (\x -> case x of {}) (return . unId)
 {-# INLINE redirect #-}
 
-type Ptr = Int
-
 runGC :: forall v m sig sigs sigl. (EffectCons m sig sigs sigl Id, Thunking v :<<<<: sigl) => m ()
 runGC = logCall >> injectL (RunGC :: Thunking v () NoSub) (Id ()) (\x -> case x of {}) (return . unId)
 {-# INLINE runGC #-}
@@ -133,7 +133,7 @@ instance (Functor l, EffectMonad m sig sigs sigl (StateL (ThunkStore l v) l), Sh
    con (L (Node (Inl3 (Thunk ptr)) l st k)) = MC $ \(TS sup th) -> ctrace ("thunked " ++ show ptr) $ do
     unMC (k l) (TS sup (addEntry ptr (Thunked (unsafeCoerce $ st One)) th))
    con (L (Node (Inl3 Store) l st k)) = MC $ \(TS sup th) -> ctrace ("stored ") $ 
-     let (!fresh, sup') = freshVarIndex sup
+     let (!fresh, sup') = freshPtr sup
          th' = if fresh `mod` 20000 == 0 then purge th else th
      in unMC (k (fresh <$ l)) (TS sup' (addEntry fresh (Thunked (unsafeCoerce $ st One)) th'))
    con (L (Node (Inl3 (Force p)) l st k)) = MC $ \ts -> ctrace ("force") $ retrieve p ts
@@ -162,6 +162,8 @@ instance (Functor l, EffectMonad m sig sigs sigl (StateL (ThunkStore l v) l), Sh
       gen'Memo x th = return (th, x)
    {-# INLINE var #-}
 
+
+
 runLazyC :: (EffectMonad m sig sigs sigl (StateL (ThunkStore l v) l), Functor l, Show (l v)) => UniqSupply -> Cod (MC m l v) a -> m a
 runLazyC sup p = (\(s, r) -> ctrace (showTS s) r) <$> unMC (runCod var p) (TS sup IntMap.empty)
 -- runLazyC th p = snd <$> unMC (runCod var p) th
@@ -184,14 +186,14 @@ isRedirected _ = False
 data ThunkStore l v = forall m. TS UniqSupply (TSM m l v) --(IntMap.IntMap (Entry m l v))
 type TSM m l v = IntMap.IntMap (Weak (Entry m l v))
 
-addEntry :: VarIndex -> Entry m l v -> TSM m l v -> TSM m l v
-addEntry !i p th = unsafePerformIO $ do
+addEntry :: Ptr -> Entry m l v -> TSM m l v -> TSM m l v
+addEntry (!i) p th = unsafePerformIO $ do
   w <- mkWeak i (unsafeCoerce p) Nothing
   return (IntMap.insert i w th)
 {-# NOINLINE addEntry #-}
 
-lookupEntry :: VarIndex -> TSM m l v -> Entry m l v
-lookupEntry !i th = unsafePerformIO $ keepAlive i $ do
+lookupEntry :: Ptr -> TSM m l v -> Entry m l v
+lookupEntry (!i) th = unsafePerformIO $ keepAlive i $ do
   case IntMap.lookup i th of
     Just w -> do
       m <- deRefWeak w
