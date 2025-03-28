@@ -14,8 +14,6 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE TupleSections #-}
-{-# OPTIONS_GHC -fno-unbox-small-strict-fields #-}
-
 
 module Effect.FlatCurry.Function where
 

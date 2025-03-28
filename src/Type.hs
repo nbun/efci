@@ -120,10 +120,10 @@ getHash ptr = unsafePerformIO $ do
   sn <- makeStableName ptr
   return (hashStableName sn)
 
-type Ptr = Int
+-- type Ptr = Int
 
--- newtype Ptr = Ptr {-# NOUNPACK #-} Int
---   deriving (Eq, Ord, Show)
+data Ptr = Ptr {-# NOUNPACK #-} Int
+  deriving (Eq, Ord, Show)
 
 data Args m a = Progs [m a] | Thunks [Ptr]
 
@@ -137,9 +137,9 @@ foldArgs _ g (Thunks xs) = g xs
 freshPtr :: UniqSupply -> (Ptr, UniqSupply)
 freshPtr sup = let (!u, sup') = takeUniqFromSupply sup
                    !i = fromIntegral (getKey u)
-               in (i, sup')
+               in (Ptr i, sup')
 {-# INLINE freshPtr #-}
 
--- ptrKey :: Ptr -> VarIndex
--- ptrKey (Ptr i) = i
--- {-# INLINE ptrKey #-}
+ptrKey :: Ptr -> VarIndex
+ptrKey (Ptr i) = i
+{-# INLINE ptrKey #-}

@@ -52,11 +52,6 @@ instance Functor CaseScope where
     fmap f (Unify a1 a2 k) = Unify (f a1) (f a2) (f . k)
     {-# INLINE fmap #-}
 
-data Mode
-    = Strict
-    | Lazy CaseType
-    deriving (Eq, Show)
-
 normalform
     :: ( ConsF :<: sig
        , Thunking a :<<<<: sigl
@@ -86,11 +81,6 @@ cons qn args =
 lit :: (EffectCons m sig sigs sigl l, ConsF :<: sig) => Literal -> m a
 lit l = logCall >> injectA (FLit l)
 {-# INLINE lit #-}
-
-data CaseState
-
-instance Identify CaseState where
-    identify = "CaseState"
 
 case'
     :: forall m sig sigs sigl a

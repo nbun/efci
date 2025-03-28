@@ -21,7 +21,6 @@
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE BangPatterns #-}
-{-# OPTIONS_GHC -fno-unbox-small-strict-fields #-}
 
 module Effect.General.Memoization where
 
@@ -134,7 +133,7 @@ instance (Functor l, EffectMonad m sig sigs sigl (StateL (ThunkStore l v) l), Sh
     unMC (k l) (TS sup (addEntry ptr (Thunked (unsafeCoerce $ st One)) th))
    con (L (Node (Inl3 Store) l st k)) = MC $ \(TS sup th) -> ctrace ("stored ") $ 
      let (!fresh, sup') = freshPtr sup
-         th' = if fresh `mod` 20000 == 0 then purge th else th
+         th' = if ptrKey fresh `mod` 20000 == 0 then purge th else th
      in unMC (k (fresh <$ l)) (TS sup' (addEntry fresh (Thunked (unsafeCoerce $ st One)) th'))
    con (L (Node (Inl3 (Force p)) l st k)) = MC $ \ts -> ctrace ("force") $ retrieve p ts
      where retrieve ptr ts@(TS _ th) = case lookupEntry ptr th of
@@ -187,13 +186,13 @@ data ThunkStore l v = forall m. TS UniqSupply (TSM m l v) --(IntMap.IntMap (Entr
 type TSM m l v = IntMap.IntMap (Weak (Entry m l v))
 
 addEntry :: Ptr -> Entry m l v -> TSM m l v -> TSM m l v
-addEntry (!i) p th = unsafePerformIO $ do
+addEntry (Ptr !i) p th = unsafePerformIO $ do
   w <- mkWeak i (unsafeCoerce p) Nothing
   return (IntMap.insert i w th)
 {-# NOINLINE addEntry #-}
 
 lookupEntry :: Ptr -> TSM m l v -> Entry m l v
-lookupEntry (!i) th = unsafePerformIO $ keepAlive i $ do
+lookupEntry (Ptr !i) th = unsafePerformIO $ keepAlive i $ do
   case IntMap.lookup i th of
     Just w -> do
       m <- deRefWeak w

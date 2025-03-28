@@ -33,7 +33,7 @@ import GHC.Types.Unique.Supply
 import Signature
 import System.IO.Unsafe (unsafePerformIO)
 import GHC.StableName
-import Type (analyzeVarIndex, Ptr)
+import Type (analyzeVarIndex, Ptr (Ptr))
 import Data.Bifunctor (Bifunctor(first))
 
 data StateF (tag :: Type) s a
@@ -126,7 +126,7 @@ takeNfromSupply 0 sup = ([], sup)
 takeNfromSupply n sup = let (!u, sup') = takeUniqFromSupply sup
                             !i = fromIntegral (getKey u)
                             (is, sup'') = takeNfromSupply (n - 1) sup'
-                        in (i : is, sup'')
+                        in (Ptr i : is, sup'')
 
 runState
     :: forall tag sig sigs sigl l s a

@@ -69,7 +69,7 @@ declutter (ti, Error s) = (ti, [RError s])
 declutter (ti, EOther xs) = (ti, map addBindings xs)
   where
     addBindings (bs, v)
-      | Map.null bs || all (\(i) -> i > 999) (Map.keys bs) = declutterHNF v
+      | Map.null bs || all (\(Ptr i) -> i > 999) (Map.keys bs) = declutterHNF v
       | otherwise = RBindings bs (declutterHNF v)
 
 declutterHNF :: Show a => Value (Closure a) -> Result
