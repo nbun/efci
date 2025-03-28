@@ -188,6 +188,7 @@ addEntry :: VarIndex -> Entry m l v -> TSM m l v -> TSM m l v
 addEntry !i p th = unsafePerformIO $ do
   w <- mkWeak i (unsafeCoerce p) Nothing
   return (IntMap.insert i w th)
+{-# NOINLINE addEntry #-}
 
 lookupEntry :: VarIndex -> TSM m l v -> Entry m l v
 lookupEntry !i th = unsafePerformIO $ keepAlive i $ do
@@ -198,6 +199,7 @@ lookupEntry !i th = unsafePerformIO $ keepAlive i $ do
         Just v -> return (unsafeCoerce v)
         Nothing -> error ("Weak pointer " ++ show i ++ " is dead!")
     Nothing -> error $ analyzeVarIndex "VarIndex not found: " i
+{-# NOINLINE lookupEntry #-}
 
 purge :: TSM m l v -> TSM m l v
 purge m = strace stats m'
@@ -209,11 +211,13 @@ purge m = strace stats m'
     isAlive w = case unsafePerformIO $ deRefWeak w of
                  Just _ -> True
                  Nothing -> False
+{-# NOINLINE purge #-}
 
 majorPurge :: TSM m l v -> TSM m l v
 majorPurge m | IntMap.size m == IntMap.size m' = m'
              | otherwise = majorPurge m'
    where m' = unsafePerformIO $ performGC >> return (purge m)
+{-# NOINLINE majorPurge #-}
 
 newtype MC m l v a = MC {unMC :: ThunkStore l v -> m (ThunkStore l v, a)}
 
@@ -225,7 +229,7 @@ instance Show (StableName a) where
    show sn = show (hashStableName sn)
 
 showTS :: (Show (l v)) => ThunkStore l v -> String
-showTS (TS i im) = let m = IntMap.map (\w -> fromJust $ unsafePerformIO $ deRefWeak w) (majorPurge im) 
+showTS (TS i im) = let m = IntMap.mapMaybe (\w -> unsafePerformIO $ deRefWeak w) (majorPurge im) 
   in "MAJOR PURGE!\n" 
   ++ concat (sortBy cmp ((map ((++ "\n") . show . (\(i, (Evaluated lv)) -> (i, lv))) ((filter (\(_, (e)) -> isEvaluated e)) (IntMap.toList m)))
   ++ (map ((++ "\n") . show . (\(i, (Thunked lv)) -> (i, ("-")))) ((filter (\(_, (e)) -> isThunked e)) (IntMap.toList m)))
@@ -237,7 +241,7 @@ showTS (TS i im) = let m = IntMap.map (\w -> fromJust $ unsafePerformIO $ deRefW
   ++ " redirects: " ++ show (length ((filter (\(e) -> isRedirected e)) $ map snd (IntMap.toList m)))
     where cmp ('(':s1) ('(':s2) = compare (read (takeInt s1) :: Int) (read (takeInt s2) :: Int)
           takeInt = takeWhile (/= ',')
-{-# INLINE showTS #-}
+{-# NOINLINE showTS #-}
 
 instance (Show (l v)) => Show (ThunkStore l v) where
    show = showTS

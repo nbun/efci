@@ -1,3 +1,4 @@
+{-# LANGUAGE NoStrict #-}
 module Debug where
 
 import Debug.HTrace (htrace)
