@@ -17,7 +17,7 @@ import Data.Kind (Type)
 type Effects = [Type -> Type]
 
 data Union (effs :: Effects) a where
-  Union :: Functor f => Index f effs -> f a -> Union effs a
+  Union :: Functor f => !(Index f effs) -> f a -> Union effs a
 
 newtype Index (e :: k) (effs :: [k]) = Index Int
 

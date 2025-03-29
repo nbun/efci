@@ -159,5 +159,5 @@ fcyFDecl2ae (AFunc qn arity vis ty r) = AEFunc qn arity vis ty (fcyRule2ae r)
 fcyRule2ae :: (() :<<<: v, TermMonad m (CurryEffects v)) => ARule TypeExpr -> m v
 fcyRule2ae (ARule _ vars e) = do
   vs' <- rename (fst $ unzip vars)
-  join $ fmap (lambda vs') (fcyExpr2ae [] e)
+  lambda vs' (join $ (fcyExpr2ae [] e))
 fcyRule2ae (AExternal _ s) = external s
