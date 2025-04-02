@@ -79,9 +79,12 @@ data Rename
 instance Identify Rename where
     identify = "Rename"
 
+initRenaming :: UniqSupply -> RState
+initRenaming s = RState [] s
+
 type Renaming = StateF Rename RState
 
-type RState = ([(VarIndex, Ptr)], UniqSupply)
+data RState = RState {renaming :: [(VarIndex, Ptr)], supply :: UniqSupply}
 
 freshNames
     :: (EffectCons m sig sigs sigl l, Renaming :<: sig)
@@ -90,22 +93,22 @@ freshNames
 freshNames 0 = logCall >> return []
 freshNames n =
     logCall >> do
-        (rs, sup) :: RState <- get @Rename
-        let (!vs', sup') = takeNfromSupply n sup
-        put @Rename (rs, sup')
+        r <- get @Rename
+        let (!vs', sup') = takeNfromSupply n (supply r)
+        put @Rename (r {supply = sup'})
         return vs'
 {-# INLINE freshNames #-}
 
 newRenamingScope :: (EffectCons m sig sigs sigl l, Renaming :<: sig) => m ()
 newRenamingScope =
-    logCall >> modify @Rename (\((_, sup) :: RState) -> ([], sup))
+    logCall >> modify @Rename (\r ->  r {renaming = []})
 {-# INLINE newRenamingScope #-}
 
 lookupRenaming :: (EffectCons m sig sigs sigl l, Renaming :<: sig) => VarIndex -> m Ptr
 lookupRenaming v =
     logCall >> do
-        (rs, _) :: RState <- get @Rename
-        case lookup v rs of
+        r <- get @Rename
+        case lookup v (renaming r) of
             Just !v' -> return v'
             -- Just !v' -> trace (analyzeVarIndex "lookup" v') (return v')
             Nothing -> error $ "lookupRenaming: " ++ show v ++ " in "
@@ -114,9 +117,9 @@ lookupRenaming v =
 rename :: (EffectCons m sig sigs sigl l, Renaming :<: sig) => [VarIndex] -> m [Ptr]
 rename vs =
     logCall >> do
-        (rs, sup) :: RState <- get @Rename
-        let (!vs', sup') = takeNfromSupply (length vs) sup
-        put @Rename ((rs ++ zip vs vs', sup'))
+        r <- get @Rename
+        let (!vs', sup') = takeNfromSupply (length vs) (supply r)
+        put @Rename (r {renaming = renaming r ++ zip vs vs', supply = sup'})
         -- trace (concatMap (analyzeVarIndex "rename") vs') (return ())
         return vs'
 {-# INLINE rename #-}

@@ -38,7 +38,7 @@ runCurryEffects ps e = do
         . runError
         . runND
         . (\x -> hState @CStore x Map.empty)
-        . runState @Rename ([], sup1)
+        . runState @Rename (initRenaming sup1)
         . runLazy sup2
         . runCons
         . runPartial
@@ -57,7 +57,7 @@ runSmartCurryEffects ps e = do
         . runErrorSmart
         . runNDSmart
         . (\x -> hStateSmart @CStore x Map.empty)
-        . runStateSmart @Rename ([], sup1)
+        . runStateSmart @Rename (initRenaming sup1)
         . runLazySmart sup2
         . runConsSmart
         . runPartialSmart

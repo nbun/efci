@@ -9,4 +9,4 @@ fac n = case n of
 pointless :: Int -> ()
 pointless n = case n of
   0 -> ()
-  _ -> pointless (n - 1)
+  m -> pointless (m - 1)

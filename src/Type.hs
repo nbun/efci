@@ -22,7 +22,6 @@ import Curry.FlatCurry.Annotated.Type
 import Data.List (nub)
 import System.IO.Unsafe (unsafePerformIO)
 import GHC.StableName
-import GHC.HeapView (getClosureData)
 import GHC.Types.Unique.Supply
 import GHC.Types.Unique (getKey)
 
@@ -112,8 +111,7 @@ fdclBody (AEFunc _ _ _ _ a) = a
 analyzeVarIndex :: String -> VarIndex -> String
 analyzeVarIndex loc i = unsafePerformIO $ do
   sn <- makeStableName i
-  cl <- getClosureData i
-  return $ loc ++ " VarIndex " ++ show i ++ " with stable name hash " ++ show (hashStableName sn)  ++ " and closure type " ++ show cl ++ "\n"
+  return $ loc ++ " VarIndex " ++ show i ++ " with stable name hash " ++ show (hashStableName sn)  
 
 getHash :: a -> Int
 getHash ptr = unsafePerformIO $ do
@@ -143,3 +141,33 @@ freshPtr sup = let (!u, sup') = takeUniqFromSupply sup
 ptrKey :: Ptr -> VarIndex
 ptrKey (Ptr i) = i
 {-# INLINE ptrKey #-}
+
+isTailRecursive :: QName -> AExpr a -> Bool
+isTailRecursive qn e | funOccurs qn e = go e
+  where go e = case e of
+          AComb _ ct (f, _) args -> case ct of
+            FuncCall -> f == qn && all (not . funOccurs qn) args
+            _ -> False
+          AVar _ _ -> True
+          ALit _ _ -> True
+          ATyped _ e' _ -> go e'
+          AOr _ e1 e2 -> go e1 && go e2
+          ALet _ bs e2 -> all (not . funOccurs qn . snd) bs && go e2
+          ACase _ _ e alts -> not (funOccurs qn e) && all ((\(ABranch _ e') -> not (funOccurs qn e') || go e')) alts
+          AFree _ _ e' -> go e'
+isTailRecursive _ _ = False
+
+funOccurs :: QName -> AExpr a -> Bool
+funOccurs qn e = 
+  let rec = funOccurs qn
+  in case e of
+  AComb _ ct (f, _) args -> case ct of
+    FuncCall -> f == qn || any rec args
+    _ -> False
+  AVar _ _ -> False
+  ALit _ _ -> False
+  ATyped _ e' _ -> rec e'
+  AOr _ e1 e2 -> rec e1 || rec e2
+  ALet _ bs e2 -> any (rec . snd) bs || rec e2
+  ACase _ _ e alts -> rec e || any (rec . (\(ABranch _ e') -> e')) alts
+  AFree _ _ e' -> rec e'

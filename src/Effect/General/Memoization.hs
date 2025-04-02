@@ -186,9 +186,8 @@ data ThunkStore l v = forall m. TS UniqSupply (TSM m l v) --(IntMap.IntMap (Entr
 type TSM m l v = IntMap.IntMap (Weak (Entry m l v))
 
 addEntry :: Ptr -> Entry m l v -> TSM m l v -> TSM m l v
-addEntry (Ptr !i) p th = unsafePerformIO $ do
-  w <- mkWeak i (unsafeCoerce p) Nothing
-  return (IntMap.insert i w th)
+addEntry (Ptr !i) p th = IntMap.insert i w th
+  where w = unsafePerformIO $ mkWeak i (unsafeCoerce p) Nothing
 {-# NOINLINE addEntry #-}
 
 lookupEntry :: Ptr -> TSM m l v -> Entry m l v
@@ -202,19 +201,20 @@ lookupEntry (Ptr !i) th = unsafePerformIO $ keepAlive i $ do
     Nothing -> error $ analyzeVarIndex "VarIndex not found: " i
 {-# NOINLINE lookupEntry #-}
 
-purge :: TSM m l v -> TSM m l v
-purge m = strace stats m'
+purge :: Show (l v) => TSM m l v -> TSM m l v
+purge m = unsafePerformIO $ performGC >> return (strace stats m')
+-- purge m = strace stats m'
   where
     m' = IntMap.filter isAlive m
     old = IntMap.size m
     new = IntMap.size m'
-    stats = if old == 0 then "" else "Purged " ++ show (old - new) ++ " dead pointers of total " ++ show old ++ " pointers (now " ++ show new ++ ")"
+    stats = if old == 0 then "" else "Purged " ++ show (old - new) ++ " dead pointers of total " ++ show old ++ " pointers (now " ++ show new ++ ")" -- ++ showTS (TS undefined m')
     isAlive w = case unsafePerformIO $ deRefWeak w of
                  Just _ -> True
                  Nothing -> False
 {-# NOINLINE purge #-}
 
-majorPurge :: TSM m l v -> TSM m l v
+majorPurge :: Show (l v) => TSM m l v -> TSM m l v
 majorPurge m | IntMap.size m == IntMap.size m' = m'
              | otherwise = majorPurge m'
    where m' = unsafePerformIO $ performGC >> return (purge m)
