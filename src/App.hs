@@ -66,6 +66,7 @@ import Debug (tracingActive)
 -- import Monolith (runMonolithic)
 import System.Clock (getTime, Clock (..), TimeSpec (sec, nsec))
 import Control.Concurrent (setNumCapabilities)
+import GHC.Stats
 
 data Mode = Tree | Codensity | Monolithic | Smart deriving Show
 
@@ -205,6 +206,10 @@ run topts progs fcyrunner = do
   -- when (showFlatCurryExpr topts) $ print fcyrunner\
   end <- getTime Monotonic
   when (time topts) (printTime start end)
+  enabled <- getRTSStatsEnabled
+  when enabled $ do
+      s <- getRTSStats
+      putStrLn $ show (max_mem_in_use_bytes s `div` 1000000) ++ "MB allocated"
   let (ti, values) = declutter res
       stats = statistics ti
       sum = foldr (\(_, n) !acc -> n + acc) 0 stats
