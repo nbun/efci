@@ -202,7 +202,7 @@ lookupEntry (Ptr !i) th = unsafePerformIO $ keepAlive i $ do
 {-# NOINLINE lookupEntry #-}
 
 purge :: Show (l v) => TSM m l v -> TSM m l v
-purge m = unsafePerformIO $ performGC >> return (strace stats m')
+purge m = strace stats m'
 -- purge m = strace stats m'
   where
     m' = IntMap.filter isAlive m
