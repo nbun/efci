@@ -22,3 +22,7 @@ Run.curry
 *.icurry
 
 effective
+
+benchmarks/efci.eventlog
+
+benchmarks/efci.hp

@@ -21,6 +21,7 @@
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE Strict #-}
 
 module Effect.General.Memoization where
 
@@ -49,6 +50,14 @@ data Thunking v :: Type -> (Type -> Type) -> Type where
    Store :: Thunking v Ptr (OneSub v)
    Force :: Ptr -> Thunking v v NoSub
    Redirect :: (Ptr, Ptr) -> Thunking v () NoSub
+   CBV   :: Thunking v v (OneSub v)
+
+cbv :: forall m sig sigs sigl v
+    . (EffectCons m sig sigs sigl Id, Thunking v :<<<<: sigl)
+   => m v
+   -> m v
+cbv t = logCall >> injectL (CBV :: Thunking v v (OneSub v)) (Id ()) (\One _ -> fmap Id t) (return . unId)
+{-# INLINE cbv #-}
 
 store
    :: forall m sig sigs sigl v
@@ -142,6 +151,9 @@ instance (Functor l, EffectMonad m sig sigs sigl (StateL (ThunkStore l v) l), Sh
              Redirected ptr' -> skipRedirects th ptr'
              _ -> ptr    
     unMC (k l) (TS sup (addEntry p (Redirected (skipRedirects th p')) th))
+   con (L (Node (Inl3 CBV) l st k)) = MC $ \ts -> do
+      (ts', lv) <- unMC (unsafeCoerce $ st One) ts
+      unMC (k lv) (ctrace ("cbv " ++ show lv) ts')
    con (L (Node (Inr3 op) l st k)) = MC $ \th ->
       con $
          L $
