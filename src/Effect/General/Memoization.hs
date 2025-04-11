@@ -186,8 +186,9 @@ data ThunkStore l v = forall m. TS UniqSupply (TSM m l v) --(IntMap.IntMap (Entr
 type TSM m l v = IntMap.IntMap (Weak (Entry m l v))
 
 addEntry :: Ptr -> Entry m l v -> TSM m l v -> TSM m l v
-addEntry (Ptr !i) p th = IntMap.insert i w th
-  where w = unsafePerformIO $ mkWeak i (unsafeCoerce p) Nothing
+addEntry (Ptr !i) p th = unsafePerformIO $ do
+  w <- mkWeak i (unsafeCoerce p) Nothing
+  return (IntMap.insert i w th)
 {-# NOINLINE addEntry #-}
 
 lookupEntry :: Ptr -> TSM m l v -> Entry m l v
