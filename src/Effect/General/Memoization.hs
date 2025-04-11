@@ -31,7 +31,7 @@ import Effect.General.State (StateL (..), EffectCons, logCall)
 import Signature
 import Debug (ctrace, strace)
 import Unsafe.Coerce (unsafeCoerce)
-import qualified Data.IntMap as IntMap
+import qualified Data.IntMap.Strict as IntMap
 import Curry.FlatCurry (VarIndex)
 import Data.Maybe (fromJust)
 import Data.List (sortBy)
@@ -49,7 +49,6 @@ data Thunking v :: Type -> (Type -> Type) -> Type where
    Store :: Thunking v Ptr (OneSub v)
    Force :: Ptr -> Thunking v v NoSub
    Redirect :: (Ptr, Ptr) -> Thunking v () NoSub
-   RunGC :: Thunking v () NoSub
 
 store
    :: forall m sig sigs sigl v
@@ -91,10 +90,6 @@ force e = logCall >> injectL (Force e) (Id ()) (\x -> case x of {}) (return . un
 redirect :: forall v m sig sigs sigl. (EffectCons m sig sigs sigl Id, Thunking v :<<<<: sigl) => (Ptr, Ptr) -> m ()
 redirect p = logCall >> injectL (Redirect p :: Thunking v () NoSub) (Id ()) (\x -> case x of {}) (return . unId)
 {-# INLINE redirect #-}
-
-runGC :: forall v m sig sigs sigl. (EffectCons m sig sigs sigl Id, Thunking v :<<<<: sigl) => m ()
-runGC = logCall >> injectL (RunGC :: Thunking v () NoSub) (Id ()) (\x -> case x of {}) (return . unId)
-{-# INLINE runGC #-}
 
 runLazy :: (Functor l, Show (l v), Show (l ()), m ~ Prog (Sig sig sigs sigl (StateL (ThunkStore l v) l)), Monad m) => UniqSupply -> Prog (Sig sig sigs (Thunking v :+++: sigl) l) b -> m b
 runLazy sup = fmap (\(s, r) -> strace (showTS s) r) . \p -> hLazy p (TS sup IntMap.empty)
