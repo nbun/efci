@@ -65,6 +65,7 @@ import Debug (tracingActive)
 import System.Clock (getTime, Clock (..), TimeSpec (sec, nsec))
 import Control.Concurrent (setNumCapabilities)
 import GHC.Stats
+import GHC.Debug.Stub (withGhcDebug)
 
 data Mode = Tree | Codensity | Monolithic | Smart deriving Show
 

@@ -49,6 +49,7 @@ data Thunking v :: Type -> (Type -> Type) -> Type where
    Thunk :: Ptr -> Thunking v () (OneSub v)
    Store :: Thunking v Ptr (OneSub v)
    Force :: Ptr -> Thunking v v NoSub
+   Retrieve :: Ptr -> Thunking v v NoSub
    Redirect :: (Ptr, Ptr) -> Thunking v () NoSub
    CBV   :: Thunking v v (OneSub v)
 
@@ -96,6 +97,10 @@ force :: (EffectCons m sig sigs sigl Id, Thunking v :<<<<: sigl) => Ptr -> m v
 force e = logCall >> injectL (Force e) (Id ()) (\x -> case x of {}) (return . unId)
 {-# INLINE force #-}
 
+retrieve :: (EffectCons m sig sigs sigl Id, Thunking v :<<<<: sigl) => Ptr -> m v
+retrieve e = logCall >> injectL (Retrieve e) (Id ()) (\x -> case x of {}) (return . unId)
+{-# INLINE retrieve #-}
+
 redirect :: forall v m sig sigs sigl. (EffectCons m sig sigs sigl Id, Thunking v :<<<<: sigl) => (Ptr, Ptr) -> m ()
 redirect p = logCall >> injectL (Redirect p :: Thunking v () NoSub) (Id ()) (\x -> case x of {}) (return . unId)
 {-# INLINE redirect #-}
@@ -139,6 +144,14 @@ instance (Functor l, EffectMonad m sig sigs sigl (StateL (ThunkStore l v) l), Sh
      let (!fresh, sup') = freshPtr sup
          th' = if ptrKey fresh `mod` 20000 == 0 then purge th else th
      in unMC (k (fresh <$ l)) (TS sup' (addEntry fresh (Thunked (unsafeCoerce $ st One)) th'))
+   con (L (Node (Inl3 (Retrieve p)) l st k)) = MC $ \ts -> ctrace ("retrieve") $ retrieve p ts
+     where retrieve ptr ts@(TS sup th) = case lookupEntry ptr th of
+             Thunked t -> do
+                (TS sup' th', lv) <- unMC (unsafeCoerce $ t l) ts
+                unMC (k lv) (ctrace ("evaluate " ++ show ptr ++ show lv) (TS sup' (removeEntry ptr th')))
+             _ -> error "Should not happen: Thunked entry expected in retrieve"
+            --  Evaluated lv -> ctrace ("memoized " ++ show ptr ++ show lv) $ unMC (k lv) (TS sup (removeEntry ptr th))
+            --  Redirected p' -> ctrace ("redirect " ++ show ptr ++ " -> " ++ show p') $ retrieve p' (TS sup (removeEntry ptr th)) -- TODO ?????????
    con (L (Node (Inl3 (Force p)) l st k)) = MC $ \ts -> ctrace ("force") $ retrieve p ts
      where retrieve ptr ts@(TS _ th) = case lookupEntry ptr th of
              Thunked t -> do
@@ -189,7 +202,7 @@ isEvaluated _ = False
 isRedirected (Redirected _) = True
 isRedirected _ = False
 
-data ThunkStore l v = forall m. TS UniqSupply (TSM m l v) --(IntMap.IntMap (Entry m l v))
+data ThunkStore l v = forall m. TS !UniqSupply !(TSM m l v) --(IntMap.IntMap (Entry m l v))
 type TSM m l v = IntMap.IntMap (Weak (Entry m l v))
 
 addEntry :: Ptr -> Entry m l v -> TSM m l v -> TSM m l v
@@ -197,6 +210,10 @@ addEntry (Ptr !i) p th = unsafePerformIO $ do
   w <- mkWeak i (unsafeCoerce p) Nothing
   return (IntMap.insert i w th)
 {-# NOINLINE addEntry #-}
+
+removeEntry :: Ptr -> TSM m l v -> TSM m l v
+removeEntry (Ptr !i) th = IntMap.delete i th
+{-# NOINLINE removeEntry #-}
 
 lookupEntry :: Ptr -> TSM m l v -> Entry m l v
 lookupEntry (Ptr !i) th = unsafePerformIO $ keepAlive i $ do

@@ -55,6 +55,8 @@ extra-deps:
   # - unix-2.8.1.1
   # - exceptions-0.10.7
   - ghc-heap-view-0.6.4.1@sha256:3db52b253513cf086fc80c878efc5582116323307eda41e066de908cd33215ec,3270
+  - ghc-debug-stub-0.7.0.0
+  - ghc-debug-convention-0.7.0.0
 
 
 # Override default flag values for local packages and extra-deps
