@@ -21,7 +21,6 @@ import Curry.Base.Message (ppError, ppMessagesWithPreviews, ppWarning)
 import Curry.Base.Monad (runCYIO)
 import Curry.Base.Pretty (Doc, Pretty (pPrint))
 import Curry.Files.Filenames (
-  addOutDirModule,
   dropExtension,
   takeFileName,
  )
@@ -37,7 +36,6 @@ import Data.Functor ((<&>))
 import Data.List (sort, (\\))
 import Data.Map (fromList)
 import Data.Maybe (catMaybes)
-import Free (Prog)
 import GHC.GHCi.Helpers (flushAll)
 import Generators (genFlatCurry)
 import Generators.GenAnnotatedFlatCurry (genAnnotatedFlatCurry)
@@ -58,9 +56,9 @@ import System.FilePath (
   takeDirectory,
  )
 import System.Timeout (timeout)
-import Transformation.FCY2AE (CurryEffects, fcyProg2ae, fcyRunner2ae)
+import Transformation.FCY2AE (fcyProg2ae, fcyRunner2ae)
 import Transformations (qual)
-import Type (AEProg, fdclBdy, reqFuncs, withoutTDecls)
+import Type (fdclBdy, reqFuncs, withoutTDecls)
 import Effect.General.State (statistics)
 import Debug (tracingActive)
 -- import Monolith (runMonolithic)

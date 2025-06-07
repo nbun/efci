@@ -19,11 +19,13 @@ import Curry.FlatCurry.Type (
 import qualified Curry.FlatCurry.Type as CFT (OpDecl (..))
 import Data.Map (Map)
 import Curry.FlatCurry.Annotated.Type
-import Data.List (nub)
+import Data.List (nub, insert)
 import System.IO.Unsafe (unsafePerformIO)
 import GHC.StableName
 import GHC.Types.Unique.Supply
 import GHC.Types.Unique (getKey)
+import qualified Data.IntMap.Strict as IntMap
+import Control.Monad.State.Strict
 
 findFDcl :: [AProg a] -> QName -> AFuncDecl a
 findFDcl ps qn@(mod, _) = case res of
@@ -171,3 +173,60 @@ funOccurs qn e =
   ALet _ bs e2 -> any (rec . snd) bs || rec e2
   ACase _ _ e alts -> rec e || any (rec . (\(ABranch _ e') -> e')) alts
   AFree _ _ e' -> rec e'
+
+data VarInfo = NoInfo | VarInfo
+  { count :: !Int
+  , matched :: Bool
+  } 
+  deriving (Show)
+
+merge :: VarInfo -> VarInfo -> VarInfo
+merge NoInfo m = m
+merge m NoInfo = m
+merge (VarInfo c1 m1) (VarInfo c2 m2) = VarInfo (max c1 c2) (m1 || m2)
+
+-- propagate :: AExpr a -> VarIndex -> State InfoMap ()
+-- propagate (AVar _ i) j | i == j = do
+--   m <- get
+--   case IntMap.lookup i m of
+--     Just v -> do
+--       IntMap.insert j (VarInfo c mtch) m
+--     Nothing -> return ()
+
+
+type InfoMap = IntMap.IntMap VarInfo
+
+analyzeVars :: AExpr a -> State InfoMap ()
+analyzeVars e = case e of
+  AComb _ _ _ args -> mapM_ analyzeVars args
+  AVar _ i -> incCount i
+  ALit _ _ -> return ()
+  ATyped _ e' _ -> analyzeVars e'
+  AOr _ e1 e2 -> analyzeVars e1 >> analyzeVars e2
+  ALet _ bs e2 -> do
+    analyzeVars e2
+    mapM_ (\(_, b) -> analyzeVars b) bs
+  ACase _ _ e alts -> do
+    analyzeVars e
+    case e of
+         AVar _ i -> setMatched i
+         _        -> return ()
+    s <- get
+    let branchStates = snd $ mapM (\(ABranch _ b) -> runState (analyzeVars b) s) alts
+    put $ foldr (\s acc -> IntMap.unionWith merge s acc) IntMap.empty branchStates
+  AFree _ _ e' -> analyzeVars e'
+  where
+    incCount i = do
+      m <- get
+      let info = IntMap.findWithDefault NoInfo i m
+          newInfo = case info of
+            NoInfo -> VarInfo 1 False
+            VarInfo cnt mtch -> VarInfo (cnt + 1) mtch
+      put $ IntMap.insert i newInfo m
+    setMatched i = do
+      m <- get
+      let info = IntMap.findWithDefault NoInfo i m
+          newInfo = case info of
+            NoInfo -> VarInfo 0 True
+            VarInfo cnt _ -> VarInfo cnt True
+      put $ IntMap.insert i newInfo m

@@ -190,5 +190,4 @@ class Lift g h | g -> h, h -> g where
 
 type EffectMonad m sig sigs sigl l = (TermMonad m (Sig sig sigs sigl l))
 
-type Parametric f = (forall a b. (Coercible a b => Coercible (f a) (f b)) :: Constraint)
 -- {-# RULES "fmapCoerce/coerce" fmap coerce = unsafeCoerce #-}
