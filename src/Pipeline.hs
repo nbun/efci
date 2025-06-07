@@ -7,11 +7,13 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
-module Pipeline where
+module Pipeline (Result (..), pretty, runCurryEffects, runSmartCurryEffects, declutter) where
 
 import Curry.FlatCurry (Literal (..), QName, VarIndex)
 import Data.List (intercalate)
+import qualified Data.Map as Map
 import Effect.FlatCurry.Constructor
+import Effect.FlatCurry.Declarations
 import Effect.FlatCurry.Function
 import Effect.FlatCurry.IO (runIO, runIOSmart)
 import Effect.General.Error (Error (..), runError, runErrorSmart)
@@ -19,123 +21,129 @@ import Effect.General.Memoization
 import Effect.General.ND (runND, runNDSmart)
 import Effect.General.State
 import Free
+import GHC.Plugins (splitUniqSupply)
+import GHC.Types.Unique.Supply (mkSplitUniqSupply)
 import Transformation.FCY2AE
 import Type (AEProg, Ptr (..))
-import Effect.FlatCurry.Declarations
-import qualified Data.Map as Map
-import GHC.Types.Unique.Supply (mkSplitUniqSupply)
-import GHC.Plugins (splitUniqSupply)
 
-runCurryEffects :: (Show a)
-                => [AEProg (Prog (CurryEffects a) a)]
-                -> Prog (CurryEffects a) a
-                -> IO ([TraceInfo], Error [(Constraints, Value (Closure a))])
+runCurryEffects
+    :: (Show a)
+    => [AEProg (Prog (CurryEffects a) a)]
+    -> Prog (CurryEffects a) a
+    -> IO ([TraceInfo], Error [(Constraints, Value (Closure a))])
 runCurryEffects ps e = do
-  sup <- mkSplitUniqSupply 'a'
-  let (sup1, sup2) = splitUniqSupply sup
-      pipeline = runIO
-        . (\x -> hState @Trace x ([] :: [TraceInfo]))
-        . runError
-        . runND
-        . (\x -> hState @CStore x Map.empty)
-        . runState @Rename (initRenaming sup1)
-        . runLazy sup2
-        . runCons
-        . runPartial
-        . runDecl []
-  pipeline (initDecls ps >> e)
+    sup <- mkSplitUniqSupply 'a'
+    let (sup1, sup2) = splitUniqSupply sup
+        pipeline =
+            runIO
+                . (\x -> hState @Trace x ([] :: [TraceInfo]))
+                . runError
+                . runND
+                . (\x -> hState @CStore x Map.empty)
+                . runState @Rename (initRenaming sup1)
+                . runLazy sup2
+                . runCons
+                . runPartial
+                . runDecl []
+    pipeline (initDecls ps >> e)
 
-runSmartCurryEffects :: (Show a)
-                => [AEProg (SmartProg (CurryEffects a) a)]
-                -> SmartProg (CurryEffects a) a
-                -> IO ([TraceInfo], Error [(Constraints, Value (Closure a))])
+runSmartCurryEffects
+    :: (Show a)
+    => [AEProg (SmartProg (CurryEffects a) a)]
+    -> SmartProg (CurryEffects a) a
+    -> IO ([TraceInfo], Error [(Constraints, Value (Closure a))])
 runSmartCurryEffects ps e = do
-  sup <- mkSplitUniqSupply 'a'
-  let (sup1, sup2) = splitUniqSupply sup
-      pipeline = runIOSmart
-        . (\x -> hStateSmart @Trace x ([] :: [TraceInfo]))
-        . runErrorSmart
-        . runNDSmart
-        . (\x -> hStateSmart @CStore x Map.empty)
-        . runStateSmart @Rename (initRenaming sup1)
-        . runLazySmart sup2
-        . runConsSmart
-        . runPartialSmart
-        . runDeclSmart []
-  pipeline (initDecls ps >> e)
+    sup <- mkSplitUniqSupply 'a'
+    let (sup1, sup2) = splitUniqSupply sup
+        pipeline =
+            runIOSmart
+                . (\x -> hStateSmart @Trace x ([] :: [TraceInfo]))
+                . runErrorSmart
+                . runNDSmart
+                . (\x -> hStateSmart @CStore x Map.empty)
+                . runStateSmart @Rename (initRenaming sup1)
+                . runLazySmart sup2
+                . runConsSmart
+                . runPartialSmart
+                . runDeclSmart []
+    pipeline (initDecls ps >> e)
 
-declutter :: Show a => ([TraceInfo], Error [(Constraints, Value (Closure a))]) -> ([TraceInfo], [Result])
+declutter :: (Show a) => ([TraceInfo], Error [(Constraints, Value (Closure a))]) -> ([TraceInfo], [Result])
 declutter (ti, Error s) = (ti, [RError s])
 declutter (ti, EOther xs) = (ti, map addBindings xs)
   where
     addBindings (bs, v)
-      | Map.null bs || all (\(Ptr i) -> i > 999) (Map.keys bs) = declutterHNF v
-      | otherwise = RBindings bs (declutterHNF v)
+        | Map.null bs || all (\(Ptr i) -> i > 999) (Map.keys bs) = declutterHNF v
+        | otherwise = RBindings bs (declutterHNF v)
 
-declutterHNF :: Show a => Value (Closure a) -> Result
+declutterHNF :: (Show a) => Value (Closure a) -> Result
 declutterHNF (Cons qn args) = RCons qn (map declutterHNF args)
 declutterHNF (HNF qn ptrs) = RCons qn (replicate (length ptrs) Unevaluated)
 declutterHNF (Lit l) = RLit l
 declutterHNF (Free i) = RFree i
 declutterHNF (ValOther c) = case c of
-  Closure qn ct _ -> RClosure qn ct
-  Other x         -> ROther (show x)
+    Closure qn ct _ -> RClosure qn ct
+    Other x -> ROther (show x)
 
-data Result = RLit Literal
-            | RCons QName [Result]
-            | Unevaluated
-            | RClosure QName CombType
-            | RError String
-            | RFree Ptr
-            | ROther String
-            | RBindings Constraints Result
-  deriving (Show, Eq)
+data Result
+    = RLit Literal
+    | RCons QName [Result]
+    | Unevaluated
+    | RClosure QName CombType
+    | RError String
+    | RFree Ptr
+    | ROther String
+    | RBindings Constraints Result
+    deriving (Show, Eq)
 
 withoutBindings :: Result -> Result
 withoutBindings (RBindings _ r) = withoutBindings r
 withoutBindings r = r
 
 class Pretty a where
-  pretty :: a -> String
+    pretty :: a -> String
 
 instance Pretty Result where
-  pretty r@(RCons ("Prelude", ":") _) = prettyList r
-  pretty (RCons ("Prelude", "(,)") [x, y]) =
-    "(" ++ pretty x ++ ", " ++ pretty y ++ ")"
-  pretty (RCons ("Prelude", "(,,)") [x, y, z]) =
-    "(" ++ pretty x ++ ", " ++ pretty y ++ ", " ++ pretty z ++ ")"
-  pretty (RCons qn []) = snd qn
-  pretty (RCons qn vs) = parOnce $ snd qn ++ " " ++ unwords (map pretty vs)
-  pretty (RLit (Intc i)) = show i
-  pretty (RLit (Charc c)) = show c
-  pretty (RLit (Floatc f)) = show f
-  pretty (RFree i) = "_" ++ show i
-  pretty Unevaluated = "Unevaluated"
-  pretty (RClosure qn ct) =
-    snd qn ++ " " ++ unwords (replicate (missingArgs ct) "_")
-  pretty (RError s) = "Error: " ++ s
-  pretty (RBindings cs r) =
-    "{" ++ intercalate ", " (map pretty (Map.toList cs)) ++ "} " ++ pretty r
-  pretty (ROther s) = s
+    pretty r@(RCons ("Prelude", ":") _) = prettyList r
+    pretty (RCons ("Prelude", "(,)") [x, y]) =
+        "(" ++ pretty x ++ ", " ++ pretty y ++ ")"
+    pretty (RCons ("Prelude", "(,,)") [x, y, z]) =
+        "(" ++ pretty x ++ ", " ++ pretty y ++ ", " ++ pretty z ++ ")"
+    pretty (RCons qn []) = snd qn
+    pretty (RCons qn vs) = parOnce $ snd qn ++ " " ++ unwords (map pretty vs)
+    pretty (RLit (Intc i)) = show i
+    pretty (RLit (Charc c)) = show c
+    pretty (RLit (Floatc f)) = show f
+    pretty (RFree i) = "_" ++ show i
+    pretty Unevaluated = "Unevaluated"
+    pretty (RClosure qn ct) =
+        snd qn ++ " " ++ unwords (replicate (missingArgs ct) "_")
+    pretty (RError s) = "Error: " ++ s
+    pretty (RBindings cs r) =
+        "{" ++ intercalate ", " (map pretty (Map.toList cs)) ++ "} " ++ pretty r
+    pretty (ROther s) = s
 
 instance Pretty (Ptr, CValue) where
-  pretty (i, LitC l) = '_':show i ++ " -> " ++ show l
-  pretty (i, VarC j) = '_':show i ++ " -> " ++ show j
-  pretty (i, ConsC qn []) = '_':show i ++ " -> " ++ snd qn
-  pretty (i, ConsC qn vs) = '_'
-    :show i ++ " -> " ++ parOnce (snd qn ++ " " ++ unwords (map show vs))
+    pretty (i, LitC l) = '_' : show i ++ " -> " ++ show l
+    pretty (i, VarC j) = '_' : show i ++ " -> " ++ show j
+    pretty (i, ConsC qn []) = '_' : show i ++ " -> " ++ snd qn
+    pretty (i, ConsC qn vs) =
+        '_'
+            : show i
+            ++ " -> "
+            ++ parOnce (snd qn ++ " " ++ unwords (map show vs))
 
 prettyList :: Result -> String
 prettyList r = "[" ++ intercalate ", " (prettyList' r) ++ "]"
   where
-    prettyList' (RCons ("Prelude", ":") [x, y]) = pretty x:prettyList' y
+    prettyList' (RCons ("Prelude", ":") [x, y]) = pretty x : prettyList' y
     prettyList' (RCons ("Prelude", "[]") []) = []
     prettyList' x = [show x]
 
 parOnce :: String -> String
 parOnce "" = ""
-parOnce s@('(':_) = s
-parOnce s = '(':s ++ ")"
+parOnce s@('(' : _) = s
+parOnce s = '(' : s ++ ")"
 
 -- type L a = StateL [TraceInfo]
 --                       (ErrorL
@@ -193,7 +201,7 @@ parOnce s = '(':s ++ ")"
 --                                                                                     (STC Trace [TraceInfo]
 --                                                                                       (Cod
 --                                                                                         (IOC
---                                                                                           (L 
+--                                                                                           (L
 --                                                                                              a)))))))))))))))
 --                                               (ValueL (ClosureL Id))
 --                                               a))))))

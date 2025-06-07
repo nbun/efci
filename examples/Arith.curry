@@ -10,3 +10,6 @@ pointless :: Int -> ()
 pointless n = case n of
   0 -> ()
   m -> pointless (m - 1)
+
+loop :: Int
+loop = loop
