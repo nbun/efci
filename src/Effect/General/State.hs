@@ -38,7 +38,7 @@ import Data.Bifunctor (Bifunctor(first))
 
 data StateF (tag :: Type) s a
     = Get (s -> a)
-    | Put s a
+    | Put !s a
     | Modify (s -> s) a
 
 instance Functor (StateF tag s) where
@@ -84,7 +84,7 @@ initRenaming s = RState [] s
 
 type Renaming = StateF Rename RState
 
-data RState = RState {renaming :: [(VarIndex, Ptr)], supply :: UniqSupply}
+data RState = RState {renaming :: [(VarIndex, Ptr)], supply :: !UniqSupply}
 
 freshNames
     :: (EffectCons m sig sigs sigl l, Renaming :<: sig)
@@ -178,10 +178,10 @@ instance
             (s', hx) <- unSTC hhx s
             return (unSTC hx s')
     con (L (Node op l st k)) = STC $
-        \s -> con $ L $ Node op (StateL (s, l)) (st' st) k'
+        \s -> con $ L $ Node op (StateL s l) (st' st) k'
       where
-        st' st c (StateL (s', lv)) = StateL <$> unSTC (st c lv) s'
-        k' (StateL (s', lv)) = unSTC (k lv) s'
+        st' st c (StateL s' lv) = uncurry StateL <$> unSTC (st c lv) s'
+        k' (StateL s' lv) = unSTC (k lv) s'
     {-# INLINE con #-}
     var = STC . gen'State
       where
@@ -216,10 +216,10 @@ instance (Monad m) => Pointed (STC tag s m) where
     point x = STC (\s -> return (s, x))
     {-# INLINE point #-}
 
-newtype StateL s l a = StateL {unStateL :: (s, l a)} deriving (Show)
+data StateL s l a = StateL !s !(l a) deriving (Show)
 
 instance (Functor l) => Functor (StateL s l) where
-    fmap f (StateL (s, la)) = StateL (s, fmap f la)
+    fmap f (StateL s la) = StateL s (fmap f la)
     {-# INLINE fmap #-}
 
 -- constraint store --

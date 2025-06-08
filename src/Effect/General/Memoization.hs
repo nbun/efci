@@ -147,8 +147,8 @@ instance (Functor l, EffectMonad m sig sigs sigl (StateL (ThunkStore l v) l), Sh
    con (L (Node (Inl3 (Retrieve p)) l st k)) = MC $ \ts -> ctrace ("retrieve") $ retrieve p ts
      where retrieve ptr ts@(TS sup th) = case lookupEntry ptr th of
              Thunked t -> do
-                (TS sup' th', lv) <- unMC (unsafeCoerce $ t l) ts
-                unMC (k lv) (ctrace ("evaluate " ++ show ptr ++ show lv) (TS sup' (removeEntry ptr th')))
+                (TS sup' th', lv) <- unMC (unsafeCoerce $ t l) (TS sup (removeEntry ptr th))
+                unMC (k lv) (ctrace ("evaluate " ++ show ptr ++ show lv) (TS sup' th'))
              _ -> error "Should not happen: Thunked entry expected in retrieve"
             --  Evaluated lv -> ctrace ("memoized " ++ show ptr ++ show lv) $ unMC (k lv) (TS sup (removeEntry ptr th))
             --  Redirected p' -> ctrace ("redirect " ++ show ptr ++ " -> " ++ show p') $ retrieve p' (TS sup (removeEntry ptr th)) -- TODO ?????????
@@ -172,9 +172,9 @@ instance (Functor l, EffectMonad m sig sigs sigl (StateL (ThunkStore l v) l), Sh
          L $
             Node
                op
-               (StateL (th, l))
-               (\c (StateL (th', lv)) -> StateL <$> unMC (st c lv) th')
-               (\(StateL (th', lv)) -> unMC (k lv) th')
+               (StateL th l)
+               (\c (StateL th' lv) -> uncurry StateL <$> unMC (st c lv) th')
+               (\(StateL th' lv) -> unMC (k lv) th')
    {-# INLINE con #-}
    var = MC . gen'Memo
      where
@@ -233,7 +233,7 @@ purge m = strace stats m'
     m' = IntMap.filter isAlive m
     old = IntMap.size m
     new = IntMap.size m'
-    stats = if old == 0 then "" else "Purged " ++ show (old - new) ++ " dead pointers of total " ++ show old ++ " pointers (now " ++ show new ++ ")" -- ++ showTS (TS undefined m')
+    stats = if old == 0 then "empty" else "Purged " ++ show (old - new) ++ " dead pointers of total " ++ show old ++ " pointers (now " ++ show new ++ ")" -- ++ showTS (TS undefined m')
     isAlive w = case unsafePerformIO $ deRefWeak w of
                  Just _ -> True
                  Nothing -> False

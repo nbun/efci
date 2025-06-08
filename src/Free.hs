@@ -32,7 +32,6 @@ module Free (
 data Prog k a where
     Return :: a -> Prog k a
     Call :: k (Prog k) (Prog k a) -> Prog k a
-
 deriving instance (Show (k (Prog k) (Prog k a)), Show a) => Show (Prog k a)
 
 instance (HFunctor k) => Functor (Prog k) where
@@ -62,10 +61,13 @@ fold gen alg (Call op) = alg (hmap fold' (fmap (fold gen alg) op))
     fold' (Call op) = alg (hmap fold' (fmap fold' op))
 
 smartFold :: forall k f a b. (HFunctor k, Pointed f) => (a -> f b) -> (forall x. k f (f x) -> f x) -> SmartProg k a -> f b
-smartFold gen alg p = case view p of
-    (ViewReturn x) -> gen x
-    (ViewCall op) -> alg (hmap fold' (fmap (smartFold gen alg) op))
+smartFold gen alg = smartFold'
   where
+    smartFold' :: SmartProg k a -> f b
+    smartFold' p = case view p of
+      (ViewReturn x) -> gen x
+      (ViewCall op) -> alg (hmap fold' (fmap smartFold' op))
+
     fold' :: SmartProg k --> f
     fold' p = case view p of
         (ViewReturn x) -> point x
