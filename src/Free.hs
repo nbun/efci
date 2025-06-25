@@ -27,6 +27,7 @@ module Free (
     fold,
     smartFold,
     runCod,
+    finish,
 ) where
 
 data Prog k a where

@@ -49,7 +49,6 @@ data Thunking v :: Type -> (Type -> Type) -> Type where
    Thunk :: Ptr -> Thunking v () (OneSub v)
    Store :: Thunking v Ptr (OneSub v)
    Force :: Ptr -> Thunking v v NoSub
-   Retrieve :: Ptr -> Thunking v v NoSub
    Redirect :: (Ptr, Ptr) -> Thunking v () NoSub
    CBV   :: Thunking v v (OneSub v)
 
@@ -97,10 +96,6 @@ force :: (EffectCons m sig sigs sigl Id, Thunking v :<<<<: sigl) => Ptr -> m v
 force e = logCall >> injectL (Force e) (Id ()) (\x -> case x of {}) (return . unId)
 {-# INLINE force #-}
 
-retrieve :: (EffectCons m sig sigs sigl Id, Thunking v :<<<<: sigl) => Ptr -> m v
-retrieve e = logCall >> injectL (Retrieve e) (Id ()) (\x -> case x of {}) (return . unId)
-{-# INLINE retrieve #-}
-
 redirect :: forall v m sig sigs sigl. (EffectCons m sig sigs sigl Id, Thunking v :<<<<: sigl) => (Ptr, Ptr) -> m ()
 redirect p = logCall >> injectL (Redirect p :: Thunking v () NoSub) (Id ()) (\x -> case x of {}) (return . unId)
 {-# INLINE redirect #-}
@@ -144,14 +139,6 @@ instance (Functor l, EffectMonad m sig sigs sigl (StateL (ThunkStore l v) l), Sh
      let (!fresh, sup') = freshPtr sup
          th' = if ptrKey fresh `mod` 20000 == 0 then purge th else th
      in unMC (k (fresh <$ l)) (TS sup' (addEntry fresh (Thunked (unsafeCoerce $ st One)) th'))
-   con (L (Node (Inl3 (Retrieve p)) l st k)) = MC $ \ts -> ctrace ("retrieve") $ retrieve p ts
-     where retrieve ptr ts@(TS sup th) = case lookupEntry ptr th of
-             Thunked t -> do
-                (TS sup' th', lv) <- unMC (unsafeCoerce $ t l) (TS sup (removeEntry ptr th))
-                unMC (k lv) (ctrace ("evaluate " ++ show ptr ++ show lv) (TS sup' th'))
-             _ -> error "Should not happen: Thunked entry expected in retrieve"
-            --  Evaluated lv -> ctrace ("memoized " ++ show ptr ++ show lv) $ unMC (k lv) (TS sup (removeEntry ptr th))
-            --  Redirected p' -> ctrace ("redirect " ++ show ptr ++ " -> " ++ show p') $ retrieve p' (TS sup (removeEntry ptr th)) -- TODO ?????????
    con (L (Node (Inl3 (Force p)) l st k)) = MC $ \ts -> ctrace ("force") $ retrieve p ts
      where retrieve ptr ts@(TS _ th) = case lookupEntry ptr th of
              Thunked t -> do
@@ -180,8 +167,6 @@ instance (Functor l, EffectMonad m sig sigs sigl (StateL (ThunkStore l v) l), Sh
      where
       gen'Memo x th = return (th, x)
    {-# INLINE var #-}
-
-
 
 runLazyC :: (EffectMonad m sig sigs sigl (StateL (ThunkStore l v) l), Functor l, Show (l v)) => UniqSupply -> Cod (MC m l v) a -> m a
 runLazyC sup p = (\(s, r) -> ctrace (showTS s) r) <$> unMC (runCod var p) (TS sup IntMap.empty)

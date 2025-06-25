@@ -119,7 +119,7 @@ apply :: (EffectCons m sig sigs sigl Id, Functions sig sigs sigl a) => m a -> Ar
 apply lam args = logCall >> do
     injectS $ FApply (fmap return lam) (return . k)
   where
-    k (Lambda vs ptr) = let' vs args (retrieve ptr)
+    k (Lambda vs ptr) = let' vs args (force ptr)
     k (External s) = callExternal s args
     k (Closure qn combtype ptrs) = do
         new <- case args of

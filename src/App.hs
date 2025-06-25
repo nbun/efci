@@ -65,7 +65,6 @@ import Debug (tracingActive)
 import System.Clock (getTime, Clock (..), TimeSpec (sec, nsec))
 import Control.Concurrent (setNumCapabilities)
 import GHC.Stats
-import GHC.Debug.Stub (withGhcDebug)
 
 data Mode = Tree | Codensity | Monolithic | Smart deriving Show
 
@@ -114,7 +113,7 @@ loop topts file = do
 execute
   :: ToolOpts -> Either (FilePath, String) ([AProg TypeExpr], AFuncDecl TypeExpr) -> IO [Result]
 execute topts preloaded = do
-  safeRes <- try $ timeout 100000000 $ case preloaded of
+  safeRes <- try $ timeout 10000000000 $ case preloaded of
                                          Left (file, query) -> loadProg topts file query >>= uncurry (run topts)
                                          Right (progs, fcyrunner) -> run topts progs fcyrunner
   case safeRes of
@@ -189,10 +188,10 @@ run topts progs fcyrunner = do
   -- writeFile "Runner.hs" (show fcyrunner)
   start <- getTime Monotonic
   res <- case mode topts of
-          --  Codensity -> do
-          --    let aprogs' = map fcyProg2ae progs
-          --        runner = fcyRunner2ae (fdclRule fcyrunner)
-          --    runCurryEffectsC @() aprogs' runner
+           Codensity -> do
+             let aprogs' = map fcyProg2ae progs
+                 runner = fcyRunner2ae (fdclRule fcyrunner)
+             runCurryEffectsC aprogs' runner
            Tree -> do
              let aprogs' = map fcyProg2ae progs
                  runner = fcyRunner2ae (fdclRule fcyrunner)
