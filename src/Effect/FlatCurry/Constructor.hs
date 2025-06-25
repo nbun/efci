@@ -5,12 +5,32 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE TupleSections #-}
 
-module Effect.FlatCurry.Constructor where
+module Effect.FlatCurry.Constructor (
+    CaseScope (..),
+    ConsF,
+    Value (..),
+    lit,
+    str2prog,
+    val2str,
+    cons,
+    arithInt,
+    compInt,
+    compChar,
+    normalform,
+    err,
+    fvar,
+    ValueL,
+    CC,
+    runCons,
+    runConsC,
+    runConsSmart,
+    case',
+) where
 
 import Control.Monad (void)
 import Curry.FlatCurry.Annotated.Type (APattern (..), Literal (..), VarIndex)
@@ -125,7 +145,7 @@ data Value a
     | Lit Literal
     | Free Ptr
     | ValOther a
-    deriving Show
+    deriving (Show)
 
 instance Functor Value where
     fmap f (Cons qn args) = Cons qn (map (fmap f) args)

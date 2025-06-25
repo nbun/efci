@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveFunctor #-}
@@ -15,7 +16,6 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE BangPatterns #-}
 
 module Signature (
     (:+:),
@@ -43,16 +43,15 @@ module Signature (
     absurd,
     (:.:),
     prj3,
-    HasCallStack
-    
+    HasCallStack,
 ) where
 
+import Data.Coerce
 import Data.Kind (Type)
 import Data.Union
 import Free
 import GHC.Base (Constraint)
 import GHC.Stack (HasCallStack)
-import Data.Coerce
 import Unsafe.Coerce (unsafeCoerce)
 
 type (:<:) e r = Elem e r
@@ -73,7 +72,6 @@ runHVoid (Call op) = case op of {}
 
 instance HFunctor HVoid where
     hmap f x = case x of {}
-
 
 type family (:.:) effs sig :: Constraint where
     '[] :.: sig = ()
@@ -138,9 +136,9 @@ instance {-# OVERLAPPABLE #-} (sig :<<<<: sig2) => sig :<<<<: (sig1 :+++: sig2) 
 
 data LVoid p c deriving (Functor)
 
-data Sig sig sigs sigl l f a = A (Algebraic sig f a) | S (Scoped sigs f a) | L (Latent sigl l f a) 
+data Sig sig sigs sigl l f a = A (Algebraic sig f a) | S (Scoped sigs f a) | L (Latent sigl l f a)
 
-instance Functor f => Functor (Sig sig sigs sigl l f) where
+instance (Functor f) => Functor (Sig sig sigs sigl l f) where
     fmap f (A !a) = A (fmap f a)
     fmap f (S !s) = S (fmap f s)
     fmap f (L !l) = L (fmap f l)

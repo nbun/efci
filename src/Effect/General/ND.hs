@@ -10,21 +10,32 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Effect.General.ND where
+module Effect.General.ND (
+    choose,
+    failed,
+    ND,
+    (?),
+    runND,
+    runNDC,
+    runNDSmart,
+    ListL,
+    NDC,
+) where
 
 import Control.Monad (liftM2)
+import Effect.General.State (EffectCons, logCall)
 import Free
-import Signature
-import Effect.General.State (logCall, EffectCons)
 import GHC.Conc
+import Signature
 
 data ND a = Fail | Or a a
 
 instance Functor ND where
     fmap _ Fail = Fail
-    fmap f (Or l r) = let l' = f l
-                          r' = f r
-                      in pseq (par l' r') (Or l' r')
+    fmap f (Or l r) =
+        let l' = f l
+            r' = f r
+         in pseq (par l' r') (Or l' r')
     {-# INLINE fmap #-}
 
 (?)

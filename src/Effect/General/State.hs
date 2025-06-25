@@ -1,4 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -14,11 +15,44 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
-{-# LANGUAGE BangPatterns #-}
 
-module Effect.General.State where
+module Effect.General.State (
+    EffectCons,
+    logCall,
+    StateL (..),
+    Renaming,
+    ConstraintStore,
+    CStore,
+    CValue (..),
+    freshNames,
+    modify,
+    addC,
+    get,
+    lookupC,
+    logCallWith,
+    newRenamingScope,
+    put,
+    StateF,
+    Trace,
+    TraceInfo,
+    Constraints,
+    Rename,
+    RState,
+    STC,
+    statistics,
+    hState,
+    runState,
+    initRenaming,
+    hStateSmart,
+    runStateSmart,
+    runStateC,
+    runStateC',
+    lookupRenaming,
+    rename,
+) where
 
 import Curry.FlatCurry.Annotated.Type (Literal, QName, VarIndex)
+import Data.Bifunctor (Bifunctor (first))
 import qualified Data.IntMap as IntMap
 import Data.Kind (Type)
 import Data.List (sortBy)
@@ -27,14 +61,13 @@ import Data.Unique (Unique)
 import Debug (tracingActive)
 import Debug.Trace (trace)
 import Free
+import GHC.StableName
 import GHC.Stack (callStack, getCallStack)
 import GHC.Types.Unique
 import GHC.Types.Unique.Supply
 import Signature
 import System.IO.Unsafe (unsafePerformIO)
-import GHC.StableName
-import Type (analyzeVarIndex, Ptr (Ptr))
-import Data.Bifunctor (Bifunctor(first))
+import Type (Ptr(..), analyzeVarIndex)
 
 data StateF (tag :: Type) s a
     = Get (s -> a)
@@ -95,13 +128,13 @@ freshNames n =
     logCall >> do
         r <- get @Rename
         let (!vs', sup') = takeNfromSupply n (supply r)
-        put @Rename (r {supply = sup'})
+        put @Rename (r{supply = sup'})
         return vs'
 {-# INLINE freshNames #-}
 
 newRenamingScope :: (EffectCons m sig sigs sigl l, Renaming :<: sig) => m ()
 newRenamingScope =
-    logCall >> modify @Rename (\r ->  r {renaming = []})
+    logCall >> modify @Rename (\r -> r{renaming = []})
 {-# INLINE newRenamingScope #-}
 
 lookupRenaming :: (EffectCons m sig sigs sigl l, Renaming :<: sig) => VarIndex -> m Ptr
@@ -119,17 +152,18 @@ rename vs =
     logCall >> do
         r <- get @Rename
         let (!vs', sup') = takeNfromSupply (length vs) (supply r)
-        put @Rename (r {renaming = renaming r ++ zip vs vs', supply = sup'})
+        put @Rename (r{renaming = renaming r ++ zip vs vs', supply = sup'})
         -- trace (concatMap (analyzeVarIndex "rename") vs') (return ())
         return vs'
 {-# INLINE rename #-}
 
 takeNfromSupply :: Int -> UniqSupply -> ([Ptr], UniqSupply)
 takeNfromSupply 0 sup = ([], sup)
-takeNfromSupply n sup = let (!u, sup') = takeUniqFromSupply sup
-                            !i = fromIntegral (getKey u)
-                            (is, sup'') = takeNfromSupply (n - 1) sup'
-                        in (Ptr i : is, sup'')
+takeNfromSupply n sup =
+    let (!u, sup') = takeUniqFromSupply sup
+        !i = fromIntegral (getKey u)
+        (is, sup'') = takeNfromSupply (n - 1) sup'
+     in (Ptr i : is, sup'')
 
 runState
     :: forall tag sig sigs sigl l s a

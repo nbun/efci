@@ -6,8 +6,16 @@
 {-# HLINT ignore "Avoid lambda using `infix`" #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# OPTIONS_GHC -ddump-simpl -dsuppress-all #-}
 
-module Pipeline (Result (..), pretty, runCurryEffects, runCurryEffectsC, runSmartCurryEffects, declutter) where
+module Pipeline (
+    Result (..),
+    pretty,
+    runCurryEffects,
+    runCurryEffectsC,
+    runSmartCurryEffects,
+    declutter,
+) where
 
 import Curry.FlatCurry (Literal (..), QName, VarIndex)
 import Data.List (intercalate)
@@ -16,16 +24,16 @@ import Effect.FlatCurry.Constructor
 import Effect.FlatCurry.Declarations
 import Effect.FlatCurry.Function
 import Effect.FlatCurry.IO (IOC (..), runIO, runIOSmart)
-import Effect.General.Error (Error (..), runError, runErrorC, runErrorSmart, ErrorL, EC)
+import Effect.General.Error (EC, Error (..), ErrorL, runError, runErrorC, runErrorSmart)
 import Effect.General.Memoization
-import Effect.General.ND (runND, runNDC, runNDSmart, ListL, NDC)
+import Effect.General.ND (ListL, NDC, runND, runNDC, runNDSmart)
 import Effect.General.State
 import Free
 import GHC.Plugins (splitUniqSupply)
 import GHC.Types.Unique.Supply (mkSplitUniqSupply)
+import Signature (Id)
 import Transformation.FCY2AE
 import Type (AEProg, Ptr (..))
-import Signature (Id)
 
 runCurryEffects
     :: (Show a)
@@ -49,10 +57,9 @@ runCurryEffects ps e = do
     pipeline (initDecls ps >> e)
 
 runSmartCurryEffects
-    :: (Show a)
-    => [AEProg (SmartProg (CurryEffects a) a)]
-    -> SmartProg (CurryEffects a) a
-    -> IO ([TraceInfo], Error [(Constraints, Value (Closure a))])
+    :: [AEProg (SmartProg (CurryEffects ()) ())]
+    -> SmartProg (CurryEffects ()) ()
+    -> IO ([TraceInfo], Error [(Constraints, Value (Closure ()))])
 runSmartCurryEffects ps e = do
     sup <- mkSplitUniqSupply 'a'
     let (sup1, sup2) = splitUniqSupply sup
@@ -68,10 +75,11 @@ runSmartCurryEffects ps e = do
                 . runPartialSmart
                 . runDeclSmart []
     pipeline (initDecls ps >> e)
-
-{-# SPECIALISE runSmartCurryEffects :: [AEProg (SmartProg (CurryEffects ()) ())]
+{-# SPECIALIZE runSmartCurryEffects ::
+    [AEProg (SmartProg (CurryEffects ()) ())]
     -> SmartProg (CurryEffects ()) ()
-    -> IO ([TraceInfo], Error [(Constraints, Value (Closure ()))]) #-}
+    -> IO ([TraceInfo], Error [(Constraints, Value (Closure ()))])
+    #-}
 
 declutter :: (Show a) => ([TraceInfo], Error [(Constraints, Value (Closure a))]) -> ([TraceInfo], [Result])
 declutter (ti, Error s) = (ti, [RError s])
@@ -150,56 +158,88 @@ parOnce "" = ""
 parOnce s@('(' : _) = s
 parOnce s = '(' : s ++ ")"
 
-type L a = StateL [TraceInfo]
-                      (ErrorL
-                         (ListL
-                            (StateL
-                               Constraints
-                                  (StateL
-                                     RState
-                                        (StateL
-                                           (ThunkStore (ValueL (ClosureL Id)) a)
-                                           (ValueL (ClosureL Id)))))))
+type L a =
+    StateL
+        [TraceInfo]
+        ( ErrorL
+            ( ListL
+                ( StateL
+                    Constraints
+                    ( StateL
+                        RState
+                        ( StateL
+                            (ThunkStore (ValueL (ClosureL Id)) a)
+                            (ValueL (ClosureL Id))
+                        )
+                    )
+                )
+            )
+        )
 
-type M a =           Cod
-                         (H (Cod
-                               (PC
-                                  (Cod
-                                     (CC
-                                        (Cod
-                                           (MC
-                                                    (Cod
-                                                       (STC
-                                                          Rename
-                                                            RState
-                                                                (Cod
-                                                                   (STC
-                                                                      CStore
-                                                                      Constraints
-                                                                      (Cod
-                                                                         (NDC
-                                                                            (Cod
-                                                                               (EC
-                                                                                  (Cod
-                                                                                    (STC Trace [TraceInfo]
-                                                                                      (Cod
-                                                                                        (IOC
-                                                                                          (L
-                                                                                             a)))))))))))))
-                                              (ValueL (ClosureL Id))
-                                              a))))))
-                            Id
-                            a)
+type M a =
+    Cod
+        ( H
+            ( Cod
+                ( PC
+                    ( Cod
+                        ( CC
+                            ( Cod
+                                ( MC
+                                    ( Cod
+                                        ( STC
+                                            Rename
+                                            RState
+                                            ( Cod
+                                                ( STC
+                                                    CStore
+                                                    Constraints
+                                                    ( Cod
+                                                        ( NDC
+                                                            ( Cod
+                                                                ( EC
+                                                                    ( Cod
+                                                                        ( STC
+                                                                            Trace
+                                                                            [TraceInfo]
+                                                                            ( Cod
+                                                                                ( IOC
+                                                                                    ( L
+                                                                                        a
+                                                                                    )
+                                                                                )
+                                                                            )
+                                                                        )
+                                                                    )
+                                                                )
+                                                            )
+                                                        )
+                                                    )
+                                                )
+                                            )
+                                        )
+                                    )
+                                    (ValueL (ClosureL Id))
+                                    a
+                                )
+                            )
+                        )
+                    )
+                )
+            )
+            Id
+            a
+        )
 
 -- -- {-# SPECIALISE runCurryEffectsC :: [AEProg ((M ()) ())]
 -- --                  -> (M ()) ()
 -- --                  -> IO (Error [(Constraints, Value (Closure ()))]) #-}
 
-runCurryEffectsC :: forall a.
- (Show a)
- => [AEProg ((M a) a)]
- -> (M a) a
- -> IO ([TraceInfo], Error [(Constraints, Value (Closure a))])
+runCurryEffectsC
+    :: forall a
+     . (Show a)
+    => [AEProg ((M a) a)]
+    -> (M a) a
+    -> IO ([TraceInfo], Error [(Constraints, Value (Closure a))])
 runCurryEffectsC ps e = do
     sup <- mkSplitUniqSupply 'a'
     let (sup1, sup2) = splitUniqSupply sup

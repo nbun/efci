@@ -10,15 +10,31 @@
 {-# HLINT ignore "Use lambda-case" #-}
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE TupleSections #-}
 
-module Effect.FlatCurry.Function where
+module Effect.FlatCurry.Function (
+    apply,
+    fun,
+    partial,
+    lambda,
+    external,
+    Partial,
+    CombType (..),
+    Closure (..),
+    ClosureL (..),
+    PC,
+    runPartial,
+    runPartialSmart,
+    missingArgs,
+    runPartialC,
+) where
 
 import Curry.FlatCurry.Type (QName, VarIndex)
 
+import Control.Monad (void)
 import Effect.FlatCurry.Constructor hiding (External)
 import Effect.FlatCurry.Declarations (DeclF, getBody)
 import Effect.FlatCurry.IO
@@ -29,9 +45,7 @@ import Effect.General.ND
 import Effect.General.State
 import Free
 import Signature
-import Control.Monad (void)
 import Type
-
 
 type Functions sig sigs sigl a =
     ( '[ConsF, Err, IOAction, ConstraintStore, ND] :.: sig
@@ -49,9 +63,10 @@ fun
     => QName
     -> Args m a
     -> m a
-fun qn args = logCallWith (show qn) >> do
-  newRenamingScope
-  apply (getBody qn) args
+fun qn args =
+    logCallWith (show qn) >> do
+        newRenamingScope
+        apply (getBody qn) args
 {-# INLINE fun #-}
 
 -- partial functions --
@@ -92,9 +107,10 @@ external :: (EffectCons m sig sigs sigl Id, Partial :<: sigs, Thunking a :<<<<: 
 external s = logCall >> injectS (Ext s)
 
 lambda :: (EffectCons m sig sigs sigl Id, Partial :<: sigs, Thunking a :<<<<: sigl) => [Ptr] -> m a -> m a
-lambda vs e = logCall >> do
-    ptr <- store e
-    injectS (Abs vs ptr)
+lambda vs e =
+    logCall >> do
+        ptr <- store e
+        injectS (Abs vs ptr)
 
 partial
     :: (EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl, Partial :<: sigs)
@@ -116,15 +132,16 @@ decArgs (FuncPartCall i) = FuncPartCall (i - 1)
 decArgs (ConsPartCall i) = ConsPartCall (i - 1)
 
 apply :: (EffectCons m sig sigs sigl Id, Functions sig sigs sigl a) => m a -> Args m a -> m a
-apply lam args = logCall >> do
-    injectS $ FApply (fmap return lam) (return . k)
+apply lam args =
+    logCall >> do
+        injectS $ FApply (fmap return lam) (return . k)
   where
     k (Lambda vs ptr) = let' vs args (force ptr)
     k (External s) = callExternal s args
     k (Closure qn combtype ptrs) = do
         new <- case args of
-                 Progs ps -> mapM store ps
-                 Thunks ptrs' -> return ptrs'
+            Progs ps -> mapM store ps
+            Thunks ptrs' -> return ptrs'
         let ptrs' = ptrs ++ new
          in case combtype of
                 FuncPartCall 1 -> do
@@ -133,56 +150,57 @@ apply lam args = logCall >> do
                 _ -> injectS $ PartCall qn (decArgs combtype) ptrs'
     k _ = undefined
 
-
 callExternal
     :: (EffectCons m sig sigs sigl Id, Functions sig sigs sigl a)
     => String
     -> Args m a
     -> m a
-callExternal f args = logCall >> do
-      let args' = case args of
-                    Progs ps -> ps
-                    Thunks ptrs -> map force ptrs
-      case (f, args') of
-        ("Prelude.plusInt", [px, py]) -> arithInt (+) px py
-        ("Prelude.minusInt", [px, py]) -> arithInt (-) px py
-        ("Prelude.timesInt", [px, py]) -> arithInt (*) px py
-        ("Prelude.divInt", [px, py]) -> arithInt div px py
-        ("Prelude.modInt", [px, py]) -> arithInt mod px py
-        ("Prelude.eqInt", [px, py]) -> compInt (==) px py
-        ("Prelude.ltEqInt", [px, py]) -> compInt (<=) px py
-        ("Prelude.eqChar", [px, py]) -> compChar (==) px py
-        ("Prelude.returnIO", [px]) -> px
-        ( "Prelude.bindIO"
-            , [px, pf]
-            ) -> px >>= \x -> apply pf (single (return x))
-        ("Prelude.getChar", []) -> getCharIO
-        ("Prelude.prim_putChar", [pc]) -> putCharIO pc
-        ("Prelude.prim_writeFile", [pfp, ps]) -> writeFileIO pfp (normalform ps)
-        ("Prelude.prim_appendFile", [pfp, ps]) -> appendFileIO pfp (normalform ps)
-        ("Prelude.prim_readFile", [pfp]) -> readFileIO pfp
-        ("Prelude.ensureNotFree", [p]) -> p
-        ("Prelude.$!", [pf, px]) -> apply pf (single px)
-        ("Prelude.$##", [pf, px]) -> apply pf (single $ normalform px)
-        ("Prelude.prim_error", [p]) -> err p
-        ("Prelude.=:=", [px, py]) -> unify px py
-        _ ->
-            error $
-                "Missing definition for "
-                    ++ show f
-
+callExternal f args =
+    logCall >> do
+        let args' = case args of
+                Progs ps -> ps
+                Thunks ptrs -> map force ptrs
+        case (f, args') of
+            ("Prelude.plusInt", [px, py]) -> arithInt (+) px py
+            ("Prelude.minusInt", [px, py]) -> arithInt (-) px py
+            ("Prelude.timesInt", [px, py]) -> arithInt (*) px py
+            ("Prelude.divInt", [px, py]) -> arithInt div px py
+            ("Prelude.modInt", [px, py]) -> arithInt mod px py
+            ("Prelude.eqInt", [px, py]) -> compInt (==) px py
+            ("Prelude.ltEqInt", [px, py]) -> compInt (<=) px py
+            ("Prelude.eqChar", [px, py]) -> compChar (==) px py
+            ("Prelude.returnIO", [px]) -> px
+            ( "Prelude.bindIO"
+                , [px, pf]
+                ) -> px >>= \x -> apply pf (single (return x))
+            ("Prelude.getChar", []) -> getCharIO
+            ("Prelude.prim_putChar", [pc]) -> putCharIO pc
+            ("Prelude.prim_writeFile", [pfp, ps]) -> writeFileIO pfp (normalform ps)
+            ("Prelude.prim_appendFile", [pfp, ps]) -> appendFileIO pfp (normalform ps)
+            ("Prelude.prim_readFile", [pfp]) -> readFileIO pfp
+            ("Prelude.ensureNotFree", [p]) -> p
+            ("Prelude.$!", [pf, px]) -> apply pf (single px)
+            ("Prelude.$##", [pf, px]) -> apply pf (single $ normalform px)
+            ("Prelude.prim_error", [p]) -> err p
+            ("Prelude.=:=", [px, py]) -> unify px py
+            _ ->
+                error $
+                    "Missing definition for "
+                        ++ show f
 
 runPartial
     :: forall sig sigs sigl l a
      . Prog (Sig sig (Partial :+: sigs) sigl l) a
     -> Prog (Sig sig sigs sigl (ClosureL l)) (Closure a)
 runPartial = unPC . fold point con
+{-# INLINE runPartial #-}
 
 runPartialSmart
     :: forall sig sigs sigl l a
      . SmartProg (Sig sig (Partial :+: sigs) sigl l) a
     -> SmartProg (Sig sig sigs sigl (ClosureL l)) (Closure a)
 runPartialSmart = unPC . smartFold point con
+{-# INLINE runPartialSmart #-}
 
 instance
     (EffectMonad m sig sigs sigl (ClosureL l))

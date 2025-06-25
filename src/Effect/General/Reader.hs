@@ -12,12 +12,12 @@
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
-module Effect.General.Reader where
+module Effect.General.Reader () where
 
+import Effect.General.State (EffectCons, logCall)
 import Free
 import Signature
 import Type (AEProg)
-import Effect.General.State (EffectCons, logCall)
 
 newtype ReaderF tag r a = Ask (r -> a)
     deriving (Functor)

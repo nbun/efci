@@ -8,7 +8,15 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Effect.General.Error where
+module Effect.General.Error (
+    Err (..),
+    Error (..),
+    runError,
+    runErrorC,
+    runErrorSmart,
+    ErrorL,
+    EC,
+) where
 
 import Free
 import Signature

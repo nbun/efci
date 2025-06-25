@@ -1,5 +1,5 @@
 {-# LANGUAGE NoStrict #-}
-module Debug where
+module Debug  (tracingActive, ctrace, strace) where
 
 import Debug.HTrace (htrace)
 

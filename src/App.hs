@@ -1,6 +1,6 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE BangPatterns #-}
-module App where
+module App (main, execute, defaultToolOpts) where
 
 import Base.Messages (Message, putErrLn)
 import Checks (expandExports)
@@ -200,7 +200,7 @@ run topts progs fcyrunner = do
            Smart -> do
               let aprogs' = map fcyProg2ae progs
                   runner = fcyRunner2ae (fdclRule fcyrunner)
-              runSmartCurryEffects @() aprogs' runner
+              runSmartCurryEffects aprogs' runner
   -- when (showFlatCurryExpr topts) $ print fcyrunner\
   end <- getTime Monotonic
   when (time topts) (printTime start end)
