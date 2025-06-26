@@ -54,12 +54,25 @@ instance (HFunctor k) => Applicative (Prog k) where
     Call op <*> p = Call (fmap (<*> p) op)
 
 fold :: forall k f a b. (HFunctor k, Pointed f) => (a -> f b) -> (forall x. k f (f x) -> f x) -> Prog k a -> f b
-fold gen alg (Return x) = gen x
-fold gen alg (Call op) = alg (hmap fold' (fmap (fold gen alg) op))
+fold gen alg = go
   where
+    go :: Prog k a -> f b
+    go (Return x) = gen x
+    go (Call op) = alg (hmap fold' (fmap go op))
+    
     fold' :: Prog k --> f
     fold' (Return x) = point x
     fold' (Call op) = alg (hmap fold' (fmap fold' op))
+
+-- smartFold' :: forall k k' f a b. (f ~ SmartProg k', HFunctor k, Pointed f) => (a -> f b) -> (forall x. k f (f x) -> f x) -> SmartProg k a -> f b
+-- smartFold' = smartFold
+
+-- test :: (HFunctor k'1, HFunctor k'2, HFunctor k) => (a1 -> SmartProg k'2 a2) -> (forall x. k'1 (SmartProg k'2) (SmartProg k'2 x) -> SmartProg k'2 x) -> (a -> SmartProg k'1 a1) -> (forall x. k (SmartProg k'1) (SmartProg k'1 x) -> SmartProg k'1 x) -> SmartProg k a -> SmartProg k'2 a2
+-- test gen1 alg1 gen2 alg2 p = smartFold' gen1 alg1 (smartFold' gen2 alg2 p)
+-- test gen1 alg1 gen2 alg2 p = smartFold' gen alg p
+--   where gen x = undefined
+        -- alg :: k (SmartProg k'2) (SmartProg k'2 x) -> SmartProg k'2 x
+        -- alg = hmap undefined alg1
 
 smartFold :: forall k f a b. (HFunctor k, Pointed f) => (a -> f b) -> (forall x. k f (f x) -> f x) -> SmartProg k a -> f b
 smartFold gen alg = smartFold'
@@ -77,11 +90,12 @@ smartFold gen alg = smartFold'
 class (Functor f) => Pointed f where
     point :: a -> f a
 
-instance Pointed [] where
-    point = return
+-- instance Pointed [] where
+    -- point = return
 
 instance (HFunctor k) => Pointed (Prog k) where
     point = Return
+    {-# INLINE point #-}
 
 -- fusion for free --
 

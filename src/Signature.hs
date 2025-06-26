@@ -89,6 +89,7 @@ newtype Id a = Id {unId :: a} deriving (Functor, Show)
 
 instance Pointed Id where
     point = Id
+    {-# INLINE point #-}
 
 instance Applicative Id where
     Id f <*> Id x = Id (f x)
@@ -174,6 +175,7 @@ instance HFunctor (Sig sig sigs sigl l) where
     hmap f (A a) = A (hmap f a)
     hmap f (S s) = S (hmap f s)
     hmap f (L l) = L (hmap f l)
+    {-# INLINE hmap #-}
 
 class Lift g h | g -> h, h -> g where
     lift

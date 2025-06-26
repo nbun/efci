@@ -211,7 +211,7 @@ run topts progs fcyrunner = do
   let (ti, values) = declutter res
       stats = statistics ti
       sum = foldr (\(_, n) !acc -> n + acc) 0 stats
-  when tracingActive (print ti)
+  -- when tracingActive (print ti)
   when tracingActive (mapM_ print stats >> putStrLn ("Total: " ++ show sum))
   return values
 

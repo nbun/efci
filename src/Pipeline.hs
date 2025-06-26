@@ -8,6 +8,7 @@
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# OPTIONS_GHC -ddump-simpl -dsuppress-all #-}
 
+
 module Pipeline (
     Result (..),
     pretty,
@@ -75,11 +76,6 @@ runSmartCurryEffects ps e = do
                 . runPartialSmart
                 . runDeclSmart []
     pipeline (initDecls ps >> e)
-{-# SPECIALIZE runSmartCurryEffects ::
-    [AEProg (SmartProg (CurryEffects ()) ())]
-    -> SmartProg (CurryEffects ()) ()
-    -> IO ([TraceInfo], Error [(Constraints, Value (Closure ()))])
-    #-}
 
 declutter :: (Show a) => ([TraceInfo], Error [(Constraints, Value (Closure a))]) -> ([TraceInfo], [Result])
 declutter (ti, Error s) = (ti, [RError s])
