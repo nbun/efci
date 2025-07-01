@@ -2,9 +2,9 @@
 {-# LANGUAGE BangPatterns #-}
 module App (main, execute, defaultToolOpts) where
 
-import Base.Messages (Message, putErrLn)
-import Checks (expandExports)
-import CompilerOpts (
+import Curry.Frontend.Base.Messages (Message, putErrLn)
+import Curry.Frontend.Checks (expandExports)
+import Curry.Frontend.CompilerOpts (
   CppOpts (..),
   DumpLevel (..),
   OptimizationOpts (..),
@@ -30,16 +30,16 @@ import Curry.FlatCurry.Annotated.Type (
   ARule,
   TypeExpr,
  )
-import CurryBuilder (findCurry, processPragmas)
-import CurryDeps (Source (..), flatDeps)
+import Curry.Frontend.CurryBuilder (findCurry, processPragmas)
+import Curry.Frontend.CurryDeps (Source (..), flatDeps)
 import Data.Functor ((<&>))
 import Data.List (sort, (\\))
 import Data.Map (fromList)
 import Data.Maybe (catMaybes)
 import GHC.GHCi.Helpers (flushAll)
-import Generators (genFlatCurry)
-import Generators.GenAnnotatedFlatCurry (genAnnotatedFlatCurry)
-import Modules (
+import Curry.Frontend.Generators (genFlatCurry)
+import Curry.Frontend.Generators.GenAnnotatedFlatCurry (genAnnotatedFlatCurry)
+import Curry.Frontend.Modules (
   dumpWith,
   exportInterface,
   loadAndCheckModule,
@@ -57,7 +57,7 @@ import System.FilePath (
  )
 import System.Timeout (timeout)
 import Transformation.FCY2AE (fcyProg2ae, fcyRunner2ae)
-import Transformations (qual)
+import Curry.Frontend.Transformations (qual)
 import Type (fdclBdy, reqFuncs, withoutTDecls)
 import Effect.General.State (statistics)
 import Debug (tracingActive)
@@ -237,19 +237,18 @@ fdclRule _ = error "Syntax.fdclExpr: external rule"
 genTAFCY :: Options -> String -> IO [AProg TypeExpr]
 genTAFCY opts s = do
   unless (isPrefix "Run" s) (putStrLn $ "Loading module " ++ s)
-  res <- runCYIO $
+  (res, warns) <- runCYIO $
     do
       fn <- findCurry opts s
       flatDeps opts fn
+  unless (null warns) (printMessages ppWarning warns)
   case res of
     Left errs -> error $ show errs
-    Right (deps, warns) -> do
-      unless (null warns) (printMessages ppWarning warns)
-      makeCurry opts deps
+    Right deps -> makeCurry opts deps
 
 compileModule :: Options -> ModuleIdent -> FilePath -> IO (AProg TypeExpr)
 compileModule opts m fn = do
-  res <- runCYIO $
+  (res, warns) <- runCYIO $
     do
       mdl <- loadAndCheckModule opts m fn
       mdl' <- expandExports opts mdl
@@ -259,10 +258,10 @@ compileModule opts m fn = do
       writeInterface opts (fst mdl') intf
       res@(_, qmdl'') <- transModule opts qmdl'
       return res
+  unless (null warns) (printMessages ppWarning warns)
   case res of
     Left errs -> printMessages ppError errs >> error "Loading file failed"
-    Right (((env, il), mdl''), warns) -> do
-      unless (null warns) (printMessages ppWarning warns)
+    Right ((env, il), mdl'') -> do
       let res = genAnnotatedFlatCurry False env (snd mdl'') il
       _ <- dumpWith opts show (pPrint . genFlatCurry) DumpFlatCurry (env, res)
       return res
@@ -272,11 +271,11 @@ makeCurry :: Options -> [(ModuleIdent, Source)] -> IO [AProg TypeExpr]
 makeCurry opts srcs = mapM process' (zip [1 ..] srcs) <&> catMaybes
  where
   process' (n, (m, Source fn ps is)) = do
-    res <- runCYIO $ processPragmas opts ps
+    (res, warns) <- runCYIO $ processPragmas opts ps
+    unless (null warns) (printMessages ppWarning warns)
     case res of
       Left errs -> error $ show errs
-      Right (opts', warns) -> do
-        unless (null warns) (printMessages ppWarning warns)
+      Right opts' -> do
         prog <- compileModule opts' m fn -- (adjustOptions (n == total) opts') m fn
         return (Just prog)
   process' (_, (m, _)) =

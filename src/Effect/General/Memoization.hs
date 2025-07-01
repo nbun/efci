@@ -61,15 +61,6 @@ data Thunking v :: Type -> (Type -> Type) -> Type where
     Store :: Thunking v Ptr (OneSub v)
     Force :: Ptr -> Thunking v v NoSub
     Redirect :: (Ptr, Ptr) -> Thunking v () NoSub
-    CBV :: Thunking v v (OneSub v)
-
-cbv
-    :: forall m sig sigs sigl v
-     . (EffectCons m sig sigs sigl Id, Thunking v :<<<<: sigl)
-    => m v
-    -> m v
-cbv t = logCall >> injectL (CBV :: Thunking v v (OneSub v)) (Id ()) (\One _ -> fmap Id t) (return . unId)
-{-# INLINE cbv #-}
 
 store
     :: forall m sig sigs sigl v
@@ -156,22 +147,20 @@ instance (Functor l, EffectMonad m sig sigs sigl (StateL (ThunkStore l v) l), Sh
             let (!fresh, sup') = freshPtr sup
                 th' = if ptrKey fresh `mod` 20000 == 0 then purge th else th
              in unMC (k (fresh <$ l)) (TS sup' (addEntry fresh (Thunked (unsafeCoerce $ st One)) th'))
-    con (L (Node (Inl3 (Force p)) l st k)) = MC $ \ts -> ctrace ("force") $ retrieve p ts
-      where
-        retrieve ptr ts@(TS _ th) = case lookupEntry ptr th of
-            Thunked t -> do
-                (TS sup' th', lv) <- unMC (unsafeCoerce $ t l) ts
-                unMC (k lv) (ctrace ("evaluate " ++ show ptr ++ show lv) (TS sup' (addEntry ptr (Evaluated lv) th')))
-            Evaluated lv -> ctrace ("memoized " ++ show ptr ++ show lv) $ unMC (k lv) ts
-            Redirected p' -> ctrace ("redirect " ++ show ptr ++ " -> " ++ show p') $ retrieve p' ts
+    con (L (Node (Inl3 (Force p)) l st k)) = MC $ \ts@(TS _ th) ->
+        let retrieve ptr = case lookupEntry ptr th of
+                Thunked t -> do
+                    (TS sup' th', lv) <- unMC (unsafeCoerce $ t l) ts
+                    let ts' = TS sup' (addEntry ptr (Evaluated lv) th')
+                    unMC (k lv) (ctrace ("evaluate " ++ show ptr ++ show lv) ts')
+                Evaluated lv -> ctrace ("memoized " ++ show ptr ++ show lv) $ unMC (k lv) ts
+                Redirected p' -> ctrace ("redirect " ++ show ptr ++ " -> " ++ show p') $ retrieve p'
+         in ctrace ("force") $ retrieve p
     con (L (Node (Inl3 (Redirect (p, p'))) l _ k)) = MC $ \(TS sup th) -> ctrace ("redirect " ++ show (p, p')) $ do
         let skipRedirects th ptr = case lookupEntry ptr th of
                 Redirected ptr' -> skipRedirects th ptr'
                 _ -> ptr
         unMC (k l) (TS sup (addEntry p (Redirected (skipRedirects th p')) th))
-    con (L (Node (Inl3 CBV) l st k)) = MC $ \ts -> do
-        (ts', lv) <- unMC (unsafeCoerce $ st One) ts
-        unMC (k lv) (ctrace ("cbv " ++ show lv) ts')
     con (L (Node (Inr3 op) l st k)) = MC $ \th ->
         con $
             L $

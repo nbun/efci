@@ -16,6 +16,7 @@ module Pipeline (
     runCurryEffectsC,
     runSmartCurryEffects,
     declutter,
+    withoutBindings,
 ) where
 
 import Curry.FlatCurry (Literal (..), QName, VarIndex)

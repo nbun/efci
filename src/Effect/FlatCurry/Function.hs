@@ -182,11 +182,13 @@ callExternal f args =
             ("Prelude.$!", [pf, px]) -> apply pf (single px)
             ("Prelude.$##", [pf, px]) -> apply pf (single $ normalform px)
             ("Prelude.prim_error", [p]) -> err p
-            ("Prelude.=:=", [px, py]) -> unify px py
+            ("Prelude.=:=", [_, px, py]) -> unify px py
             _ ->
                 error $
                     "Missing definition for "
                         ++ show f
+                        ++ " with arity "
+                        ++ show (length args')
 
 runPartial
     :: forall sig sigs sigl l a
