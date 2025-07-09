@@ -148,10 +148,10 @@ apply lam args =
                     fun qn (Thunks ptrs')
                 ConsPartCall 1 -> cons qn (Thunks ptrs')
                 _ -> injectS $ PartCall qn (decArgs combtype) ptrs'
-    k _ = undefined
+    k _ = lam -- This case is relevant for (>>=), where the applied value might not be an actual function
 
 callExternal
-    :: (EffectCons m sig sigs sigl Id, Functions sig sigs sigl a)
+    :: forall m sig sigs sigl a. (EffectCons m sig sigs sigl Id, Functions sig sigs sigl a)
     => String
     -> Args m a
     -> m a
@@ -169,10 +169,13 @@ callExternal f args =
             ("Prelude.eqInt", [px, py]) -> compInt (==) px py
             ("Prelude.ltEqInt", [px, py]) -> compInt (<=) px py
             ("Prelude.eqChar", [px, py]) -> compChar (==) px py
-            ("Prelude.returnIO", [px]) -> px
+            ("Prelude.returnIO", [px]) -> lambda [] px
             ( "Prelude.bindIO"
                 , [px, pf]
-                ) -> px >>= \x -> apply pf (single (return x))
+                ) -> do
+                    ptr <- cbv px
+                    apply pf (single (apply (force ptr) (Progs [])))
+
             ("Prelude.getChar", []) -> getCharIO
             ("Prelude.prim_putChar", [pc]) -> putCharIO pc
             ("Prelude.prim_writeFile", [pfp, ps]) -> writeFileIO pfp (normalform ps)

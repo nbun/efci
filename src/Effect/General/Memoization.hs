@@ -34,6 +34,7 @@ module Effect.General.Memoization (
     runLazy,
     runLazySmart,
     runLazyC,
+    cbv,
 ) where
 
 import Free
@@ -59,8 +60,19 @@ import Unsafe.Coerce (unsafeCoerce)
 data Thunking v :: Type -> (Type -> Type) -> Type where
     Thunk :: Ptr -> Thunking v () (OneSub v)
     Store :: Thunking v Ptr (OneSub v)
+    Eval :: Thunking v Ptr (OneSub v)
     Force :: Ptr -> Thunking v v NoSub
     Redirect :: (Ptr, Ptr) -> Thunking v () NoSub
+
+cbv
+    :: forall m sig sigs sigl v
+     . (EffectCons m sig sigs sigl Id, Thunking v :<<<<: sigl)
+    => m v
+    -> m Ptr
+cbv t =
+    logCall
+        >> injectL (Eval :: Thunking v Ptr (OneSub v)) (Id ()) (\One _ -> fmap Id t) (return . unId)
+{-# INLINE cbv #-}
 
 store
     :: forall m sig sigs sigl v
@@ -147,6 +159,13 @@ instance (Functor l, EffectMonad m sig sigs sigl (StateL (ThunkStore l v) l), Sh
             let (!fresh, sup') = freshPtr sup
                 th' = if ptrKey fresh `mod` 20000 == 0 then purge th else th
              in unMC (k (fresh <$ l)) (TS sup' (addEntry fresh (Thunked (unsafeCoerce $ st One)) th'))
+    con (L (Node (Inl3 Eval) l st k)) = MC $ \(TS sup th) ->
+        ctrace ("stored ") $
+            let (!fresh, sup') = freshPtr sup
+                th' = if ptrKey fresh `mod` 20000 == 0 then purge th else th
+             in do 
+                (TS sup'' th'', lv) <- unMC (st One l) (TS sup' th')
+                unMC (k (fresh <$ l)) (TS sup'' (addEntry fresh (Evaluated  lv) th''))
     con (L (Node (Inl3 (Force p)) l st k)) = MC $ \ts@(TS _ th) ->
         let retrieve ptr = case lookupEntry ptr th of
                 Thunked t -> do
