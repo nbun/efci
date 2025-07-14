@@ -78,11 +78,11 @@ runNDC = unNDC . runCod var
 {-# INLINE runNDC #-}
 
 instance (EffectMonad m sig sigs sigl (ListL l)) => TermAlgebra (NDC m) (Sig (ND :+: sig) sigs sigl l) where
-    con (A (Algebraic op)) = (alg # afwd) op
+    con (A (Algebraic op)) = NDC . (alg # afwd) . fmap unNDC $ op
       where
-        alg Fail = NDC $ return []
-        alg (Or l r) = NDC $ (++) <$> unNDC l <*> unNDC r
-        afwd = NDC . con . A . Algebraic . fmap unNDC
+        alg Fail = return []
+        alg (Or l r) = (++) <$> l <*> r
+        afwd = con . A . Algebraic
     con (S (Enter op)) = NDC . con . S . Enter . fmap (fmap lift . unNDC . fmap unNDC) $ op
     con (L (Node op l st k)) = NDC $ con $ L $ Node op (ListL [l]) (st' st) k'
       where

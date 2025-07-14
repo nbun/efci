@@ -131,11 +131,12 @@ decArgs :: CombType -> CombType
 decArgs (FuncPartCall i) = FuncPartCall (i - 1)
 decArgs (ConsPartCall i) = ConsPartCall (i - 1)
 
-apply :: (EffectCons m sig sigs sigl Id, Functions sig sigs sigl a) => m a -> Args m a -> m a
+apply :: forall m sig sigs sigl a. (EffectCons m sig sigs sigl Id, Functions sig sigs sigl a) => m a -> Args m a -> m a
 apply lam args =
     logCall >> do
         injectS $ FApply (fmap return lam) (return . k)
   where
+    k :: Closure () -> m a
     k (Lambda vs ptr) = let' vs args (force ptr)
     k (External s) = callExternal s args
     k (Closure qn combtype ptrs) = do
@@ -148,7 +149,7 @@ apply lam args =
                     fun qn (Thunks ptrs')
                 ConsPartCall 1 -> cons qn (Thunks ptrs')
                 _ -> injectS $ PartCall qn (decArgs combtype) ptrs'
-    k _ = lam -- This case is relevant for (>>=), where the applied value might not be an actual function
+    -- k _ = lam -- This case is relevant for (>>=), where the applied value might not be an actual function
 
 callExternal
     :: forall m sig sigs sigl a. (EffectCons m sig sigs sigl Id, Functions sig sigs sigl a)
@@ -212,20 +213,19 @@ instance
     => TermAlgebra (PC m) (Sig sig (Partial :+: sigs) sigl l)
     where
     con (A (Algebraic op)) = PC $ con (A (Algebraic (fmap unPC op)))
-    con (S (Enter op)) = (algP # sfwd) op
+    con (S (Enter op)) = PC . (algP # sfwd) $ op
       where
-        algP (PartCall qn combtype args) = PC $ return $ Closure qn combtype args
-        algP (FApply f k) = PC $
-            do
+        algP (PartCall qn combtype args) = return $ Closure qn combtype args
+        algP (FApply f k) = do
                 cl <- unPC f
                 case cl of
                     Other x -> unPC x
                     _ -> do
                         t' <- unPC $ k (void cl)
                         (lift . fmap unPC) t'
-        algP (Abs vs ptr) = PC $ return $ Lambda vs ptr
-        algP (Ext s) = PC $ return $ External s
-        sfwd op = PC $ con $ S $ Enter $ fmap (fmap lift . unPC . fmap unPC) op
+        algP (Abs vs ptr) = return $ Lambda vs ptr
+        algP (Ext s) = return $ External s
+        sfwd op = con $ S $ Enter $ fmap (fmap lift . unPC . fmap unPC) op
     con (L (Node op l st k)) = PC $ con $ L $ Node op (ClosureL $ Other l) (st' st) k'
       where
         st' st2 c l' = lift2 (fmap (\x -> ClosureL <$> unPC (st2 c x)) (unClosureL l'))

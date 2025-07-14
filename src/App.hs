@@ -1,6 +1,6 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE BangPatterns #-}
-module App (main, execute, defaultToolOpts) where
+module App (main, execute, defaultToolOpts, loadProg, ToolOpts(..), Mode(..)) where
 
 import Curry.Frontend.Base.Messages (Message, putErrLn)
 import Curry.Frontend.Checks (expandExports)

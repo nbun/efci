@@ -135,6 +135,7 @@ case' cp brs =
                 (AELPattern lp, e) -> do
                     modify @CStore (addC i (LitC lp))
                     e
+        match (ValOther ()) (AEPattern ("Prelude", "()") [], e) = Just e
         match v ps =
             error $
                 "Pattern match not implemented for " ++ show v ++ show (fst ps)
@@ -188,13 +189,12 @@ instance
         algCa (FFree i) = return (Free i)
 
         afwd = con . A . Algebraic
-    con (S (Enter op)) = (algCs # sfwd) op
+    con (S (Enter op)) = CC . (algCs # sfwd) $ op
       where
-        algCs (Case ce k) = CC $ do
+        algCs (Case ce k) = do
             hnf <- unCC ce
             unCC (k (void hnf)) >>= lift'
-        algCs (Normalize ce k) = CC $
-            do
+        algCs (Normalize ce k) = do
                 hnf <- unCC ce
                 case hnf of
                     HNF qn args -> do
@@ -207,20 +207,17 @@ instance
                     Free i -> return $ Free i
                     Cons qn args -> mapM lift' args <&> Cons qn
                     ValOther x -> unCC x
-        algCs (External ps k) = CC $
-            do
+        algCs (External ps k) = do
                 hnfs <- mapM unCC ps
                 hnf <- unCC $ k (map void hnfs)
                 lift' hnf
-        algCs (Unify e1 e2 k) = CC $
-            do
+        algCs (Unify e1 e2 k) = do
                 hnf1 <- unCC e1
                 hnf2 <- unCC e2
                 hnf <- unCC (k (void hnf1, void hnf2))
                 lift' hnf
-
         lift' = lift . fmap unCC
-        sfwd op = CC $ con $ S $ Enter $ fmap (fmap lift . unCC . fmap unCC) op
+        sfwd op = con $ S $ Enter $ fmap (fmap lift . unCC . fmap unCC) op
     con (L (Node op l st k)) = CC $ con $ L $ Node op (ValueL $ ValOther l) (st' st) k'
       where
         st' st2 c l' = lift2 (fmap (\x -> ValueL <$> unCC (st2 c x)) (unValueL l'))
