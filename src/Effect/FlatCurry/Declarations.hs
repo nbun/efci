@@ -43,11 +43,11 @@ data DeclF v :: * -> (* -> *) -> * where
 data ManySub v :: * -> * where
     Many :: QName -> ManySub v v
 
-type Progs m l v = [AEProg (l () -> H m l v (l v))]
+type Progs m l v = [AEProg (l () -> H l v m (l v))]
 
-newtype H m l v a = H {unH :: Progs m l v -> m a}
+newtype H l v m a = H {unH :: Progs m l v -> m a}
 
-instance (Functor m) => Functor (H m l v) where
+instance (Functor m) => Functor (H l v m) where
     fmap f (H x) = H $ \th -> fmap f (x th)
     {-# INLINE fmap #-}
 
@@ -77,42 +77,50 @@ hDeclSmart
 hDeclSmart = unH . smartFold point con
 {-# INLINE hDeclSmart #-}
 
-addBody :: (ManySub v v -> l () -> H m l v (l v)) -> AEFuncDecl a -> AEFuncDecl (l () -> H m l v (l v))
+addBody :: (ManySub v v -> l () -> H l v m (l v)) -> AEFuncDecl a -> AEFuncDecl (l () -> H l v m (l v))
 addBody get (AEFunc qn ar vis ty _) = AEFunc qn ar vis ty (get (Many qn))
 
-instance (Functor l, EffectMonad m sig sigs sigl l, Show (l v)) => TermAlgebra (H m l v) (Sig sig sigs (DeclF v :+++: sigl) l) where
-    con (A (Algebraic op)) = H $ \th -> con $ A $ Algebraic $ fmap (\x -> unH x th) op
-    con (S (Enter op)) = H $ \th -> con $ S $ Enter $ fmap (go th) op
+instance ForwardNoL (H l v) where
+    afwdnl (Algebraic op) = H $ \th -> con (A (Algebraic (fmap (\x -> unH x th) op)))
+    sfwdnl (Enter op) = H $ \th -> con $ S $ Enter $ fmap (go th) op
       where
         go th hhx = do
             hx <- unH hhx th
             return (unH hx th)
-    con (L (Node (Inl3 (DeclBody qn)) l _ k)) = H $ \th -> do
-        lv <- unH (fdclBody (findModule th qn) l) th
-        --  undefined lv
-        unH (k (traceShowId lv)) th
-    con (L (Node (Inl3 (Init ps)) l st k)) = H $ \_ -> do
-        let th' = map (\(AEProg mod imp tdecls fdecls opdecls) -> AEProg mod imp tdecls (Map.map (addBody st) fdecls) opdecls) ps
-        unH (k l) th'
-    con (L (Node (Inr3 op) l st k)) = H $ \th ->
-        con $
-            L $
-                Node
-                    op
-                    l
-                    (\c lv -> unH (st c lv) th)
-                    (\lv -> unH (k lv) th)
+    lfwdnl (Node op l st k) = H $ \th -> con $ L $ Node op l (st' st th) (k' th)
+      where
+        st' st th c lv = unH (st c lv) th
+        k' th lv = unH (k lv) th
+
+instance (Functor l, EffectMonad m sig sigs sigl l, Show (l v)) => TermAlgebra (H l v m) (Sig sig sigs (DeclF v :+++: sigl) l) where
+    con (A op) = afwdnl op
+    con (S op) = sfwdnl op
+    con (L (Node op l st k)) = H $ \th -> case op of
+        (Inl3 (DeclBody qn)) -> do
+            lv <- unH (fdclBody (findModule th qn) l) th
+            unH (k lv) th
+        (Inl3 (Init ps)) -> do
+            let th' = map (\(AEProg mod imp tdecls fdecls opdecls) -> AEProg mod imp tdecls (Map.map (addBody st) fdecls) opdecls) ps
+            unH (k l) th'
+        (Inr3 op) ->
+            con $
+                L $
+                    Node
+                        op
+                        l
+                        (\c lv -> unH (st c lv) th)
+                        (\lv -> unH (k lv) th)
     {-# INLINE con #-}
     var = H . gen'Memo
       where
         gen'Memo x _ = return x
     {-# INLINE var #-}
 
-runDeclC :: (EffectMonad m sig sigs sigl l, Functor l, Show (l v)) => Progs m l v -> Cod (H m l v) a -> m a
+runDeclC :: (EffectMonad m sig sigs sigl l, Functor l, Show (l v)) => Progs m l v -> Cod (H l v m) a -> m a
 runDeclC th p = unH (runCod var p) th
 {-# INLINE runDeclC #-}
 
-instance (Monad m) => Pointed (H m l v) where
+instance (Monad m) => Pointed (H l v m) where
     point x = H $ \_ -> return x
     {-# INLINE point #-}
 

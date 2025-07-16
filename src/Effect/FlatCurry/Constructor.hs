@@ -148,6 +148,10 @@ data Value a
     | ValOther a
     deriving (Show)
 
+instance Pointed Value where
+    point = ValOther
+    {-# INLINE point #-}
+
 instance Functor Value where
     fmap f (Cons qn args) = Cons qn (map (fmap f) args)
     fmap _ (HNF qn ptrs) = HNF qn ptrs
@@ -176,6 +180,16 @@ runConsSmart
     -> SmartProg (Sig sig sigs sigl (ValueL l)) (Value a)
 runConsSmart = unCC . smartFold point con
 {-# INLINE runConsSmart #-}
+
+instance Carrier CC Value where
+    cc = CC
+    unc = unCC
+
+instance LCarrier ValueL Value where
+    cl = ValueL
+    unl = unValueL
+
+instance GenForward CC ValueL where
 
 instance
     (EffectMonad m sig sigs sigl (ValueL l))
@@ -218,10 +232,7 @@ instance
                 lift' hnf
         lift' = lift . fmap unCC
         sfwd op = con $ S $ Enter $ fmap (fmap lift . unCC . fmap unCC) op
-    con (L (Node op l st k)) = CC $ con $ L $ Node op (ValueL $ ValOther l) (st' st) k'
-      where
-        st' st2 c l' = lift2 (fmap (\x -> ValueL <$> unCC (st2 c x)) (unValueL l'))
-        k' = lift . fmap (unCC . k) . unValueL
+    con (L op) = lfwdg op
     {-# INLINE con #-}
     var = CC . gen'Error
       where

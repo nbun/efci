@@ -9,6 +9,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module Effect.General.ND (
     choose,
@@ -77,21 +79,28 @@ runNDC :: (EffectMonad m sig sigs sigl (ListL l)) => Cod (NDC m) a -> m [a]
 runNDC = unNDC . runCod var
 {-# INLINE runNDC #-}
 
+algND :: (Monad m) => ND (m [a]) -> m [a]
+algND Fail = return []
+algND (Or l r) = (++) <$> l <*> r
+
+instance Carrier NDC [] where
+    cc = NDC
+    unc = unNDC
+
+instance LCarrier ListL [] where
+    cl = ListL
+    unl (ListL xs) = xs
+
+instance GenForward NDC ListL where
+
 instance (EffectMonad m sig sigs sigl (ListL l)) => TermAlgebra (NDC m) (Sig (ND :+: sig) sigs sigl l) where
-    con (A (Algebraic op)) = NDC . (alg # afwd) . fmap unNDC $ op
-      where
-        alg Fail = return []
-        alg (Or l r) = (++) <$> l <*> r
-        afwd = con . A . Algebraic
-    con (S (Enter op)) = NDC . con . S . Enter . fmap (fmap lift . unNDC . fmap unNDC) $ op
-    con (L (Node op l st k)) = NDC $ con $ L $ Node op (ListL [l]) (st' st) k'
-      where
-        st' st2 c l' = lift2 (fmap (\x -> ListL <$> unNDC (st2 c x)) (unListL l'))
-        k' = lift . fmap (unNDC . k) . unListL
+    con s = case s of
+        A (Algebraic op) -> NDC . (algND # (con . A . Algebraic)) . fmap unNDC $ op
+        S op' -> sfwdg op'
+        L op' -> lfwdg op'
+
     {-# INLINE con #-}
-    var = NDC . gen'ND
-      where
-        gen'ND = return . (\x -> [x])
+    var = cc'
     {-# INLINE var #-}
 
 newtype NDC m a = NDC {unNDC :: m [a]}

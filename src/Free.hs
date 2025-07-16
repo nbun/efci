@@ -90,8 +90,13 @@ smartFold gen alg = smartFold'
 class (Functor f) => Pointed f where
     point :: a -> f a
 
--- instance Pointed [] where
-    -- point = return
+instance Pointed [] where
+    point x = [x]
+    {-# INLINE point #-}
+
+instance Pointed ((->) r) where
+    point x = const x
+    {-# INLINE point #-}
 
 instance (HFunctor k) => Pointed (Prog k) where
     point = Return
@@ -207,3 +212,4 @@ instance (HFunctor sig) => TermAlgebra (SmartProg sig) sig where
 instance (HFunctor k) => Pointed (SmartProg k) where
     point = SmartReturn
     {-# INLINE point #-}
+

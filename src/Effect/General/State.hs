@@ -195,6 +195,19 @@ hStateSmart
 hStateSmart = unSTC . smartFold point con
 {-# INLINE hStateSmart #-}
 
+instance Forward (STC tag s) (StateL s) where
+    afwd (Algebraic op) = STC . (\op' s -> con (A (Algebraic (fmap (\k -> k s) op')))) . fmap unSTC $ op
+    sfwd (Enter op) = STC $ \s -> con $ S $ Enter $ fmap (go s) op
+      where
+        go s hhx = do
+            (s', hx) <- unSTC hhx s
+            return (unSTC hx s')
+    lfwd (Node op l st k) = STC $
+        \s -> con $ L $ Node op (StateL s l) (st' st) k'
+      where
+        st' st c (StateL s' lv) = uncurry StateL <$> unSTC (st c lv) s'
+        k' (StateL s' lv) = unSTC (k lv) s'
+
 instance
     (EffectMonad m sig sigs sigl (StateL s l))
     => TermAlgebra (STC tag s m) (Sig (StateF tag s :+: sig) sigs sigl l)
@@ -206,16 +219,8 @@ instance
         algS (Modify f k) s = k (f s)
 
         afwd op s = con (A (Algebraic (fmap (\k -> k s) op)))
-    con (S (Enter op)) = STC $ \s -> con $ S $ Enter $ fmap (go s) op
-      where
-        go s hhx = do
-            (s', hx) <- unSTC hhx s
-            return (unSTC hx s')
-    con (L (Node op l st k)) = STC $
-        \s -> con $ L $ Node op (StateL s l) (st' st) k'
-      where
-        st' st c (StateL s' lv) = uncurry StateL <$> unSTC (st c lv) s'
-        k' (StateL s' lv) = unSTC (k lv) s'
+    con (S op) = sfwd op
+    con (L op) = lfwd op
     {-# INLINE con #-}
     var = STC . gen'State
       where

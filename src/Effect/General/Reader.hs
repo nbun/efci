@@ -45,20 +45,25 @@ hReader
     -> (r -> Prog (Sig sig sigs sigl l) a)
 hReader = unRC . fold point con
 
+instance ForwardNoL (RC tag r) where
+    afwdnl (Algebraic op) = RC . (\op' r -> con (A (Algebraic (fmap (\k -> k r) op')))) . fmap unRC $ op
+    sfwdnl (Enter op) = RC $ \r -> con $ S $ Enter $ fmap (go r) op
+      where
+        go r hhx = do
+            hx <- unRC hhx r
+            return (unRC hx r)
+    lfwdnl (Node op l st k) = RC $ \r -> con $ L $ Node op l (st' st r) (k' r)
+      where
+        st' st r c lv = unRC (st c lv) r
+        k' r lv = unRC (k lv) r
+
 instance (EffectMonad m sig sigs sigl l) => TermAlgebra (RC tag r m) (Sig (ReaderF tag r :+: sig) sigs sigl l) where
     con (A (Algebraic op)) = RC . (algR # afwd) . fmap unRC $ op
       where
         algR (Ask k) r = k r r
         afwd op r = con (A (Algebraic (fmap (\k -> k r) op)))
-    con (S (Enter op)) = RC $ \r -> con $ S $ Enter $ fmap (go r) op
-      where
-        go r hhx = do
-            hx <- unRC hhx r
-            return (unRC hx r)
-    con (L (Node op l st k)) = RC $ \r -> con $ L $ Node op l (st' st r) (k' r)
-      where
-        st' st r c lv = unRC (st c lv) r
-        k' r lv = unRC (k lv) r
+    con (S op) = sfwdnl op
+    con (L op) = lfwdnl op
     {-# INLINE con #-}
     var = RC . gen'Reader
       where

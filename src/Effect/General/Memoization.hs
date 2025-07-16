@@ -145,65 +145,79 @@ hLazySmart
 hLazySmart = unMC . smartFold point con
 {-# INLINE hLazySmart #-}
 
-instance (Functor l, EffectMonad m sig sigs sigl (StateL (ThunkStore l v) l), Show (l v)) => TermAlgebra (MC m l v) (Sig sig sigs (Thunking v :+++: sigl) l) where
-    con (A (Algebraic op)) = MC $ \th -> con $ A $ Algebraic $ fmap (\x -> unMC x th) op
+instance Forward (MC l v) (StateL (ThunkStore l v)) where
+    afwd (Algebraic op) = MC $ \th -> con $ A $ Algebraic $ fmap (\x -> unMC x th) op
+    sfwd (Enter op) = MC $ \th -> con $ S $ Enter $ fmap (go th) op
+      where
+        go th hhx = do
+            (th', hx) <- unMC hhx th
+            return (unMC hx th')
+    lfwd (Node op l st k) = MC $
+        \s -> con $ L $ Node op (StateL s l) (st' st) k'
+      where
+        st' st c (StateL s' lv) = uncurry StateL <$> unMC (st c lv) s'
+        k' (StateL s' lv) = unMC (k lv) s'
+
+instance (Functor l, EffectMonad m sig sigs sigl (StateL (ThunkStore l v) l), Show (l v)) => TermAlgebra (MC l v m) (Sig sig sigs (Thunking v :+++: sigl) l) where
+    con (A op) = afwd op
     con (S (Enter op)) = MC $ \th -> con $ S $ Enter $ fmap (go th) op
       where
         go th hhx = do
             (th', hx) <- unMC hhx th
             return (unMC hx th')
-    con (L (Node (Inl3 (Thunk ptr)) l st k)) = MC $ \(TS sup th) -> ctrace ("thunked " ++ show ptr) $ do
-        unMC (k l) (TS sup (addEntry ptr (Thunked (unsafeCoerce $ st One)) th))
-    con (L (Node (Inl3 Store) l st k)) = MC $ \(TS sup th) ->
-        ctrace ("stored ") $
-            let (!fresh, sup') = freshPtr sup
-                th' = if ptrKey fresh `mod` 20000 == 0 then purge th else th
-             in unMC (k (fresh <$ l)) (TS sup' (addEntry fresh (Thunked (unsafeCoerce $ st One)) th'))
-    con (L (Node (Inl3 Eval) l st k)) = MC $ \(TS sup th) ->
-        ctrace ("stored ") $
-            let (!fresh, sup') = freshPtr sup
-                th' = if ptrKey fresh `mod` 20000 == 0 then purge th else th
-             in do 
-                (TS sup'' th'', lv) <- unMC (st One l) (TS sup' th')
-                unMC (k (fresh <$ l)) (TS sup'' (addEntry fresh (Evaluated  lv) th''))
-    con (L (Node (Inl3 (Force p)) l st k)) = MC $ \ts@(TS _ th) ->
-        let retrieve ptr = case lookupEntry ptr th of
-                Thunked t -> do
-                    (TS sup' th', lv) <- unMC (unsafeCoerce $ t l) ts
-                    let ts' = TS sup' (addEntry ptr (Evaluated lv) th')
-                    unMC (k lv) (ctrace ("evaluate " ++ show ptr ++ show lv) ts')
-                Evaluated lv -> ctrace ("memoized " ++ show ptr ++ show lv) $ unMC (k lv) ts
-                Redirected p' -> ctrace ("redirect " ++ show ptr ++ " -> " ++ show p') $ retrieve p'
-         in ctrace ("force") $ retrieve p
-    con (L (Node (Inl3 (Redirect (p, p'))) l _ k)) = MC $ \(TS sup th) -> ctrace ("redirect " ++ show (p, p')) $ do
-        let skipRedirects th ptr = case lookupEntry ptr th of
-                Redirected ptr' -> skipRedirects th ptr'
-                _ -> ptr
-        unMC (k l) (TS sup (addEntry p (Redirected (skipRedirects th p')) th))
-    con (L (Node (Inr3 op) l st k)) = MC $ \th ->
-        con $
-            L $
-                Node
-                    op
-                    (StateL th l)
-                    (\c (StateL th' lv) -> uncurry StateL <$> unMC (st c lv) th')
-                    (\(StateL th' lv) -> unMC (k lv) th')
+    con (L (Node op l st k)) = MC $ \ts@(TS sup th) -> case op of
+        (Inl3 (Thunk ptr)) -> ctrace ("thunked " ++ show ptr) $ do
+            unMC (k l) (TS sup (addEntry ptr (Thunked (unsafeCoerce $ st One)) th))
+        (Inl3 Store) ->
+            ctrace ("stored ") $
+                let (!fresh, sup') = freshPtr sup
+                    th' = if ptrKey fresh `mod` 20000 == 0 then purge th else th
+                 in unMC (k (fresh <$ l)) (TS sup' (addEntry fresh (Thunked (unsafeCoerce $ st One)) th'))
+        (Inl3 Eval) ->
+            ctrace ("stored ") $
+                let (!fresh, sup') = freshPtr sup
+                    th' = if ptrKey fresh `mod` 20000 == 0 then purge th else th
+                 in do
+                        (TS sup'' th'', lv) <- unMC (st One l) (TS sup' th')
+                        unMC (k (fresh <$ l)) (TS sup'' (addEntry fresh (Evaluated lv) th''))
+        (Inl3 (Force p)) ->
+            let retrieve ptr = case lookupEntry ptr th of
+                    Thunked t -> do
+                        (TS sup' th', lv) <- unMC (unsafeCoerce $ t l) ts
+                        let ts' = TS sup' (addEntry ptr (Evaluated lv) th')
+                        unMC (k lv) (ctrace ("evaluate " ++ show ptr ++ show lv) ts')
+                    Evaluated lv -> ctrace ("memoized " ++ show ptr ++ show lv) $ unMC (k lv) ts
+                    Redirected p' -> ctrace ("redirect " ++ show ptr ++ " -> " ++ show p') $ retrieve p'
+             in ctrace ("force") $ retrieve p
+        (Inl3 (Redirect (p, p'))) -> ctrace ("redirect " ++ show (p, p')) $ do
+            let skipRedirects th ptr = case lookupEntry ptr th of
+                    Redirected ptr' -> skipRedirects th ptr'
+                    _ -> ptr
+            unMC (k l) (TS sup (addEntry p (Redirected (skipRedirects th p')) th))
+        (Inr3 op) ->
+            con $
+                L $
+                    Node
+                        op
+                        (StateL ts l)
+                        (\c (StateL ts' lv) -> uncurry StateL <$> unMC (st c lv) ts')
+                        (\(StateL ts' lv) -> unMC (k lv) ts')
     {-# INLINE con #-}
     var = MC . gen'Memo
       where
         gen'Memo x th = return (th, x)
     {-# INLINE var #-}
 
-runLazyC :: (EffectMonad m sig sigs sigl (StateL (ThunkStore l v) l), Functor l, Show (l v)) => UniqSupply -> Cod (MC m l v) a -> m a
+runLazyC :: (EffectMonad m sig sigs sigl (StateL (ThunkStore l v) l), Functor l, Show (l v)) => UniqSupply -> Cod (MC l v m) a -> m a
 runLazyC sup p = (\(s, r) -> ctrace (showTS s) r) <$> unMC (runCod var p) (TS sup IntMap.empty)
 -- runLazyC th p = snd <$> unMC (runCod var p) th
 {-# INLINE runLazyC #-}
 
-instance (Monad m) => Pointed (MC m l v) where
+instance (Monad m) => Pointed (MC l v m) where
     point x = MC $ \th -> return (th, x)
     {-# INLINE point #-}
 
-data Entry m l v = Thunked (l () -> MC m l v (l v)) | Evaluated (l v) | Redirected Ptr
+data Entry m l v = Thunked (l () -> MC l v m (l v)) | Evaluated (l v) | Redirected Ptr
 
 isThunked, isEvaluated, isRedirected :: Entry m l v -> Bool
 isThunked (Thunked _) = True
@@ -259,9 +273,9 @@ majorPurge m
     m' = unsafePerformIO $ performGC >> return (purge m)
 {-# NOINLINE majorPurge #-}
 
-newtype MC m l v a = MC {unMC :: ThunkStore l v -> m (ThunkStore l v, a)}
+newtype MC l v m a = MC {unMC :: ThunkStore l v -> m (ThunkStore l v, a)}
 
-instance (Functor m) => Functor (MC m l v) where
+instance (Functor m) => Functor (MC l v m) where
     fmap f (MC x) = MC $ \th -> fmap (fmap f) (x th)
     {-# INLINE fmap #-}
 

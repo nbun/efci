@@ -96,6 +96,10 @@ data Closure a
     | Other a
     deriving (Show)
 
+instance Pointed Closure where
+    point = Other
+    {-# INLINE point #-}
+
 instance Functor Closure where
     fmap _ (Closure qn ct ptrs) = Closure qn ct ptrs
     fmap f (Other x) = Other (f x)
@@ -208,11 +212,21 @@ runPartialSmart
 runPartialSmart = unPC . smartFold point con
 {-# INLINE runPartialSmart #-}
 
+instance Carrier PC Closure where
+    cc = PC
+    unc = unPC
+
+instance LCarrier ClosureL Closure where
+    cl = ClosureL
+    unl = unClosureL
+
+instance GenForward PC ClosureL where
+
 instance
     (EffectMonad m sig sigs sigl (ClosureL l))
     => TermAlgebra (PC m) (Sig sig (Partial :+: sigs) sigl l)
     where
-    con (A (Algebraic op)) = PC $ con (A (Algebraic (fmap unPC op)))
+    con (A op) = afwdg op
     con (S (Enter op)) = PC . (algP # sfwd) $ op
       where
         algP (PartCall qn combtype args) = return $ Closure qn combtype args
@@ -226,11 +240,8 @@ instance
         algP (Abs vs ptr) = return $ Lambda vs ptr
         algP (Ext s) = return $ External s
         sfwd op = con $ S $ Enter $ fmap (fmap lift . unPC . fmap unPC) op
-    con (L (Node op l st k)) = PC $ con $ L $ Node op (ClosureL $ Other l) (st' st) k'
-      where
-        st' st2 c l' = lift2 (fmap (\x -> ClosureL <$> unPC (st2 c x)) (unClosureL l'))
-        k' = lift . fmap (unPC . k) . unClosureL
-    {-# INLINEABLE con #-}
+    con (L op) = lfwdg op
+    {-# INLINE con #-}
     var = PC . gen'Reader
       where
         gen'Reader x = return (Other x)

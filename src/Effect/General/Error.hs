@@ -30,6 +30,10 @@ instance Functor Err where
 data Error a = Error String | EOther a
     deriving (Show)
 
+instance Pointed Error where
+    point = EOther
+    {-# INLINE point #-}
+
 instance Functor Error where
     fmap _ (Error s) = Error s
     fmap f (EOther x) = EOther (f x)
@@ -49,16 +53,23 @@ runErrorSmart
 runErrorSmart = unEC . smartFold point con
 {-# INLINE runErrorSmart #-}
 
+instance Carrier EC Error where
+    cc = EC
+    unc = unEC
+
+instance LCarrier ErrorL Error where
+    cl = ErrorL
+    unl = unErrorL
+
+instance GenForward EC ErrorL where
+
 instance (EffectMonad m sig sigs sigl (ErrorL l)) => TermAlgebra (EC m) (Sig (Err :+: sig) sigs sigl l) where
     con (A (Algebraic op)) = EC . (algE # afwd) . fmap unEC $ op
       where
         algE (Err s) = return (Error s)
         afwd = con . A . Algebraic
-    con (S (Enter op)) = EC $ con $ S $ Enter $ fmap (fmap lift . unEC . fmap unEC) op
-    con (L (Node op l st k)) = EC $ con $ L $ Node op (ErrorL (EOther l)) (st' st) k'
-      where
-        st' st2 c l' = lift2 (fmap (\x -> ErrorL <$> unEC (st2 c x)) (unErrorL l'))
-        k' = lift . fmap (unEC . k) . unErrorL
+    con (S op) = sfwdg op
+    con (L op) = lfwdg op
     {-# INLINE con #-}
     var = EC . gen'Error
       where

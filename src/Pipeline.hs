@@ -175,13 +175,13 @@ type L a =
 
 type M a =
     Cod
-        ( H
+        ( H Id a
             ( Cod
                 ( PC
                     ( Cod
                         ( CC
                             ( Cod
-                                ( MC
+                                ( MC (ValueL (ClosureL Id)) a
                                     ( Cod
                                         ( STC
                                             Rename
@@ -215,16 +215,12 @@ type M a =
                                             )
                                         )
                                     )
-                                    (ValueL (ClosureL Id))
-                                    a
                                 )
                             )
                         )
                     )
                 )
             )
-            Id
-            a
         )
 
 -- -- {-# SPECIALISE runCurryEffectsC :: [AEProg ((M ()) ())]
