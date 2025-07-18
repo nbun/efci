@@ -220,13 +220,14 @@ instance LCarrier ClosureL Closure where
     cl = ClosureL
     unl = unClosureL
 
-instance GenForward PC ClosureL where
+instance AForward PC ClosureL where
+instance LForward PC ClosureL where
 
 instance
     (EffectMonad m sig sigs sigl (ClosureL l))
     => TermAlgebra (PC m) (Sig sig (Partial :+: sigs) sigl l)
     where
-    con (A op) = afwdg op
+    con (A op) = afwd op
     con (S (Enter op)) = PC . (algP # sfwd) $ op
       where
         algP (PartCall qn combtype args) = return $ Closure qn combtype args
@@ -240,7 +241,7 @@ instance
         algP (Abs vs ptr) = return $ Lambda vs ptr
         algP (Ext s) = return $ External s
         sfwd op = con $ S $ Enter $ fmap (fmap lift . unPC . fmap unPC) op
-    con (L op) = lfwdg op
+    con (L op) = lfwd op
     {-# INLINE con #-}
     var = PC . gen'Reader
       where

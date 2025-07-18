@@ -195,13 +195,14 @@ hStateSmart
 hStateSmart = unSTC . smartFold point con
 {-# INLINE hStateSmart #-}
 
-instance Forward (STC tag s) (StateL s) where
-    afwd (Algebraic op) = STC . (\op' s -> con (A (Algebraic (fmap (\k -> k s) op')))) . fmap unSTC $ op
+instance SForward (STC tag s) (StateL s) where
     sfwd (Enter op) = STC $ \s -> con $ S $ Enter $ fmap (go s) op
       where
         go s hhx = do
             (s', hx) <- unSTC hhx s
             return (unSTC hx s')
+
+instance LForward (STC tag s) (StateL s) where
     lfwd (Node op l st k) = STC $
         \s -> con $ L $ Node op (StateL s l) (st' st) k'
       where

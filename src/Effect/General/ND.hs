@@ -87,18 +87,22 @@ instance Carrier NDC [] where
     cc = NDC
     unc = unNDC
 
+-- instance Carrier' (NDC m a) (m [a]) where
+    -- cc'' = NDC
+    -- unc' = unNDC
+
 instance LCarrier ListL [] where
     cl = ListL
     unl (ListL xs) = xs
 
-instance GenForward NDC ListL where
+instance SForward NDC ListL where
+instance LForward NDC ListL where
 
 instance (EffectMonad m sig sigs sigl (ListL l)) => TermAlgebra (NDC m) (Sig (ND :+: sig) sigs sigl l) where
     con s = case s of
         A (Algebraic op) -> NDC . (algND # (con . A . Algebraic)) . fmap unNDC $ op
-        S op' -> sfwdg op'
-        L op' -> lfwdg op'
-
+        S op' -> sfwd op'
+        L op' -> lfwd op'
     {-# INLINE con #-}
     var = cc'
     {-# INLINE var #-}

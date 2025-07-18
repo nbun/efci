@@ -45,13 +45,14 @@ hReader
     -> (r -> Prog (Sig sig sigs sigl l) a)
 hReader = unRC . fold point con
 
-instance ForwardNoL (RC tag r) where
-    afwdnl (Algebraic op) = RC . (\op' r -> con (A (Algebraic (fmap (\k -> k r) op')))) . fmap unRC $ op
+instance SForwardNoL (RC tag r) where
     sfwdnl (Enter op) = RC $ \r -> con $ S $ Enter $ fmap (go r) op
       where
         go r hhx = do
             hx <- unRC hhx r
             return (unRC hx r)
+
+instance LForwardNoL (RC tag r) where
     lfwdnl (Node op l st k) = RC $ \r -> con $ L $ Node op l (st' st r) (k' r)
       where
         st' st r c lv = unRC (st c lv) r

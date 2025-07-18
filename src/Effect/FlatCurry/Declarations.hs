@@ -80,17 +80,15 @@ hDeclSmart = unH . smartFold point con
 addBody :: (ManySub v v -> l () -> H l v m (l v)) -> AEFuncDecl a -> AEFuncDecl (l () -> H l v m (l v))
 addBody get (AEFunc qn ar vis ty _) = AEFunc qn ar vis ty (get (Many qn))
 
-instance ForwardNoL (H l v) where
+instance AForwardNoL (H l v) where
     afwdnl (Algebraic op) = H $ \th -> con (A (Algebraic (fmap (\x -> unH x th) op)))
+
+instance SForwardNoL (H l v) where
     sfwdnl (Enter op) = H $ \th -> con $ S $ Enter $ fmap (go th) op
       where
         go th hhx = do
             hx <- unH hhx th
             return (unH hx th)
-    lfwdnl (Node op l st k) = H $ \th -> con $ L $ Node op l (st' st th) (k' th)
-      where
-        st' st th c lv = unH (st c lv) th
-        k' th lv = unH (k lv) th
 
 instance (Functor l, EffectMonad m sig sigs sigl l, Show (l v)) => TermAlgebra (H l v m) (Sig sig sigs (DeclF v :+++: sigl) l) where
     con (A op) = afwdnl op

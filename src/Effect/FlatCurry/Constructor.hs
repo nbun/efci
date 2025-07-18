@@ -189,7 +189,7 @@ instance LCarrier ValueL Value where
     cl = ValueL
     unl = unValueL
 
-instance GenForward CC ValueL where
+instance LForward CC ValueL where
 
 instance
     (EffectMonad m sig sigs sigl (ValueL l))
@@ -232,7 +232,7 @@ instance
                 lift' hnf
         lift' = lift . fmap unCC
         sfwd op = con $ S $ Enter $ fmap (fmap lift . unCC . fmap unCC) op
-    con (L op) = lfwdg op
+    con (L op) = lfwd op
     {-# INLINE con #-}
     var = CC . gen'Error
       where

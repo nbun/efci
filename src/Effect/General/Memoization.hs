@@ -145,26 +145,19 @@ hLazySmart
 hLazySmart = unMC . smartFold point con
 {-# INLINE hLazySmart #-}
 
-instance Forward (MC l v) (StateL (ThunkStore l v)) where
+instance AForward (MC l v) (StateL (ThunkStore l v)) where
     afwd (Algebraic op) = MC $ \th -> con $ A $ Algebraic $ fmap (\x -> unMC x th) op
+
+instance SForward (MC l v) (StateL (ThunkStore l v)) where
     sfwd (Enter op) = MC $ \th -> con $ S $ Enter $ fmap (go th) op
       where
         go th hhx = do
             (th', hx) <- unMC hhx th
             return (unMC hx th')
-    lfwd (Node op l st k) = MC $
-        \s -> con $ L $ Node op (StateL s l) (st' st) k'
-      where
-        st' st c (StateL s' lv) = uncurry StateL <$> unMC (st c lv) s'
-        k' (StateL s' lv) = unMC (k lv) s'
 
 instance (Functor l, EffectMonad m sig sigs sigl (StateL (ThunkStore l v) l), Show (l v)) => TermAlgebra (MC l v m) (Sig sig sigs (Thunking v :+++: sigl) l) where
     con (A op) = afwd op
-    con (S (Enter op)) = MC $ \th -> con $ S $ Enter $ fmap (go th) op
-      where
-        go th hhx = do
-            (th', hx) <- unMC hhx th
-            return (unMC hx th')
+    con (S op) = sfwd op
     con (L (Node op l st k)) = MC $ \ts@(TS sup th) -> case op of
         (Inl3 (Thunk ptr)) -> ctrace ("thunked " ++ show ptr) $ do
             unMC (k l) (TS sup (addEntry ptr (Thunked (unsafeCoerce $ st One)) th))

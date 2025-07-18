@@ -108,6 +108,7 @@ class (HFunctor f) => TermAlgebra h f | h -> f where
     var :: a -> h a
     con :: f h (h a) -> h a
     peek :: h a -> Maybe (f h (h a))
+    peek _ = Nothing
 
 instance (HFunctor sig) => TermAlgebra (Prog sig) sig where
     var = Return

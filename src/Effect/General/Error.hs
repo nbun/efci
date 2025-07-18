@@ -61,15 +61,16 @@ instance LCarrier ErrorL Error where
     cl = ErrorL
     unl = unErrorL
 
-instance GenForward EC ErrorL where
+instance SForward EC ErrorL where
+instance LForward EC ErrorL where
 
 instance (EffectMonad m sig sigs sigl (ErrorL l)) => TermAlgebra (EC m) (Sig (Err :+: sig) sigs sigl l) where
     con (A (Algebraic op)) = EC . (algE # afwd) . fmap unEC $ op
       where
         algE (Err s) = return (Error s)
         afwd = con . A . Algebraic
-    con (S op) = sfwdg op
-    con (L op) = lfwdg op
+    con (S op) = sfwd op
+    con (L op) = lfwd op
     {-# INLINE con #-}
     var = EC . gen'Error
       where

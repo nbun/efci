@@ -16,6 +16,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE DefaultSignatures #-}
 
 module Signature (
     (:+:),
@@ -47,9 +48,17 @@ module Signature (
     Carrier (..),
     LCarrier (..),
     conA,
-    Forward (..),
-    GenForward (..),
-    ForwardNoL(..),
+    AForward(..),
+    SForward(..),
+    LForward(..),
+    VoidL(..),
+    -- Forward (..),
+    -- GenForward (..),
+    -- ForwardNoL(..),
+    IdL (..),
+    AForwardNoL(..),
+    SForwardNoL(..),
+    LForwardNoL(..),
 ) where
 
 import Data.Coerce
@@ -105,6 +114,7 @@ newtype Algebraic sig (f :: Type -> Type) a = Algebraic (Union sig a) deriving (
 
 instance HFunctor (Algebraic sig) where
     hmap _ (Algebraic op) = Algebraic op
+    {-# INLINE hmap #-}
 
 newtype Scoped sig f a where
     Enter :: Union sig (f a) -> Scoped sig f a
@@ -112,6 +122,7 @@ newtype Scoped sig f a where
 
 instance HFunctor (Scoped sig) where
     hmap k (Enter sc) = Enter (fmap k sc)
+    {-# INLINE hmap #-}
 
 data Latent sig l f a where
     Node :: sig p c -> l () -> (forall x. c x -> l () -> f (l x)) -> (l p -> a) -> Latent sig l f a
@@ -121,6 +132,7 @@ instance Functor (Latent sig l f) where
 
 instance HFunctor (Latent sig l) where
     hmap k (Node sub l st c) = Node sub l (fmap k . st) c
+    {-# INLINE hmap #-}
 
 data NoSub :: Type -> Type
 
@@ -260,23 +272,56 @@ class (Pointed f) => LCarrier cL f | cL -> f where
 
 type family Lof (c :: (Type -> Type) -> Type -> Type) (l :: Type -> Type) :: (Type -> Type)
 
-class Forward c ll where
+-- class Forward c ll where
+--     afwd :: (TermAlgebra m (Sig sig sigs sigl (ll l))) => Algebraic sig (c m) (c m a) -> c m a
+--     sfwd :: (TermAlgebra m (Sig sig sigs sigl (ll l)), Monad m, Pointed m) => Scoped sigs (c m) (c m a) -> c m a
+--     lfwd :: (TermAlgebra m (Sig sig sigs sigl (ll l)), Monad m, Pointed m) => Latent sigl l (c m) (c m a) -> c m a
+
+-- class ForwardNoL c where
+--     afwdnl :: (TermAlgebra m (Sig sig sigs sigl l)) => Algebraic sig (c m) (c m a) -> c m a
+--     sfwdnl :: (TermAlgebra m (Sig sig sigs sigl l), Monad m, Pointed m) => Scoped sigs (c m) (c m a) -> c m a
+--     lfwdnl :: (TermAlgebra m (Sig sig sigs sigl l), Monad m, Pointed m) => Latent sigl l (c m) (c m a) -> c m a
+
+-- class GenForward c ll where
+--     afwdg :: (TermAlgebra m (Sig sig sigs sigl (ll l)), Carrier c f) => Algebraic sig (c m) (c m a) -> c m a
+--     afwdg (Algebraic op) = cc . con . A . Algebraic . fmap unc $ op
+--     sfwdg :: (TermAlgebra m (Sig sig sigs sigl (ll l)), Monad m, Pointed m, Carrier c f, Lift ll f, Functor (c m)) => Scoped sigs (c m) (c m a) -> c m a
+--     sfwdg (Enter op) = cc . con . S . Enter . fmap (fmap lift . unc . fmap unc) $ op
+--     lfwdg :: (TermAlgebra m (Sig sig sigs sigl (ll l)), Monad m, Pointed m, Carrier c f, LCarrier ll f, Lift ll f) => Latent sigl l (c m) (c m a) -> c m a
+--     lfwdg (Node op l st k) = cc $ con $ L $ Node op (cl' l) (st' st) k'
+--       where
+--         st' st2 c l' = lift2 (fmap (\x -> cl <$> unc (st2 c x)) (unl l'))
+--         k' = lift . fmap (unc . k) . unl
+
+class AForward c ll | c -> ll where
     afwd :: (TermAlgebra m (Sig sig sigs sigl (ll l))) => Algebraic sig (c m) (c m a) -> c m a
-    sfwd :: (TermAlgebra m (Sig sig sigs sigl (ll l)), Monad m, Pointed m) => Scoped sigs (c m) (c m a) -> c m a
-    lfwd :: (TermAlgebra m (Sig sig sigs sigl (ll l)), Monad m, Pointed m) => Latent sigl l (c m) (c m a) -> c m a
+    default afwd :: (TermAlgebra m (Sig sig sigs sigl (ll l)), Carrier c f) => Algebraic sig (c m) (c m a) -> c m a
+    afwd (Algebraic op) = cc . con . A . Algebraic . fmap unc $ op
 
-class ForwardNoL c where
+class AForwardNoL c where
     afwdnl :: (TermAlgebra m (Sig sig sigs sigl l)) => Algebraic sig (c m) (c m a) -> c m a
-    sfwdnl :: (TermAlgebra m (Sig sig sigs sigl l), Monad m, Pointed m) => Scoped sigs (c m) (c m a) -> c m a
-    lfwdnl :: (TermAlgebra m (Sig sig sigs sigl l), Monad m, Pointed m) => Latent sigl l (c m) (c m a) -> c m a
 
-class GenForward c ll where
-    afwdg :: (TermAlgebra m (Sig sig sigs sigl (ll l)), Carrier c f) => Algebraic sig (c m) (c m a) -> c m a
-    afwdg (Algebraic op) = cc . con . A . Algebraic . fmap unc $ op
-    sfwdg :: (TermAlgebra m (Sig sig sigs sigl (ll l)), Monad m, Pointed m, Carrier c f, Lift ll f, Functor (c m)) => Scoped sigs (c m) (c m a) -> c m a
-    sfwdg (Enter op) = cc . con . S . Enter . fmap (fmap lift . unc . fmap unc) $ op
-    lfwdg :: (TermAlgebra m (Sig sig sigs sigl (ll l)), Monad m, Pointed m, Carrier c f, LCarrier ll f, Lift ll f) => Latent sigl l (c m) (c m a) -> c m a
-    lfwdg (Node op l st k) = cc $ con $ L $ Node op (cl' l) (st' st) k'
+class SForward c ll | c -> ll where
+    sfwd :: (TermAlgebra m (Sig sig sigs sigl (ll l)), Monad m, Pointed m) => Scoped sigs (c m) (c m a) -> c m a
+    default sfwd :: (TermAlgebra m (Sig sig sigs sigl (ll l)), Monad m, Pointed m, Carrier c f, Lift ll f, Functor (c m)) => Scoped sigs (c m) (c m a) -> c m a
+    sfwd (Enter op) = cc . con . S . Enter . fmap (fmap lift . unc . fmap unc) $ op
+
+class SForwardNoL c where
+  sfwdnl :: (TermAlgebra m (Sig sig sigs sigl l), Monad m, Pointed m) => Scoped sigs (c m) (c m a) -> c m a
+
+class LForward c ll | c -> ll where
+    lfwd :: (TermAlgebra m (Sig sig sigs sigl (ll l)), Monad m, Pointed m) => Latent sigl l (c m) (c m a) -> c m a
+    default lfwd :: (TermAlgebra m (Sig sig sigs sigl (ll l)), Monad m, Pointed m, Carrier c f, LCarrier ll f, Lift ll f) => Latent sigl l (c m) (c m a) -> c m a
+    lfwd (Node op l st k) = cc $ con $ L $ Node op (cl' l) (st' st) k'
       where
         st' st2 c l' = lift2 (fmap (\x -> cl <$> unc (st2 c x)) (unl l'))
         k' = lift . fmap (unc . k) . unl
+
+class LForwardNoL c where
+    lfwdnl :: (TermAlgebra m (Sig sig sigs sigl l), Monad m, Pointed m) => Latent sigl l (c m) (c m a) -> c m a
+    
+
+data VoidL (l :: * -> *) a
+
+newtype IdL l a = IdL {unIdL :: l a}
+    deriving (Functor)
