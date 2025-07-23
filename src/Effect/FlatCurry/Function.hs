@@ -212,16 +212,20 @@ runPartialSmart
 runPartialSmart = unPC . smartFold point con
 {-# INLINE runPartialSmart #-}
 
-instance Carrier PC Closure where
-    cc = PC
-    unc = unPC
-
 instance LCarrier ClosureL Closure where
-    cl = ClosureL
-    unl = unClosureL
+    lift (Closure qn ct ptrs) = pure $ Closure qn ct ptrs
+    lift (Lambda vs ptr) = pure $ Lambda vs ptr
+    lift (External s) = pure $ External s
+    lift (Other x) = x
 
-instance AForward PC ClosureL where
-instance LForward PC ClosureL where
+    lift2 (Closure qn ct ptrs) = pure $ ClosureL $ Closure qn ct ptrs
+    lift2 (Lambda vs ptr) = pure $ ClosureL $ Lambda vs ptr
+    lift2 (External s) = pure $ ClosureL $ External s
+    lift2 (Other x) = x
+
+instance Forward PC ClosureL
+instance OuterCarrier PC Closure 
+instance DeriveForward 'Outer PC ClosureL
 
 instance
     (EffectMonad m sig sigs sigl (ClosureL l))
@@ -264,17 +268,6 @@ newtype PC m a = PC {unPC :: m (Closure a)}
 instance (Functor m) => Functor (PC m) where
     fmap f (PC x) = PC (fmap (fmap f) x)
     {-# INLINE fmap #-}
-
-instance Lift ClosureL Closure where
-    lift (Closure qn ct ptrs) = return $ Closure qn ct ptrs
-    lift (Lambda vs ptr) = return $ Lambda vs ptr
-    lift (External s) = return $ External s
-    lift (Other x) = x
-
-    lift2 (Closure qn ct ptrs) = return $ ClosureL $ Closure qn ct ptrs
-    lift2 (Lambda vs ptr) = return $ ClosureL $ Lambda vs ptr
-    lift2 (External s) = return $ ClosureL $ External s
-    lift2 (Other x) = x
 
 newtype ClosureL l a = ClosureL {unClosureL :: Closure (l a)}
     deriving (Functor, Show)

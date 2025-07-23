@@ -45,6 +45,13 @@ hReader
     -> (r -> Prog (Sig sig sigs sigl l) a)
 hReader = unRC . fold point con
 
+instance InnerCarrier (RC tag r) ((->) r) where
+    cci = RC 
+    unci = unRC
+
+instance AForwardNoL (RC tag r) where
+    afwdnl (Algebraic op) = RC $ \r -> con $ A $ Algebraic (fmap ((\k -> k r) . unRC) op)
+
 instance SForwardNoL (RC tag r) where
     sfwdnl (Enter op) = RC $ \r -> con $ S $ Enter $ fmap (go r) op
       where

@@ -195,19 +195,13 @@ hStateSmart
 hStateSmart = unSTC . smartFold point con
 {-# INLINE hStateSmart #-}
 
-instance SForward (STC tag s) (StateL s) where
-    sfwd (Enter op) = STC $ \s -> con $ S $ Enter $ fmap (go s) op
-      where
-        go s hhx = do
-            (s', hx) <- unSTC hhx s
-            return (unSTC hx s')
+instance StateCarrier (STC tag s) s
+instance DeriveForward 'State (STC tag s) (StateL s)
+instance Forward (STC tag s) (StateL s)
 
-instance LForward (STC tag s) (StateL s) where
-    lfwd (Node op l st k) = STC $
-        \s -> con $ L $ Node op (StateL s l) (st' st) k'
-      where
-        st' st c (StateL s' lv) = uncurry StateL <$> unSTC (st c lv) s'
-        k' (StateL s' lv) = unSTC (k lv) s'
+instance LCarrier (StateL s) ((,) s) where
+    cl = StateL
+    unl = unStateL
 
 instance
     (EffectMonad m sig sigs sigl (StateL s l))
@@ -256,10 +250,10 @@ instance (Monad m) => Pointed (STC tag s m) where
     point x = STC (\s -> return (s, x))
     {-# INLINE point #-}
 
-data StateL s l a = StateL !s !(l a) deriving (Show)
+newtype StateL s l a = StateL { unStateL :: (s, l a) } deriving (Show)
 
 instance (Functor l) => Functor (StateL s l) where
-    fmap f (StateL s la) = StateL s (fmap f la)
+    fmap f (StateL (s, la)) = StateL (s, fmap f la)
     {-# INLINE fmap #-}
 
 -- constraint store --

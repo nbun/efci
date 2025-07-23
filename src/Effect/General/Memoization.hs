@@ -22,6 +22,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# LANGUAGE DataKinds #-}
 
 module Effect.General.Memoization (
     Thunking,
@@ -145,15 +146,10 @@ hLazySmart
 hLazySmart = unMC . smartFold point con
 {-# INLINE hLazySmart #-}
 
-instance AForward (MC l v) (StateL (ThunkStore l v)) where
-    afwd (Algebraic op) = MC $ \th -> con $ A $ Algebraic $ fmap (\x -> unMC x th) op
 
-instance SForward (MC l v) (StateL (ThunkStore l v)) where
-    sfwd (Enter op) = MC $ \th -> con $ S $ Enter $ fmap (go th) op
-      where
-        go th hhx = do
-            (th', hx) <- unMC hhx th
-            return (unMC hx th')
+instance StateCarrier (MC l v) (ThunkStore l v)
+instance DeriveForward 'State (MC l v) (StateL (ThunkStore l v))
+instance Forward (MC l v) (StateL (ThunkStore l v))
 
 instance (Functor l, EffectMonad m sig sigs sigl (StateL (ThunkStore l v) l), Show (l v)) => TermAlgebra (MC l v m) (Sig sig sigs (Thunking v :+++: sigl) l) where
     con (A op) = afwd op
@@ -192,9 +188,9 @@ instance (Functor l, EffectMonad m sig sigs sigl (StateL (ThunkStore l v) l), Sh
                 L $
                     Node
                         op
-                        (StateL ts l)
-                        (\c (StateL ts' lv) -> uncurry StateL <$> unMC (st c lv) ts')
-                        (\(StateL ts' lv) -> unMC (k lv) ts')
+                        (StateL (ts, l))
+                        (\c stl -> let (ts', lv) = unStateL stl in StateL <$> unMC (st c lv) ts')
+                        (\stl -> let (ts', lv) = unStateL stl in unMC (k lv) ts')
     {-# INLINE con #-}
     var = MC . gen'Memo
       where

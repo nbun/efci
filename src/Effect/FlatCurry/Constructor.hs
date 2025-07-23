@@ -9,6 +9,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE DataKinds #-}
 
 module Effect.FlatCurry.Constructor (
     CaseScope (..),
@@ -181,15 +182,22 @@ runConsSmart
 runConsSmart = unCC . smartFold point con
 {-# INLINE runConsSmart #-}
 
-instance Carrier CC Value where
-    cc = CC
-    unc = unCC
-
 instance LCarrier ValueL Value where
-    cl = ValueL
-    unl = unValueL
+    lift (Cons qn args) = traverse lift args <&> Cons qn
+    lift (HNF qn ptrs) = pure $ HNF qn ptrs
+    lift (Lit l) = pure $ Lit l
+    lift (Free i) = pure $ Free i
+    lift (ValOther x) = x
 
-instance LForward CC ValueL where
+    lift2 (Cons qn args) = traverse lift2 args <&> ValueL . Cons qn . map unValueL
+    lift2 (HNF qn ptrs) = pure $ ValueL $ HNF qn ptrs
+    lift2 (Lit l) = pure $ ValueL $ Lit l
+    lift2 (Free i) = pure $ ValueL $ Free i
+    lift2 (ValOther x) = x
+
+instance Forward CC ValueL
+instance OuterCarrier CC Value 
+instance DeriveForward 'Outer CC ValueL
 
 instance
     (EffectMonad m sig sigs sigl (ValueL l))
@@ -249,19 +257,6 @@ newtype CC m a = CC {unCC :: m (Value a)}
 instance (Monad m) => Pointed (CC m) where
     point x = CC $ return (ValOther x)
     {-# INLINE point #-}
-
-instance Lift ValueL Value where
-    lift (Cons qn args) = mapM lift args <&> Cons qn
-    lift (HNF qn ptrs) = return $ HNF qn ptrs
-    lift (Lit l) = return $ Lit l
-    lift (Free i) = return $ Free i
-    lift (ValOther x) = x
-
-    lift2 (Cons qn args) = mapM lift2 args <&> ValueL . Cons qn . map unValueL
-    lift2 (HNF qn ptrs) = return $ ValueL $ HNF qn ptrs
-    lift2 (Lit l) = return $ ValueL $ Lit l
-    lift2 (Free i) = return $ ValueL $ Free i
-    lift2 (ValOther x) = x
 
 arithInt
     :: (ConsF :<: sig, CaseScope :<: sigs, EffectCons m sig sigs sigl l)

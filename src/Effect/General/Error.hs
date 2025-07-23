@@ -7,6 +7,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE DataKinds #-}
 
 module Effect.General.Error (
     Err (..),
@@ -53,16 +54,9 @@ runErrorSmart
 runErrorSmart = unEC . smartFold point con
 {-# INLINE runErrorSmart #-}
 
-instance Carrier EC Error where
-    cc = EC
-    unc = unEC
-
-instance LCarrier ErrorL Error where
-    cl = ErrorL
-    unl = unErrorL
-
-instance SForward EC ErrorL where
-instance LForward EC ErrorL where
+instance OuterCarrier EC Error
+instance DeriveForward 'Outer EC ErrorL
+instance Forward EC ErrorL 
 
 instance (EffectMonad m sig sigs sigl (ErrorL l)) => TermAlgebra (EC m) (Sig (Err :+: sig) sigs sigl l) where
     con (A (Algebraic op)) = EC . (algE # afwd) . fmap unEC $ op
@@ -91,12 +85,13 @@ instance (Monad m) => Pointed (EC m) where
     point x = EC $ return (EOther x)
     {-# INLINE point #-}
 
-instance Lift ErrorL Error where
-    lift (Error s) = return (Error s)
+
+instance LCarrier ErrorL Error where
+    lift (Error s) = pure (Error s)
     lift (EOther x) = x
     {-# INLINE lift #-}
 
-    lift2 (Error s) = return (ErrorL $ Error s)
+    lift2 (Error s) = pure (ErrorL $ Error s)
     lift2 (EOther x) = x
     {-# INLINE lift2 #-}
 

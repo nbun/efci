@@ -11,6 +11,10 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE RoleAnnotations #-}
+{-# LANGUAGE DataKinds #-}
 
 module Effect.General.ND (
     choose,
@@ -83,20 +87,6 @@ algND :: (Monad m) => ND (m [a]) -> m [a]
 algND Fail = return []
 algND (Or l r) = (++) <$> l <*> r
 
-instance Carrier NDC [] where
-    cc = NDC
-    unc = unNDC
-
--- instance Carrier' (NDC m a) (m [a]) where
-    -- cc'' = NDC
-    -- unc' = unNDC
-
-instance LCarrier ListL [] where
-    cl = ListL
-    unl (ListL xs) = xs
-
-instance SForward NDC ListL where
-instance LForward NDC ListL where
 
 instance (EffectMonad m sig sigs sigl (ListL l)) => TermAlgebra (NDC m) (Sig (ND :+: sig) sigs sigl l) where
     con s = case s of
@@ -104,10 +94,14 @@ instance (EffectMonad m sig sigs sigl (ListL l)) => TermAlgebra (NDC m) (Sig (ND
         S op' -> sfwd op'
         L op' -> lfwd op'
     {-# INLINE con #-}
-    var = cc'
+    var = cc . point . point
     {-# INLINE var #-}
 
-newtype NDC m a = NDC {unNDC :: m [a]}
+newtype NDC m a = NDC {unNDC :: m [a]} 
+
+instance Forward NDC ListL
+instance OuterCarrier NDC [] 
+instance DeriveForward 'Outer NDC ListL
 
 instance (Functor m) => Functor (NDC m) where
     fmap f = NDC . fmap (fmap f) . unNDC
@@ -124,9 +118,9 @@ instance (Functor l) => Functor (ListL l) where
     fmap f (ListL la) = ListL (fmap f <$> la)
     {-# INLINE fmap #-}
 
-instance Lift ListL [] where
-    lift = foldr (liftM2 (++)) (return [])
+instance LCarrier ListL [] where
+    lift = foldr (liftA2 (++)) (pure [])
     lift2 =
         foldr
-            (liftM2 (\xs ys -> ListL $ unListL xs ++ unListL ys))
-            (return (ListL []))
+            (liftA2 (\xs ys -> cl $ unl xs ++ unl ys))
+            (pure (cl []))
