@@ -286,7 +286,6 @@ class LCarrier cL f | cL -> f where
         :: (TermAlgebra m (Sig sig sigs sigl (cL l)), Applicative m)
         => f (m (f a))
         -> m (f a)
-    -- lift = foldr (liftA2 mplus) (pure mzero)
 
     lift2
         :: (TermAlgebra m (Sig sig sigs sigl (cL l)), Applicative m)
@@ -302,8 +301,6 @@ class LForwardNoL c where
 ----
 
 data CarrierDerivingStrat = Outer | Inner | State
-
--- AForward
 
 class (DerivingStrat strat c ll) => DeriveForward (strat :: CarrierDerivingStrat) c ll | c -> strat
 
@@ -356,12 +353,13 @@ instance (OuterCarrier c f, LCarrier ll f, Pointed f) => DerivingStrat 'Outer c 
 
 instance (InnerCarrier c f) => DerivingStrat 'Inner c ll where
     dafwd (Algebraic op) = cci . m2f @c . con . A . Algebraic . fmap (f2m @c . unci) $ op
-
--- dsfwd (Enter op) = cci . m2f @c . con . S . Enter . fmap (fmap lift . f2m @c . unci . fmap (f2m @c . unci)) $ op
--- dlfwd (Node op l st k) = cci $ m2f @c $ con $ L $ Node op (cl' l) (st' st) k'
---   where
---     st' st2 c l' = lift2 (fmap (\x -> cl <$> f2m @c (unci (st2 c x))) (unl l'))
---     k' = lift . fmap (f2m @c . unci . k) . unl
+    dsfwd (Enter op) = cci $ m2f @c $ con $ S $ Enter $ fmap go op
+      where
+        go hhx = fmap (\hhx' -> f2m @c $ unci hhx') (f2m @c $ unci hhx)
+    dlfwd (Node op l st k) = cci $ con $ L $ Node op (cl $ point l) (st' st) k'
+      where
+        st' st c stl = let lv = unl stl in cl <$> unci (st c lv)
+        k' = lift .  unci . fmap (f2m . unci . k) . unl
 
 instance (StateCarrier c s, LCarrier ll ((,) s)) => DerivingStrat 'State c ll where
     dafwd (Algebraic op) = ccst $ \s -> con $ A $ Algebraic $ fmap (\x -> uncst x s) op
