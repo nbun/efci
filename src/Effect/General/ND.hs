@@ -15,6 +15,7 @@
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE RoleAnnotations #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Effect.General.ND (
     choose,
@@ -28,7 +29,6 @@ module Effect.General.ND (
     NDC,
 ) where
 
-import Control.Monad (liftM2)
 import Effect.General.State (EffectCons, logCall)
 import Free
 import GHC.Conc
@@ -83,14 +83,13 @@ runNDC :: (EffectMonad m sig sigs sigl (ListL l)) => Cod (NDC m) a -> m [a]
 runNDC = unNDC . runCod var
 {-# INLINE runNDC #-}
 
-algND :: (Monad m) => ND (m [a]) -> m [a]
-algND Fail = return []
+algND :: (Applicative m) => ND (m [a]) -> m [a]
+algND Fail = pure []
 algND (Or l r) = (++) <$> l <*> r
-
 
 instance (EffectMonad m sig sigs sigl (ListL l)) => TermAlgebra (NDC m) (Sig (ND :+: sig) sigs sigl l) where
     con s = case s of
-        A (Algebraic op) -> NDC . (algND # (con . A . Algebraic)) . fmap unNDC $ op
+        A op' -> ahandle algND op'
         S op' -> sfwd op'
         L op' -> lfwd op'
     {-# INLINE con #-}
@@ -100,15 +99,15 @@ instance (EffectMonad m sig sigs sigl (ListL l)) => TermAlgebra (NDC m) (Sig (ND
 newtype NDC m a = NDC {unNDC :: m [a]} 
 
 instance Forward NDC ListL
-instance OuterCarrier NDC [] 
+instance OuterCarrier NDC []
 instance DeriveForward 'Outer NDC ListL
 
 instance (Functor m) => Functor (NDC m) where
     fmap f = NDC . fmap (fmap f) . unNDC
     {-# INLINE fmap #-}
 
-instance (Monad m) => Pointed (NDC m) where
-    point = NDC . return . return
+instance (Pointed m) => Pointed (NDC m) where
+    point = NDC . point . point
     {-# INLINE point #-}
 
 newtype ListL l a = ListL {unListL :: [l a]}

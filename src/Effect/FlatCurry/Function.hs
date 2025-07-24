@@ -259,8 +259,8 @@ runPartialC
 runPartialC = unPC . runCod var
 {-# INLINE runPartialC #-}
 
-instance (Monad m) => Pointed (PC m) where
-    point x = PC $ return (Other x)
+instance (Pointed m) => Pointed (PC m) where
+    point x = PC $ point (Other x)
     {-# INLINE point #-}
 
 newtype PC m a = PC {unPC :: m (Closure a)}

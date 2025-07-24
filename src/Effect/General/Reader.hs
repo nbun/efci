@@ -11,6 +11,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# LANGUAGE DataKinds #-}
 
 module Effect.General.Reader () where
 
@@ -45,29 +46,17 @@ hReader
     -> (r -> Prog (Sig sig sigs sigl l) a)
 hReader = unRC . fold point con
 
-instance AForwardNoL (RC tag r) where
-    afwdnl (Algebraic op) = RC $ \r -> con $ A $ Algebraic (fmap ((\k -> k r) . unRC) op)
-
-instance SForwardNoL (RC tag r) where
-    sfwdnl (Enter op) = RC $ \r -> con $ S $ Enter $ fmap (go r) op
-      where
-        go r hhx = do
-            hx <- unRC hhx r
-            return (unRC hx r)
-
-instance LForwardNoL (RC tag r) where
-    lfwdnl (Node op l st k) = RC $ \r -> con $ L $ Node op l (st' st r) (k' r)
-      where
-        st' st r c lv = unRC (st c lv) r
-        k' r lv = unRC (k lv) r
+instance Forward (RC tag r) VoidL
+instance ReaderCarrier (RC tag r) r
+instance DeriveForward 'Reader (RC tag r) VoidL
 
 instance (EffectMonad m sig sigs sigl l) => TermAlgebra (RC tag r m) (Sig (ReaderF tag r :+: sig) sigs sigl l) where
     con (A (Algebraic op)) = RC . (algR # afwd) . fmap unRC $ op
       where
         algR (Ask k) r = k r r
         afwd op r = con (A (Algebraic (fmap (\k -> k r) op)))
-    con (S op) = sfwdnl op
-    con (L op) = lfwdnl op
+    con (S op) = sfwd op
+    con (L op) = lfwd op
     {-# INLINE con #-}
     var = RC . gen'Reader
       where
@@ -79,6 +68,6 @@ newtype RC tag r m a = RC {unRC :: r -> m a}
 instance (Functor m) => Functor (RC tag r m) where
     fmap f (RC x) = RC (fmap f . x)
 
-instance (Monad m) => Pointed (RC tag r m) where
-    point x = RC $ const (return x)
+instance (Pointed m) => Pointed (RC tag r m) where
+    point x = RC $ const (point x)
     {-# INLINE point #-}

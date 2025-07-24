@@ -246,8 +246,8 @@ instance (Functor m) => Functor (STC tag s m) where
     fmap f (STC m) = STC (fmap (\(s', a) -> (s', f a)) . m)
     {-# INLINE fmap #-}
 
-instance (Monad m) => Pointed (STC tag s m) where
-    point x = STC (\s -> return (s, x))
+instance (Pointed m) => Pointed (STC tag s m) where
+    point x = STC (\s -> point (s, x))
     {-# INLINE point #-}
 
 newtype StateL s l a = StateL { unStateL :: (s, l a) } deriving (Show)

@@ -80,10 +80,8 @@ hDeclSmart = unH . smartFold point con
 addBody :: (ManySub v v -> l () -> H l v m (l v)) -> AEFuncDecl a -> AEFuncDecl (l () -> H l v m (l v))
 addBody get (AEFunc qn ar vis ty _) = AEFunc qn ar vis ty (get (Many qn))
 
-instance AForwardNoL (H l v) where
+instance ForwardNoL (H l v) where
     afwdnl (Algebraic op) = H $ \th -> con (A (Algebraic (fmap (\x -> unH x th) op)))
-
-instance SForwardNoL (H l v) where
     sfwdnl (Enter op) = H $ \th -> con $ S $ Enter $ fmap (go th) op
       where
         go th hhx = do
@@ -118,8 +116,8 @@ runDeclC :: (EffectMonad m sig sigs sigl l, Functor l, Show (l v)) => Progs m l 
 runDeclC th p = unH (runCod var p) th
 {-# INLINE runDeclC #-}
 
-instance (Monad m) => Pointed (H l v m) where
-    point x = H $ \_ -> return x
+instance (Pointed m) => Pointed (H l v m) where
+    point x = H $ \_ -> point x
     {-# INLINE point #-}
 
 getBody

@@ -81,8 +81,8 @@ instance (Functor m) => Functor (EC m) where
     fmap f (EC x) = EC (fmap (fmap f) x)
     {-# INLINE fmap #-}
 
-instance (Monad m) => Pointed (EC m) where
-    point x = EC $ return (EOther x)
+instance (Pointed m) => Pointed (EC m) where
+    point x = EC $ point (EOther x)
     {-# INLINE point #-}
 
 

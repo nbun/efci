@@ -254,8 +254,8 @@ runConsC = unCC . runCod var
 newtype CC m a = CC {unCC :: m (Value a)}
     deriving (Functor)
 
-instance (Monad m) => Pointed (CC m) where
-    point x = CC $ return (ValOther x)
+instance (Pointed m) => Pointed (CC m) where
+    point x = CC $ point (ValOther x)
     {-# INLINE point #-}
 
 arithInt

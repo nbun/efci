@@ -202,8 +202,8 @@ runLazyC sup p = (\(s, r) -> ctrace (showTS s) r) <$> unMC (runCod var p) (TS su
 -- runLazyC th p = snd <$> unMC (runCod var p) th
 {-# INLINE runLazyC #-}
 
-instance (Monad m) => Pointed (MC l v m) where
-    point x = MC $ \th -> return (th, x)
+instance (Pointed m) => Pointed (MC l v m) where
+    point x = MC $ \th -> point (th, x)
     {-# INLINE point #-}
 
 data Entry m l v = Thunked (l () -> MC l v m (l v)) | Evaluated (l v) | Redirected Ptr
