@@ -51,12 +51,11 @@ module Signature (
     HasCallStack,
     OuterCarrier (..),
     StateCarrier (..),
-    InnerCarrier (..),
     ReaderCarrier (..),
+    Reader'Carrier (..),
     LCarrier (..),
     -- AForward(..),
     ForwardNoL (..),
-    InnerCarrier (..),
     Forward (..),
     DeriveForward (..),
     CarrierDerivingStrat (..),
@@ -257,16 +256,6 @@ class OuterCarrier c f | c -> f where
     default unc :: (Coercible (m (f a)) (c m a)) => c m a -> m (f a)
     unc = coerce
 
-class InnerCarrier c f | c -> f where
-    cci :: f (m a) -> c m a
-    default cci :: (Coercible (c m a) (f (m a))) => f (m a) -> c m a
-    cci = coerce
-    unci :: c m a -> f (m a)
-    default unci :: (Coercible (f (m a)) (c m a)) => c m a -> f (m a)
-    unci = coerce
-    f2m :: f (m a) -> m a
-    m2f :: m a -> f (m a)
-
 class StateCarrier c s | c -> s where
     ccst :: (s -> m (s, a)) -> c m a
     default ccst :: (Coercible (c m a) (s -> m (s, a))) => (s -> m (s, a)) -> c m a
@@ -282,6 +271,14 @@ class ReaderCarrier c r | c -> r where
     uncr :: c m a -> (r -> m a)
     default uncr :: (Coercible (r -> m a) (c m a)) => c m a -> (r -> m a)
     uncr = coerce
+
+class Reader'Carrier c r | c -> r where
+    ccr' :: (r m -> m a) -> c m a
+    default ccr' :: (Coercible (c m a) (r m -> m a)) => (r m -> m a) -> c m a
+    ccr' = coerce
+    uncr' :: c m a -> (r m -> m a)
+    default uncr' :: (Coercible (r m -> m a) (c m a)) => c m a -> (r m -> m a)
+    uncr' = coerce
 
 class LCarrier cL f | cL -> f where
     cl :: f (l x) -> cL l x
@@ -305,9 +302,15 @@ class LCarrier cL f | cL -> f where
 type family Test (strat :: CarrierDerivingStrat) (l :: Type -> Type) (ll :: (Type -> Type) -> Type -> Type) :: Type -> Type where
     Test 'Outer l ll = ll l
     Test 'Reader l ll = l
+    Test 'ReaderM l ll = l
     Test 'State l ll = ll l
 
-data CarrierDerivingStrat = Outer | Reader | State
+type family Test2  (strat :: CarrierDerivingStrat) (a :: Type) (f :: Type -> Type) :: Type where
+    Test2 'Reader a f = a
+    Test2 'ReaderM a f = a
+    Test2 'State a f = f a
+
+data CarrierDerivingStrat = Outer | Reader | State | ReaderM
 
 class (DerivingStrat strat c ll) => DeriveForward (strat :: CarrierDerivingStrat) c ll | c -> strat
 
@@ -358,16 +361,6 @@ instance (OuterCarrier c f, LCarrier ll f, Pointed f) => DerivingStrat 'Outer c 
         st' st2 c l' = lift2 (fmap (\x -> cl <$> unc (st2 c x)) (unl l'))
         k' = lift . fmap (unc . k) . unl
 
--- instance (InnerCarrier c f) => DerivingStrat 'Inner c ll where
-    -- dafwd (Algebraic op) = cci . m2f @c . con . A . Algebraic . fmap (f2m @c . unci) $ op
-    -- dsfwd (Enter op) = cci $ m2f @c $ con $ S $ Enter $ fmap go op
-    --   where
-        -- go hhx = fmap (\hhx' -> f2m @c $ unci hhx') (f2m @c $ unci hhx)
-    -- dlfwd (Node op l st k) = cci $ con $ L $ Node op (cl $ point l) (st' st) k'
-    --   where
-        -- st' st c stl = let lv = unl stl in cl <$> unci (st c lv)
-        -- k' = lift .  unci . fmap (f2m . unci . k) . unl
-
 instance (StateCarrier c s, LCarrier ll ((,) s)) => DerivingStrat 'State c ll where
     dafwd (Algebraic op) = ccst $ \s -> con $ A $ Algebraic $ fmap (\x -> uncst x s) op
     dsfwd (Enter op) = ccst $ \s -> con $ S $ Enter $ fmap (go s) op
@@ -379,12 +372,22 @@ instance (StateCarrier c s, LCarrier ll ((,) s)) => DerivingStrat 'State c ll wh
         st' st c stl = let (s', lv) = unl stl in cl <$> uncst (st c lv) s'
         k' stl = let (s', lv) = unl stl in uncst (k lv) s'
 
-instance (ReaderCarrier c s) => DerivingStrat 'Reader c ll where
+instance (ReaderCarrier c r) => DerivingStrat 'Reader c ll where
     dafwd (Algebraic op) = ccr $ \r -> con $ A $ Algebraic $ fmap (\x -> uncr x r) op
     dsfwd (Enter op) = ccr $ \r -> con $ S $ Enter $ fmap (go r) op
       where
         go r = \hhx -> fmap (\hhx' -> uncr hhx' r) (uncr hhx r)
     dlfwd (Node op l st k) = ccr $ \r -> con $ L $ Node op l (st' st) (k' r)
+      where
+        st' st2 c l' = undefined
+        k' r = undefined --(($) r) . uncr . k
+
+instance (Reader'Carrier c r) => DerivingStrat 'ReaderM c ll where
+    dafwd (Algebraic op) = ccr' $ \r -> con $ A $ Algebraic $ fmap (\x -> uncr' x r) op
+    dsfwd (Enter op) = ccr' $ \r -> con $ S $ Enter $ fmap (go r) op
+      where
+        go r = \hhx -> fmap (\hhx' -> uncr' hhx' r) (uncr' hhx r)
+    dlfwd (Node op l st k) = ccr' $ \r -> con $ L $ Node op l (st' st) (k' r)
       where
         st' st2 c l' = undefined
         k' r = undefined --(($) r) . uncr . k

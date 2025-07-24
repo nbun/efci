@@ -16,6 +16,7 @@
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# LANGUAGE DataKinds #-}
 
 module Effect.FlatCurry.Declarations (
     DeclF (..),
@@ -25,6 +26,7 @@ module Effect.FlatCurry.Declarations (
     initDecls,
     runDeclSmart,
     runDeclC,
+    Progs (..),
 ) where
 
 import Control.Monad (ap, void)
@@ -43,15 +45,15 @@ data DeclF v :: * -> (* -> *) -> * where
 data ManySub v :: * -> * where
     Many :: QName -> ManySub v v
 
-type Progs m l v = [AEProg (l () -> H l v m (l v))]
+newtype Progs (l :: * -> *) (v :: *) (m :: * -> *) = Progs {unProgs :: [AEProg (l () -> H l v m (l v))]}
 
-newtype H l v m a = H {unH :: Progs m l v -> m a}
+newtype H l v m a = H {unH :: Progs l v m -> m a}
 
 instance (Functor m) => Functor (H l v m) where
     fmap f (H x) = H $ \th -> fmap f (x th)
     {-# INLINE fmap #-}
 
-runDecl :: (Functor l, m ~ Prog (Sig sig sigs sigl l), Show (l v)) => Progs m l v -> Prog (Sig sig sigs (DeclF v :+++: sigl) l) b -> m b
+runDecl :: (Functor l, m ~ Prog (Sig sig sigs sigl l), Show (l v)) => Progs l v m -> Prog (Sig sig sigs (DeclF v :+++: sigl) l) b -> m b
 runDecl s p = hDecl p s
 {-# INLINE runDecl #-}
 
@@ -59,12 +61,12 @@ hDecl
     :: forall sig sigs sigl l m v a
      . (Functor l, m ~ Prog (Sig sig sigs sigl l), Show (l v))
     => Prog (Sig sig sigs (DeclF v :+++: sigl) l) a
-    -> Progs m l v
+    -> Progs l v m
     -> m a
 hDecl = unH . fold point con
 {-# INLINE hDecl #-}
 
-runDeclSmart :: (Functor l, m ~ SmartProg (Sig sig sigs sigl l), Show (l v)) => Progs m l v -> SmartProg (Sig sig sigs (DeclF v :+++: sigl) l) b -> m b
+runDeclSmart :: (Functor l, m ~ SmartProg (Sig sig sigs sigl l), Show (l v)) => Progs l v m -> SmartProg (Sig sig sigs (DeclF v :+++: sigl) l) b -> m b
 runDeclSmart s p = hDeclSmart p s
 {-# INLINE runDeclSmart #-}
 
@@ -72,7 +74,7 @@ hDeclSmart
     :: forall sig sigs sigl l m v a
      . (Functor l, m ~ SmartProg (Sig sig sigs sigl l), Show (l v))
     => SmartProg (Sig sig sigs (DeclF v :+++: sigl) l) a
-    -> Progs m l v
+    -> Progs l v m
     -> m a
 hDeclSmart = unH . smartFold point con
 {-# INLINE hDeclSmart #-}
@@ -80,23 +82,19 @@ hDeclSmart = unH . smartFold point con
 addBody :: (ManySub v v -> l () -> H l v m (l v)) -> AEFuncDecl a -> AEFuncDecl (l () -> H l v m (l v))
 addBody get (AEFunc qn ar vis ty _) = AEFunc qn ar vis ty (get (Many qn))
 
-instance ForwardNoL (H l v) where
-    afwdnl (Algebraic op) = H $ \th -> con (A (Algebraic (fmap (\x -> unH x th) op)))
-    sfwdnl (Enter op) = H $ \th -> con $ S $ Enter $ fmap (go th) op
-      where
-        go th hhx = do
-            hx <- unH hhx th
-            return (unH hx th)
+instance Forward (H l v) VoidL
+instance Reader'Carrier (H l v) (Progs l v)
+instance DeriveForward 'ReaderM (H l v) VoidL
 
 instance (Functor l, EffectMonad m sig sigs sigl l, Show (l v)) => TermAlgebra (H l v m) (Sig sig sigs (DeclF v :+++: sigl) l) where
-    con (A op) = afwdnl op
-    con (S op) = sfwdnl op
+    con (A op) = afwd op
+    con (S op) = sfwd op
     con (L (Node op l st k)) = H $ \th -> case op of
         (Inl3 (DeclBody qn)) -> do
-            lv <- unH (fdclBody (findModule th qn) l) th
+            lv <- unH (fdclBody (findModule (unProgs th) qn) l) th
             unH (k lv) th
         (Inl3 (Init ps)) -> do
-            let th' = map (\(AEProg mod imp tdecls fdecls opdecls) -> AEProg mod imp tdecls (Map.map (addBody st) fdecls) opdecls) ps
+            let th' = Progs $ map (\(AEProg mod imp tdecls fdecls opdecls) -> AEProg mod imp tdecls (Map.map (addBody st) fdecls) opdecls) ps
             unH (k l) th'
         (Inr3 op) ->
             con $
@@ -112,7 +110,7 @@ instance (Functor l, EffectMonad m sig sigs sigl l, Show (l v)) => TermAlgebra (
         gen'Memo x _ = return x
     {-# INLINE var #-}
 
-runDeclC :: (EffectMonad m sig sigs sigl l, Functor l, Show (l v)) => Progs m l v -> Cod (H l v m) a -> m a
+runDeclC :: (EffectMonad m sig sigs sigl l, Functor l, Show (l v)) => Progs l v m -> Cod (H l v m) a -> m a
 runDeclC th p = unH (runCod var p) th
 {-# INLINE runDeclC #-}
 

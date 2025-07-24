@@ -55,7 +55,7 @@ runCurryEffects ps e = do
                 . runLazy sup2
                 . runCons
                 . runPartial
-                . runDecl []
+                . runDecl (Progs [])
     pipeline (initDecls ps >> e)
 
 runSmartCurryEffects
@@ -75,7 +75,7 @@ runSmartCurryEffects ps e = do
                 . runLazySmart sup2
                 . runConsSmart
                 . runPartialSmart
-                . runDeclSmart []
+                . runDeclSmart (Progs [])
     pipeline (initDecls ps >> e)
 
 declutter :: (Show a) => ([TraceInfo], Error [(Constraints, Value (Closure a))]) -> ([TraceInfo], [Result])
@@ -246,5 +246,5 @@ runCurryEffectsC ps e = do
                 . runLazyC sup2
                 . runConsC
                 . runPartialC
-                . runDeclC []
+                . runDeclC (Progs [])
     unIOC (pipeline (initDecls ps >> e))
