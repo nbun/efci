@@ -223,7 +223,6 @@ instance LCarrier ClosureL Closure where
     lift2 (External s) = pure $ ClosureL $ External s
     lift2 (Other x) = x
 
-instance Forward PC ClosureL
 instance OuterCarrier PC Closure 
 instance DeriveForward 'Outer PC ClosureL
 

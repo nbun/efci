@@ -82,13 +82,12 @@ hDeclSmart = unH . smartFold point con
 addBody :: (ManySub v v -> l () -> H (Progs l v m) m (l v)) -> AEFuncDecl a -> AEFuncDecl (l () -> H (Progs l v m) m (l v))
 addBody get (AEFunc qn ar vis ty _) = AEFunc qn ar vis ty (get (Many qn))
 
-instance Forward (H (Progs l v m)) VoidL
 instance ReaderCarrier (H (Progs l v m)) (Progs l v m)
 instance DeriveForward 'Reader (H (Progs l v m)) VoidL
 
 instance (Functor l, EffectMonad m sig sigs sigl l, Show (l v)) => TermAlgebra (H (Progs l v m) m) (Sig sig sigs (DeclF v :+++: sigl) l) where
-    con (A op) = afwd op
-    con (S op) = sfwd op
+    con (A op) = afwd @VoidL op
+    con (S op) = sfwd @VoidL op
     con (L (Node op l st k)) = H $ \th -> case op of
         (Inl3 (DeclBody qn)) -> do
             lv <- unH (fdclBody (findModule (unProgs th) qn) l) th

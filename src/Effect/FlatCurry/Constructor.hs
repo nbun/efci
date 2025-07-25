@@ -195,7 +195,6 @@ instance LCarrier ValueL Value where
     lift2 (Free i) = pure $ ValueL $ Free i
     lift2 (ValOther x) = x
 
-instance Forward CC ValueL
 instance OuterCarrier CC Value 
 instance DeriveForward 'Outer CC ValueL
 

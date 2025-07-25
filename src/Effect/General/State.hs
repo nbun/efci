@@ -197,7 +197,6 @@ hStateSmart = unSTC . smartFold point con
 
 instance StateCarrier (STC tag s) s
 instance DeriveForward 'State (STC tag s) (StateL s)
-instance Forward (STC tag s) (StateL s)
 
 instance LCarrier (StateL s) ((,) s) where
     cl = StateL

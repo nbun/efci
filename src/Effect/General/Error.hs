@@ -56,13 +56,12 @@ runErrorSmart = unEC . smartFold point con
 
 instance OuterCarrier EC Error
 instance DeriveForward 'Outer EC ErrorL
-instance Forward EC ErrorL 
+
+algE :: Monad m => Err (m (Error a)) -> m (Error a)
+algE (Err s) = return (Error s)
 
 instance (EffectMonad m sig sigs sigl (ErrorL l)) => TermAlgebra (EC m) (Sig (Err :+: sig) sigs sigl l) where
-    con (A (Algebraic op)) = EC . (algE # afwd) . fmap unEC $ op
-      where
-        algE (Err s) = return (Error s)
-        afwd = con . A . Algebraic
+    con (A op) = ahandle algE op
     con (S op) = sfwd op
     con (L op) = lfwd op
     {-# INLINE con #-}

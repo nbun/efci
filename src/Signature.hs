@@ -54,7 +54,9 @@ module Signature (
     ReaderCarrier (..),
     LCarrier (..),
     -- AForward(..),
-    Forward (..),
+    afwd,
+    sfwd,
+    lfwd,
     DeriveForward (..),
     CarrierDerivingStrat (..),
     ahandle,
@@ -309,33 +311,23 @@ class DerivingStrat strat c ll where
         :: (TermAlgebra m (Sig sig sigs sigl (Test strat l ll)), Pointed m, Applicative m)
         => Latent sigl l (c m) (c m a) -> c m a
 
-class Forward c ll | c -> ll where
-    -- afwd
-        -- :: (TermAlgebra m (Sig sig sigs sigl (Test strat l ll)), Applicative m)
-        -- => Algebraic sig (c m) (c m a) -> c m a
-    afwd
-        :: forall strat sig sigs sigl l m a
-         . (DeriveForward strat c ll, TermAlgebra m (Sig sig sigs sigl (Test strat l ll)), Applicative m)
-        => Algebraic sig (c m) (c m a) -> c m a
-    afwd = dafwd @strat @_ @ll @_ @_ @_ @_ @l
+afwd
+    :: forall ll strat sig sigs sigl l c m a
+     . (DeriveForward strat c ll, TermAlgebra m (Sig sig sigs sigl (Test strat l ll)), Applicative m)
+    => Algebraic sig (c m) (c m a) -> c m a
+afwd = dafwd @strat @_ @ll @_ @_ @_ @_ @l
 
-    -- sfwd
-        -- :: (TermAlgebra m (Sig sig sigs sigl (Test strat l ll)), Pointed m, Applicative m)
-        -- => Scoped sigs (c m) (c m a) -> c m a
-    sfwd
-        :: forall strat sig sigs sigl l m a
-         . (DeriveForward strat c ll, TermAlgebra m (Sig sig sigs sigl (Test strat l ll)), Applicative m, Pointed m, Functor (c m))
-        => Scoped sigs (c m) (c m a) -> c m a
-    sfwd = dsfwd @strat @_ @ll @_ @_ @_ @_ @l
+sfwd
+    :: forall ll strat sig sigs sigl l c m a
+     . (DeriveForward strat c ll, TermAlgebra m (Sig sig sigs sigl (Test strat l ll)), Applicative m, Pointed m, Functor (c m))
+    => Scoped sigs (c m) (c m a) -> c m a
+sfwd = dsfwd @strat @_ @ll @_ @_ @_ @_ @l
 
-    -- lfwd
-        -- :: (TermAlgebra m (Sig sig sigs sigl (Test strat l ll)), Pointed m, Applicative m)
-        -- => Latent sigl l (c m) (c m a) -> c m a
-    lfwd
-        :: forall strat sig sigs sigl l m a
-         . (DeriveForward strat c ll, TermAlgebra m (Sig sig sigs sigl (Test strat l ll)), Pointed m, Applicative m)
-        => Latent sigl l (c m) (c m a) -> c m a
-    lfwd = dlfwd @strat @_ @ll @_ @_ @_ @_ @l
+lfwd
+    :: forall ll strat sig sigs sigl l c m a
+     . (DeriveForward strat c ll, TermAlgebra m (Sig sig sigs sigl (Test strat l ll)), Pointed m, Applicative m)
+    => Latent sigl l (c m) (c m a) -> c m a
+lfwd = dlfwd @strat @_ @ll @_ @_ @_ @_ @l
 
 instance (OuterCarrier c f, LCarrier ll f, Pointed f) => DerivingStrat 'Outer c ll where
     dafwd (Algebraic op) = cc . con . A . Algebraic . fmap unc $ op

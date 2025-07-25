@@ -98,7 +98,6 @@ instance (EffectMonad m sig sigs sigl (ListL l)) => TermAlgebra (NDC m) (Sig (ND
 
 newtype NDC m a = NDC {unNDC :: m [a]} 
 
-instance Forward NDC ListL
 instance OuterCarrier NDC []
 instance DeriveForward 'Outer NDC ListL
 

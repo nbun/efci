@@ -149,7 +149,6 @@ hLazySmart = unMC . smartFold point con
 
 instance StateCarrier (MC l v) (ThunkStore l v)
 instance DeriveForward 'State (MC l v) (StateL (ThunkStore l v))
-instance Forward (MC l v) (StateL (ThunkStore l v))
 
 instance (Functor l, EffectMonad m sig sigs sigl (StateL (ThunkStore l v) l), Show (l v)) => TermAlgebra (MC l v m) (Sig sig sigs (Thunking v :+++: sigl) l) where
     con (A op) = afwd op

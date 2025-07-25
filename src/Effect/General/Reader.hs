@@ -46,7 +46,6 @@ hReader
     -> (r -> Prog (Sig sig sigs sigl l) a)
 hReader = unRC . fold point con
 
-instance Forward (RC tag r) VoidL
 instance ReaderCarrier (RC tag r) r
 instance DeriveForward 'Reader (RC tag r) VoidL
 
@@ -55,8 +54,8 @@ instance (EffectMonad m sig sigs sigl l) => TermAlgebra (RC tag r m) (Sig (Reade
       where
         algR (Ask k) r = k r r
         afwd op r = con (A (Algebraic (fmap (\k -> k r) op)))
-    con (S op) = sfwd op
-    con (L op) = lfwd op
+    con (S op) = sfwd @VoidL op
+    con (L op) = lfwd @VoidL op
     {-# INLINE con #-}
     var = RC . gen'Reader
       where
