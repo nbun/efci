@@ -45,11 +45,11 @@ data DeclF v :: * -> (* -> *) -> * where
 data ManySub v :: * -> * where
     Many :: QName -> ManySub v v
 
-newtype Progs (l :: * -> *) (v :: *) (m :: * -> *) = Progs {unProgs :: [AEProg (l () -> H l v m (l v))]}
+newtype Progs (l :: * -> *) (v :: *) (m :: * -> *) = Progs {unProgs :: [AEProg (l () -> H (Progs l v m) m (l v))]}
 
-newtype H l v m a = H {unH :: Progs l v m -> m a}
+newtype H r m a = H {unH :: r -> m a}
 
-instance (Functor m) => Functor (H l v m) where
+instance (Functor m) => Functor (H (Progs l v m) m) where
     fmap f (H x) = H $ \th -> fmap f (x th)
     {-# INLINE fmap #-}
 
@@ -79,14 +79,14 @@ hDeclSmart
 hDeclSmart = unH . smartFold point con
 {-# INLINE hDeclSmart #-}
 
-addBody :: (ManySub v v -> l () -> H l v m (l v)) -> AEFuncDecl a -> AEFuncDecl (l () -> H l v m (l v))
+addBody :: (ManySub v v -> l () -> H (Progs l v m) m (l v)) -> AEFuncDecl a -> AEFuncDecl (l () -> H (Progs l v m) m (l v))
 addBody get (AEFunc qn ar vis ty _) = AEFunc qn ar vis ty (get (Many qn))
 
-instance Forward (H l v) VoidL
-instance Reader'Carrier (H l v) (Progs l v)
-instance DeriveForward 'ReaderM (H l v) VoidL
+instance Forward (H (Progs l v m)) VoidL
+instance ReaderCarrier (H (Progs l v m)) (Progs l v m)
+instance DeriveForward 'Reader (H (Progs l v m)) VoidL
 
-instance (Functor l, EffectMonad m sig sigs sigl l, Show (l v)) => TermAlgebra (H l v m) (Sig sig sigs (DeclF v :+++: sigl) l) where
+instance (Functor l, EffectMonad m sig sigs sigl l, Show (l v)) => TermAlgebra (H (Progs l v m) m) (Sig sig sigs (DeclF v :+++: sigl) l) where
     con (A op) = afwd op
     con (S op) = sfwd op
     con (L (Node op l st k)) = H $ \th -> case op of
@@ -110,11 +110,11 @@ instance (Functor l, EffectMonad m sig sigs sigl l, Show (l v)) => TermAlgebra (
         gen'Memo x _ = return x
     {-# INLINE var #-}
 
-runDeclC :: (EffectMonad m sig sigs sigl l, Functor l, Show (l v)) => Progs l v m -> Cod (H l v m) a -> m a
+runDeclC :: (EffectMonad m sig sigs sigl l, Functor l, Show (l v)) => Progs l v m -> Cod (H (Progs l v m) m) a -> m a
 runDeclC th p = unH (runCod var p) th
 {-# INLINE runDeclC #-}
 
-instance (Pointed m) => Pointed (H l v m) where
+instance (Pointed m) => Pointed (H (Progs l v m) m) where
     point x = H $ \_ -> point x
     {-# INLINE point #-}
 

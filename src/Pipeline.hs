@@ -175,7 +175,33 @@ type L a =
 
 type M a =
     Cod
-        ( H Id a
+        ( H ((Progs Id a (Cod
+                         (PC
+                            (Cod
+                              (CC
+                                  (Cod
+                                     (MC
+                                        (ValueL (ClosureL Id))
+                                        a
+                                        (Cod
+                                           (STC
+                                              Rename
+                                                 RState
+                                              (Cod
+                                                 (STC
+                                                    CStore
+                                                    (Map.Map Ptr CValue)
+                                                    (Cod
+                                                       (NDC
+                                                          (Cod
+                                                             (EC
+                                                                (Cod
+                                                                   (STC
+                                                                      Trace
+                                            [TraceInfo]
+                                                                      (Cod
+                                                                         (IOC
+                                                                            (L a)))))))))))))))))))))
             ( Cod
                 ( PC
                     ( Cod

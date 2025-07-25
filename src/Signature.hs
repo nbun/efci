@@ -52,10 +52,8 @@ module Signature (
     OuterCarrier (..),
     StateCarrier (..),
     ReaderCarrier (..),
-    Reader'Carrier (..),
     LCarrier (..),
     -- AForward(..),
-    ForwardNoL (..),
     Forward (..),
     DeriveForward (..),
     CarrierDerivingStrat (..),
@@ -272,14 +270,6 @@ class ReaderCarrier c r | c -> r where
     default uncr :: (Coercible (r -> m a) (c m a)) => c m a -> (r -> m a)
     uncr = coerce
 
-class Reader'Carrier c r | c -> r where
-    ccr' :: (r m -> m a) -> c m a
-    default ccr' :: (Coercible (c m a) (r m -> m a)) => (r m -> m a) -> c m a
-    ccr' = coerce
-    uncr' :: c m a -> (r m -> m a)
-    default uncr' :: (Coercible (r m -> m a) (c m a)) => c m a -> (r m -> m a)
-    uncr' = coerce
-
 class LCarrier cL f | cL -> f where
     cl :: f (l x) -> cL l x
     default cl :: (Coercible (cL l x) (f (l x))) => f (l x) -> cL l x
@@ -302,15 +292,9 @@ class LCarrier cL f | cL -> f where
 type family Test (strat :: CarrierDerivingStrat) (l :: Type -> Type) (ll :: (Type -> Type) -> Type -> Type) :: Type -> Type where
     Test 'Outer l ll = ll l
     Test 'Reader l ll = l
-    Test 'ReaderM l ll = l
     Test 'State l ll = ll l
 
-type family Test2  (strat :: CarrierDerivingStrat) (a :: Type) (f :: Type -> Type) :: Type where
-    Test2 'Reader a f = a
-    Test2 'ReaderM a f = a
-    Test2 'State a f = f a
-
-data CarrierDerivingStrat = Outer | Reader | State | ReaderM
+data CarrierDerivingStrat = Outer | Reader | State
 
 class (DerivingStrat strat c ll) => DeriveForward (strat :: CarrierDerivingStrat) c ll | c -> strat
 
@@ -381,21 +365,6 @@ instance (ReaderCarrier c r) => DerivingStrat 'Reader c ll where
       where
         st' st2 c l' = undefined
         k' r = undefined --(($) r) . uncr . k
-
-instance (Reader'Carrier c r) => DerivingStrat 'ReaderM c ll where
-    dafwd (Algebraic op) = ccr' $ \r -> con $ A $ Algebraic $ fmap (\x -> uncr' x r) op
-    dsfwd (Enter op) = ccr' $ \r -> con $ S $ Enter $ fmap (go r) op
-      where
-        go r = \hhx -> fmap (\hhx' -> uncr' hhx' r) (uncr' hhx r)
-    dlfwd (Node op l st k) = ccr' $ \r -> con $ L $ Node op l (st' st) (k' r)
-      where
-        st' st2 c l' = undefined
-        k' r = undefined --(($) r) . uncr . k
-
-class ForwardNoL c where
-    afwdnl :: (TermAlgebra m (Sig sig sigs sigl l)) => Algebraic sig (c m) (c m a) -> c m a
-    sfwdnl :: (TermAlgebra m (Sig sig sigs sigl l), Monad m, Pointed m) => Scoped sigs (c m) (c m a) -> c m a
-    lfwdnl :: (TermAlgebra m (Sig sig sigs sigl l), Monad m, Pointed m) => Latent sigl l (c m) (c m a) -> c m a
 
 ahandle ::  (Applicative m, TermAlgebra m (Sig sig sigs sigl l), OuterCarrier c f) => (eff (m (f a)) -> m (f a)) -> Algebraic (eff :+: sig) (c m) (c m a) -> c m a
 ahandle alg (Algebraic op) = cc . (alg # (con . A . Algebraic)) . fmap unc $ op
