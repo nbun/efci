@@ -1,6 +1,7 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE DataKinds #-}
 {-# HLINT ignore "Use newtype instead of data" #-}
 {-# LANGUAGE EmptyCase #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -22,7 +23,6 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
-{-# LANGUAGE DataKinds #-}
 
 module Effect.General.Memoization (
     Thunking,
@@ -146,54 +146,49 @@ hLazySmart
 hLazySmart = unMC . smartFold point con
 {-# INLINE hLazySmart #-}
 
-
 instance StateCarrier (MC l v) (ThunkStore l v)
 instance DeriveForward 'State (MC l v) (StateL (ThunkStore l v))
+
+algLazy
+    :: (Monad m, Functor l)
+    => Latent (Thunking v) l (MC l v m) (MC l v m a)
+    -> MC l v m a
+algLazy (Node op l st' k') = MC $ \ts@(TS sup th) ->
+    let k = unMC . k'
+        st c l = unMC $ st' c l
+     in case op of
+            Thunk ptr -> k l (TS sup (addEntry ptr (Thunked (unsafeCoerce $ st One)) th))
+            Store ->
+                let (!fresh, sup') = freshPtr sup
+                    th' = if ptrKey fresh `mod` 20000 == 0 then purge th else th
+                 in k (fresh <$ l) (TS sup' (addEntry fresh (Thunked (unsafeCoerce $ st One)) th'))
+            Eval ->
+                let (!fresh, sup') = freshPtr sup
+                 in do
+                        (TS sup'' th'', lv) <- st One l (TS sup' th)
+                        k (fresh <$ l) (TS sup'' (addEntry fresh (Evaluated lv) th''))
+            Force p -> retrieve p
+              where
+                retrieve ptr = case lookupEntry ptr th of
+                    Thunked t -> do
+                        (TS sup' th', lv) <- unMC (unsafeCoerce $ t l) ts
+                        k lv (TS sup' (addEntry ptr (Evaluated lv) th'))
+                    Evaluated lv -> k lv ts
+                    Redirected p' -> retrieve p'
+            Redirect (p, p') -> do
+                let skipRedirects th ptr = case lookupEntry ptr th of
+                        Redirected ptr' -> skipRedirects th ptr'
+                        _ -> ptr
+                k l (TS sup (addEntry p (Redirected (skipRedirects th p')) th))
 
 instance (Functor l, EffectMonad m sig sigs sigl (StateL (ThunkStore l v) l), Show (l v)) => TermAlgebra (MC l v m) (Sig sig sigs (Thunking v :+++: sigl) l) where
     con (A op) = afwd op
     con (S op) = sfwd op
-    con (L (Node op l st k)) = MC $ \ts@(TS sup th) -> case op of
-        (Inl3 (Thunk ptr)) -> ctrace ("thunked " ++ show ptr) $ do
-            unMC (k l) (TS sup (addEntry ptr (Thunked (unsafeCoerce $ st One)) th))
-        (Inl3 Store) ->
-            ctrace ("stored ") $
-                let (!fresh, sup') = freshPtr sup
-                    th' = if ptrKey fresh `mod` 20000 == 0 then purge th else th
-                 in unMC (k (fresh <$ l)) (TS sup' (addEntry fresh (Thunked (unsafeCoerce $ st One)) th'))
-        (Inl3 Eval) ->
-            ctrace ("stored ") $
-                let (!fresh, sup') = freshPtr sup
-                    th' = if ptrKey fresh `mod` 20000 == 0 then purge th else th
-                 in do
-                        (TS sup'' th'', lv) <- unMC (st One l) (TS sup' th')
-                        unMC (k (fresh <$ l)) (TS sup'' (addEntry fresh (Evaluated lv) th''))
-        (Inl3 (Force p)) ->
-            let retrieve ptr = case lookupEntry ptr th of
-                    Thunked t -> do
-                        (TS sup' th', lv) <- unMC (unsafeCoerce $ t l) ts
-                        let ts' = TS sup' (addEntry ptr (Evaluated lv) th')
-                        unMC (k lv) (ctrace ("evaluate " ++ show ptr ++ show lv) ts')
-                    Evaluated lv -> ctrace ("memoized " ++ show ptr ++ show lv) $ unMC (k lv) ts
-                    Redirected p' -> ctrace ("redirect " ++ show ptr ++ " -> " ++ show p') $ retrieve p'
-             in ctrace ("force") $ retrieve p
-        (Inl3 (Redirect (p, p'))) -> ctrace ("redirect " ++ show (p, p')) $ do
-            let skipRedirects th ptr = case lookupEntry ptr th of
-                    Redirected ptr' -> skipRedirects th ptr'
-                    _ -> ptr
-            unMC (k l) (TS sup (addEntry p (Redirected (skipRedirects th p')) th))
-        (Inr3 op) ->
-            con $
-                L $
-                    Node
-                        op
-                        (StateL (ts, l))
-                        (\c stl -> let (ts', lv) = unStateL stl in StateL <$> unMC (st c lv) ts')
-                        (\stl -> let (ts', lv) = unStateL stl in unMC (k lv) ts')
+    con (L (Node op l st k)) = case op of
+        (Inl3 op') -> algLazy (Node op' l st k)
+        (Inr3 op') -> lfwd @_ @'State (Node op' l st k)
     {-# INLINE con #-}
-    var = MC . gen'Memo
-      where
-        gen'Memo x th = return (th, x)
+    var = MC . (\x th -> point (th, x))
     {-# INLINE var #-}
 
 runLazyC :: (EffectMonad m sig sigs sigl (StateL (ThunkStore l v) l), Functor l, Show (l v)) => UniqSupply -> Cod (MC l v m) a -> m a
@@ -239,7 +234,7 @@ lookupEntry (Ptr !i) th = unsafePerformIO $ keepAlive i $ do
         Nothing -> error $ analyzeVarIndex "VarIndex not found: " i
 {-# NOINLINE lookupEntry #-}
 
-purge :: (Show (l v)) => TSM m l v -> TSM m l v
+purge :: TSM m l v -> TSM m l v
 purge m = strace stats m'
   where
     -- purge m = strace stats m'

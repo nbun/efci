@@ -89,7 +89,7 @@ algND (Or l r) = (++) <$> l <*> r
 
 instance (EffectMonad m sig sigs sigl (ListL l)) => TermAlgebra (NDC m) (Sig (ND :+: sig) sigs sigl l) where
     con s = case s of
-        A op' -> ahandle algND op'
+        A (Algebraic op) -> ((NDC . algND . fmap unNDC) # (afwd . Algebraic)) op
         S op' -> sfwd op'
         L op' -> lfwd op'
     {-# INLINE con #-}

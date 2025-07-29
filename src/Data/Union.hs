@@ -51,6 +51,6 @@ inj = Union elemAt
 {-# INLINE inj #-}
 
 prj :: forall f r a. Elem f r => Union r a -> Maybe (f a)
-prj (Union p x) = case elemAt @f @r of
+prj (Union _ x) = case elemAt @f @r of
   Index n -> if n == 0 then Just (unsafeCoerce x) else Nothing
 {-# INLINE prj #-}

@@ -22,6 +22,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE PartialTypeSignatures #-}
 
 module Signature (
     (:+:),
@@ -60,7 +61,7 @@ module Signature (
     DeriveForward (..),
     CarrierDerivingStrat (..),
     ahandle,
-    VoidL
+    VoidL,
 ) where
 
 import Data.Coerce
@@ -338,10 +339,10 @@ instance (OuterCarrier c f, LCarrier ll f, Pointed f) => DerivingStrat 'Outer c 
         k' = lift . fmap (unc . k) . unl
 
 instance (StateCarrier c s, LCarrier ll ((,) s)) => DerivingStrat 'State c ll where
-    dafwd (Algebraic op) = ccst $ \s -> con $ A $ Algebraic $ fmap (\x -> uncst x s) op
+    dafwd (Algebraic op) = ccst $ \s -> con $ A $ Algebraic $ fmap (`uncst` s) op
     dsfwd (Enter op) = ccst $ \s -> con $ S $ Enter $ fmap (go s) op
       where
-        go s = \hhx -> fmap (\(s', hhx') -> uncst hhx' s') (uncst hhx s)
+        go s hhx = fmap (\(s', hhx') -> uncst hhx' s') (uncst hhx s)
     dlfwd (Node op l st k) = ccst $
         \s -> con $ L $ Node op (cl (s, l)) (st' st) k'
       where
@@ -349,16 +350,46 @@ instance (StateCarrier c s, LCarrier ll ((,) s)) => DerivingStrat 'State c ll wh
         k' stl = let (s', lv) = unl stl in uncst (k lv) s'
 
 instance (ReaderCarrier c r) => DerivingStrat 'Reader c ll where
-    dafwd (Algebraic op) = ccr $ \r -> con $ A $ Algebraic $ fmap (\x -> uncr x r) op
+    dafwd (Algebraic op) = ccr $ \r -> con $ A $ Algebraic $ fmap (`uncr` r) op
     dsfwd (Enter op) = ccr $ \r -> con $ S $ Enter $ fmap (go r) op
       where
-        go r = \hhx -> fmap (\hhx' -> uncr hhx' r) (uncr hhx r)
+        go r hhx = fmap (`uncr` r) (uncr hhx r)
     dlfwd (Node op l st k) = ccr $ \r -> con $ L $ Node op l (st' st) (k' r)
       where
         st' st2 c l' = undefined
-        k' r = undefined --(($) r) . uncr . k
+        k' r = undefined -- (($) r) . uncr . k
 
-ahandle ::  (Applicative m, TermAlgebra m (Sig sig sigs sigl l), OuterCarrier c f) => (eff (m (f a)) -> m (f a)) -> Algebraic (eff :+: sig) (c m) (c m a) -> c m a
-ahandle alg (Algebraic op) = cc . (alg # (con . A . Algebraic)) . fmap unc $ op
+ahandle
+    :: (Applicative m, TermAlgebra m (Sig sig sigs sigl l), OuterCarrier c f)
+    => (eff (m (f a)) -> m (f a)) -> Algebraic (eff :+: sig) (c m) (c m a) -> c m a
+ahandle alg (Algebraic op) = cc . (alg # fwd) . fmap unc $ op
+  where fwd = con . A . Algebraic
+
+-- lsthandle :: forall m sig sigs sigl l ll v p d eff f c a s. (TermAlgebra m (Sig sig sigs sigl (ll l)), OuterCarrier c f, LCarrier ll ((,) s)) =>
+--   (eff v p d -> l ()
+--   -> (forall x. d x -> l () -> c m (l x))
+--   -> (l p -> c m a)
+--   -> s
+--   -> m (s, a))
+--   -> Latent (eff v :+++: sigl) l (c m) (c m a) -> c ((->) s) (s, a)
+-- --   -> Latent (eff v :+++: sigl) l (c m) (c m a) -> c m a
+-- lsthandle alg (Node op l st k) = cc $ \s -> case op of
+--     Inl3 op' -> alg op' l st k s
+--     Inr3 op' -> con $
+--                 L $
+--                     Node
+--                         op'
+--                         (cl (s, l))
+--                         (\c stl -> let (s', lv) = unl stl in cl <$> unc (st c lv) s')
+--                         (\stl -> let (s', lv) = unl stl in unc (k lv) s')
+-- {-# INLINE lsthandle #-}
+
+-- lhandle :: (TermAlgebra m (Sig sig sigs sigl (ll l)), DeriveForward Outer c ll, OuterCarrier c f, Pointed m, Applicative m ) =>
+--   (Latent (eff v) l (c m) (m (f a)) -> m (f a))
+--   -> Latent (eff v :+++: sigl) l (c m) (c m a) -> c m a
+-- lhandle alg (Node op l st k) = case op of
+--     Inl3 op' -> cc $ alg (Node op' l (\c l -> unc $ st c l) (unc . k))
+--     Inr3 op' -> lfwd @_ @'Outer (Node op' l st k)
+
 
 data VoidL (l :: Type -> Type) a
