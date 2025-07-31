@@ -128,8 +128,7 @@ instance HFunctor (Scoped sig) where
 data Latent sig l f a where
     Node :: sig p c -> l () -> (forall x. c x -> l () -> f (l x)) -> (l p -> a) -> Latent sig l f a
 
-instance Functor (Latent sig l f) where
-    fmap f (Node sub l st c) = Node sub l st (f . c)
+deriving instance Functor (Latent sig l f)
 
 instance HFunctor (Latent sig l) where
     hmap k (Node sub l st c) = Node sub l (fmap k . st) c
@@ -157,11 +156,7 @@ instance {-# OVERLAPPABLE #-} (sig :<<<<: sig2) => sig :<<<<: (sig1 :+++: sig2) 
 data LVoid p c deriving (Functor)
 
 data Sig sig sigs sigl l f a = A (Algebraic sig f a) | S (Scoped sigs f a) | L (Latent sigl l f a)
-
-instance (Functor f) => Functor (Sig sig sigs sigl l f) where
-    fmap f (A !a) = A (fmap f a)
-    fmap f (S !s) = S (fmap f s)
-    fmap f (L !l) = L (fmap f l)
+  deriving (Functor)
 
 injectS :: forall sig sigs sigl l m a eff. (eff :<: sigs, TermMonad m (Sig sig sigs sigl l), Functor eff) => eff (m (m a)) -> m a
 injectS = con . S . Enter . inj
@@ -199,54 +194,6 @@ instance HFunctor (Sig sig sigs sigl l) where
 type EffectMonad m sig sigs sigl l = (TermMonad m (Sig sig sigs sigl l))
 
 -- {-# RULES "fmapCoerce/coerce" fmap coerce = unsafeCoerce #-}
-
--- conA
---     :: (EffectMonad m sig sigs sigl (ll l), Lift ll f, Functor (c m), Carrier c f, LCarrier ll f)
---     => (eff (m (f a)) -> m (f a)) -> Sig (eff :+: sig) sigs sigl l (c m) (c m a) -> c m a
--- conA alg eff = case eff of
---     A (Algebraic op) -> cc . (alg # afwd) . fmap unc $ op
---       where
---         afwd = con . A . Algebraic
---     S (Enter op) -> cc . con . S . Enter . fmap (fmap lift . unc . fmap unc) $ op
---     L (Node op l st k) -> cc $ con $ L $ Node op (cl' l) (st' st) k'
---       where
---         st' st2 c l' = lift2 (fmap (\x -> cl <$> unc (st2 c x)) (unl l'))
---         k' = lift . fmap (unc . k) . unl
-
--- conA
---     :: (EffectMonad m sig sigs sigl (ll l), Lift ll f, Functor (c m), OuterCarrier c f, LCarrier ll f)
---     => (eff (m (f a)) -> m (f a)) -> Sig (eff :+: sig) sigs sigl l (c m) (c m a) -> c m a
--- conA alg eff = case eff of
---     A (Algebraic op) -> cc . (alg # afwd) . fmap unc $ op
---       where
---         afwd = con . A . Algebraic
---     S (Enter op) -> cc . con . S . Enter . fmap (fmap lift . unc . fmap unc) $ op
---     L (Node op l st k) -> cc $ con $ L $ Node op (cl' l) (st' st) k'
---       where
---         st' st2 c l' = lift2 (fmap (\x -> cl <$> unc (st2 c x)) (unl l'))
---         k' = lift . fmap (unc . k) . unl
-
--- conA
--- :: (EffectMonad m sig sigs sigl (ll l), Lift ll f, Functor (c m), Carrier c f, LCarrier ll f)
--- => (eff (m (f a)) -> m (f a)) -> Sig (eff :+: sig) sigs sigl l (c m) (c m a) -> c m a
--- conA'
---     :: (EffectMonad m sig sigs sigl (cL l), Lift cL f, Functor (c m), Functor f)
---     => (m (f a) -> c m a)
---     -> (forall x. c m x -> m (f x))
---     -> (forall x. f (l x) -> cL l x)
---     -> (forall x. l x -> cL l x)
---     -> (forall x. cL l x -> f (l x))
---     -> (eff (m (f a)) -> m (f a))
---     -> Sig (eff :+: sig) sigs sigl l (c m) (c m a)
---     -> c m a
--- conA' cc unc cl cl' unl alg eff = case eff of
---     A (Algebraic op) -> cc . (alg # afwd) . fmap unc $ op
---       where
---         afwd = con . A . Algebraic
---     S (Enter op) -> cc . con . S . Enter . fmap (fmap lift . unc . fmap unc) $ op
---     L (Node op l st k) -> cc $ con $ L $ Node op (cl' l) (\c l' -> lift2 (fmap (\x -> cl <$> unc (st c x)) (unl l'))) k'
---       where
---         k' = lift . fmap (unc . k) . unl
 
 class OuterCarrier c f | c -> f where
     cc :: m (f a) -> c m a

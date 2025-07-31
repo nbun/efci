@@ -85,28 +85,28 @@ addBody get (AEFunc qn ar vis ty _) = AEFunc qn ar vis ty (get (Many qn))
 instance ReaderCarrier (H (Progs l v m)) (Progs l v m)
 instance DeriveForward 'Reader (H (Progs l v m)) VoidL
 
+algDecl
+    :: (Monad m, Functor l)
+    => Latent (DeclF v) l (H (Progs l v m) m) (H (Progs l v m) m a)
+    -> H (Progs l v m) m a
+algDecl (Node op l st' k') = H $ \th ->
+    let k = unH . k'
+     in case op of
+            DeclBody qn -> do
+              lv <- (unH . fdclBody (findModule (unProgs th) qn)) l th
+              k lv th
+            Init ps ->
+              let th' = Progs $ map (\(AEProg mod imp tdecls fdecls opdecls) -> AEProg mod imp tdecls (Map.map (addBody st') fdecls) opdecls) ps
+              in k l th'
+
 instance (Functor l, EffectMonad m sig sigs sigl l, Show (l v)) => TermAlgebra (H (Progs l v m) m) (Sig sig sigs (DeclF v :+++: sigl) l) where
     con (A op) = afwd @VoidL op
     con (S op) = sfwd @VoidL op
-    con (L (Node op l st k)) = H $ \th -> case op of
-        (Inl3 (DeclBody qn)) -> do
-            lv <- unH (fdclBody (findModule (unProgs th) qn) l) th
-            unH (k lv) th
-        (Inl3 (Init ps)) -> do
-            let th' = Progs $ map (\(AEProg mod imp tdecls fdecls opdecls) -> AEProg mod imp tdecls (Map.map (addBody st) fdecls) opdecls) ps
-            unH (k l) th'
-        (Inr3 op) ->
-            con $
-                L $
-                    Node
-                        op
-                        l
-                        (\c lv -> unH (st c lv) th)
-                        (\lv -> unH (k lv) th)
+    con (L (Node op l st k)) = case op of
+        (Inl3 op') -> algDecl (Node op' l st k)
+        (Inr3 op') -> lfwd @VoidL @'Reader (Node op' l st k)
     {-# INLINE con #-}
-    var = H . gen'Memo
-      where
-        gen'Memo x _ = return x
+    var = H . (\x _ -> return x)
     {-# INLINE var #-}
 
 runDeclC :: (EffectMonad m sig sigs sigl l, Functor l, Show (l v)) => Progs l v m -> Cod (H (Progs l v m) m) a -> m a

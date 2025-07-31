@@ -8,6 +8,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveFunctor #-}
 
 module Effect.General.Error (
     Err (..),
@@ -23,22 +24,14 @@ import Free
 import Signature
 
 newtype Err a = Err String
-
-instance Functor Err where
-    fmap _ (Err s) = Err s
-    {-# INLINE fmap #-}
+    deriving (Functor, Show)
 
 data Error a = Error String | EOther a
-    deriving (Show)
+    deriving (Functor, Show)
 
 instance Pointed Error where
     point = EOther
     {-# INLINE point #-}
-
-instance Functor Error where
-    fmap _ (Error s) = Error s
-    fmap f (EOther x) = EOther (f x)
-    {-# INLINE fmap #-}
 
 runError
     :: forall sig sigs sigl l a

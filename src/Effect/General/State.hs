@@ -16,6 +16,7 @@
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE DeriveFunctor #-}
 
 module Effect.General.State (
     EffectCons,
@@ -74,12 +75,7 @@ data StateF (tag :: Type) s a
     = Get (s -> a)
     | Put !s a
     | Modify (s -> s) a
-
-instance Functor (StateF tag s) where
-    fmap f (Get g) = Get (f . g)
-    fmap f (Put s a) = Put s (f a)
-    fmap f (Modify g a) = Modify g (f a)
-    {-# INLINE fmap #-}
+    deriving (Functor)
 
 get
     :: forall tag s m l sig sigs sigl
@@ -199,7 +195,10 @@ hStateSmart = unSTC . smartFold point con
 instance StateCarrier (STC tag s) s
 instance DeriveForward 'State (STC tag s) (StateL s)
 
-instance LCarrier (StateL s) ((,) s)
+instance LCarrier (StateL s) ((,) s) where
+  lift (_, x) = x
+
+  lift2 (_, x) = x
 
 algS :: StateF tag s (s -> m a) -> s -> m a
 algS (Get k) s = k s s
@@ -236,20 +235,14 @@ runStateC' s p = snd <$> unSTC (runCod var p) s
 {-# INLINE runStateC' #-}
 
 newtype STC tag s m a = STC {unSTC :: s -> m (s, a)}
-
-instance (Functor m) => Functor (STC tag s m) where
-    fmap f (STC m) = STC (fmap (\(s', a) -> (s', f a)) . m)
-    {-# INLINE fmap #-}
+  deriving (Functor)
 
 instance (Pointed m) => Pointed (STC tag s m) where
     point x = STC (\s -> point (s, x))
     {-# INLINE point #-}
 
-newtype StateL s l a = StateL { unStateL :: (s, l a) } deriving (Show)
-
-instance (Functor l) => Functor (StateL s l) where
-    fmap f (StateL (s, la)) = StateL (s, fmap f la)
-    {-# INLINE fmap #-}
+newtype StateL s l a = StateL { unStateL :: (s, l a) }
+  deriving (Functor, Show)
 
 -- constraint store --
 

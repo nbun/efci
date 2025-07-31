@@ -9,6 +9,8 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE StandaloneDeriving #-}
 
 module Data.Union (Union (..), Elem, inj, prj, (#), absurd) where
 import Unsafe.Coerce (unsafeCoerce)
@@ -19,11 +21,9 @@ type Effects = [Type -> Type]
 data Union (effs :: Effects) a where
   Union :: Functor f => !(Index f effs) -> f a -> Union effs a
 
-newtype Index (e :: k) (effs :: [k]) = Index Int
+deriving instance Functor (Union effs)
 
-instance Functor (Union r) where
-  fmap f (Union p x) = Union p $ f <$> x
-  {-# INLINE fmap #-}
+newtype Index (e :: k) (effs :: [k]) = Index Int
 
 (#) :: (f a -> b) -> (Union effs a -> b) -> Union (f : effs) a -> b
 (#) alg fwd (Union !p x) = case p of

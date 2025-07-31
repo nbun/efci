@@ -52,26 +52,15 @@ data ConsF a
     | FStrictCons QName [a]
     | FLit Literal
     | FFree Ptr
+    deriving (Functor)
 
-instance Functor ConsF where
-    fmap _ (FCons qn args) = FCons qn args
-    fmap f (FStrictCons qn args) = FStrictCons qn (map f args)
-    fmap _ (FLit l) = FLit l
-    fmap _ (FFree i) = FFree i
-    {-# INLINE fmap #-}
 
 data CaseScope a
     = Case a (Value () -> a)
     | Normalize a ((QName, [Ptr]) -> a)
     | External [a] ([Value ()] -> a)
     | Unify a a ((Value (), Value ()) -> a)
-
-instance Functor CaseScope where
-    fmap f (Case a k) = Case (f a) (f . k)
-    fmap f (Normalize a k) = Normalize (f a) (f . k)
-    fmap f (External as k) = External (map f as) (f . k)
-    fmap f (Unify a1 a2 k) = Unify (f a1) (f a2) (f . k)
-    {-# INLINE fmap #-}
+    deriving (Functor)
 
 normalform
     :: ( ConsF :<: sig
@@ -84,7 +73,7 @@ normalform
 normalform p = logCall >> injectS (Normalize (fmap return p) (fmap return . f))
   where
     f (qn, ptrs) = do
-        let args = map ((normalform . force)) ptrs
+        let args = map (normalform . force) ptrs
         injectA (FStrictCons qn args)
 {-# INLINE normalform #-}
 
@@ -118,26 +107,27 @@ case' cp brs =
         [] -> failed
         [x] -> x
         xs -> choose xs
-      where
-        match (HNF qn args) (AEPattern pqn argPtrs, e)
-            | pqn == qn =
-                Just $ let' argPtrs (Thunks args) e
-            | otherwise = Nothing
-        match (Lit l) (AELPattern lp, e)
-            | l == lp = Just e
-            | otherwise = Nothing
-        match (Free i) pat = Just $ do
-            case pat of
-                (AEPattern pqn argPtrs, e) -> do
-                    vs <- freshNames (length argPtrs)
-                    let fvs = Progs $ map fvar vs
-                    modify @CStore (addC i (ConsC pqn vs))
-                    let' argPtrs fvs e
-                (AELPattern lp, e) -> do
-                    modify @CStore (addC i (LitC lp))
-                    e
-        match (ValOther ()) (AEPattern ("Prelude", "()") [], e) = Just e
-        match v ps =
+
+match :: (EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl, Renaming :<: sig, CaseScope :<: sigs, ND :<: sig, ConstraintStore :<: sig, ConsF :<: sig) => Value () -> (AEPattern, m a) -> Maybe (m a)
+match (HNF qn args) (AEPattern pqn argPtrs, e)
+    | pqn == qn =
+        Just $ let' argPtrs (Thunks args) e
+    | otherwise = Nothing
+match (Lit l) (AELPattern lp, e)
+    | l == lp = Just e
+    | otherwise = Nothing
+match (Free i) pat = Just $ do
+    case pat of
+        (AEPattern pqn argPtrs, e) -> do
+            vs <- freshNames (length argPtrs)
+            let fvs = Progs $ map fvar vs
+            modify @CStore (addC i (ConsC pqn vs))
+            let' argPtrs fvs e
+        (AELPattern lp, e) -> do
+            modify @CStore (addC i (LitC lp))
+            e
+match (ValOther ()) (AEPattern ("Prelude", "()") [], e) = Just e
+match v ps =
             error $
                 "Pattern match not implemented for " ++ show v ++ show (fst ps)
 
@@ -147,26 +137,14 @@ data Value a
     | Lit Literal
     | Free Ptr
     | ValOther a
-    deriving (Show)
+    deriving (Functor, Show)
 
 instance Pointed Value where
     point = ValOther
     {-# INLINE point #-}
 
-instance Functor Value where
-    fmap f (Cons qn args) = Cons qn (map (fmap f) args)
-    fmap _ (HNF qn ptrs) = HNF qn ptrs
-    fmap _ (Lit l) = Lit l
-    fmap _ (Free i) = Free i
-    fmap f (ValOther x) = ValOther (f x)
-    {-# INLINE fmap #-}
-
 newtype ValueL l a = ValueL {unValueL :: Value (l a)}
-    deriving (Show)
-
-instance (Functor l) => Functor (ValueL l) where
-    fmap f (ValueL x) = ValueL (fmap (fmap f) x)
-    {-# INLINE fmap #-}
+    deriving (Functor, Show)
 
 runCons
     :: forall sig sigs sigl l a
@@ -195,7 +173,7 @@ instance LCarrier ValueL Value where
     lift2 (Free i) = pure $ ValueL $ Free i
     lift2 (ValOther x) = x
 
-instance OuterCarrier CC Value 
+instance OuterCarrier CC Value
 instance DeriveForward 'Outer CC ValueL
 
 instance

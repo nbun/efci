@@ -136,7 +136,3 @@ newtype IOC (l :: * -> *) a
 instance Pointed (IOC l) where
     point = IOC . return
     {-# INLINE point #-}
-
-instance Pointed IO where
-    point = return
-    {-# INLINE point #-}

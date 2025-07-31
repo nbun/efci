@@ -81,31 +81,18 @@ data Partial a
     | FApply a (Closure () -> a)
     | Abs [Ptr] Ptr
     | Ext String
-
-instance Functor Partial where
-    fmap _ (PartCall qn ct ptrs) = PartCall qn ct ptrs
-    fmap f (FApply x k) = FApply (f x) (f . k)
-    fmap f (Abs vs ptr) = Abs vs ptr
-    fmap _ (Ext s) = Ext s
-    {-# INLINE fmap #-}
+    deriving (Functor)
 
 data Closure a
     = Closure QName CombType [Ptr]
     | Lambda [Ptr] Ptr
     | External String
     | Other a
-    deriving (Show)
+    deriving (Functor, Show)
 
 instance Pointed Closure where
     point = Other
     {-# INLINE point #-}
-
-instance Functor Closure where
-    fmap _ (Closure qn ct ptrs) = Closure qn ct ptrs
-    fmap f (Other x) = Other (f x)
-    fmap _ (Lambda vs ptr) = Lambda vs ptr
-    fmap _ (External s) = External s
-    {-# INLINE fmap #-}
 
 external :: (EffectCons m sig sigs sigl Id, Partial :<: sigs, Thunking a :<<<<: sigl) => String -> m a
 external s = logCall >> injectS (Ext s)
@@ -153,7 +140,7 @@ apply lam args =
                     fun qn (Thunks ptrs')
                 ConsPartCall 1 -> cons qn (Thunks ptrs')
                 _ -> injectS $ PartCall qn (decArgs combtype) ptrs'
-    -- k _ = lam -- This case is relevant for (>>=), where the applied value might not be an actual function
+    k (Other _) = error "apply: Other encountered"
 
 callExternal
     :: forall m sig sigs sigl a. (EffectCons m sig sigs sigl Id, Functions sig sigs sigl a)

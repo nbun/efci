@@ -1,5 +1,7 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DefaultSignatures #-}
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE EmptyDataDeriving #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -31,25 +33,23 @@ module Free (
 data Prog k a where
     Return :: a -> Prog k a
     Call :: k (Prog k) (Prog k a) -> Prog k a
-deriving instance (Show (k (Prog k) (Prog k a)), Show a) => Show (Prog k a)
 
-instance (HFunctor k) => Functor (Prog k) where
-    fmap f (Return x) = Return (f x)
-    fmap f (Call op) = Call (fmap (fmap f) op)
+deriving instance (Show (k (Prog k) (Prog k a)), Show a) => Show (Prog k a)
+deriving instance (HFunctor k) => Functor (Prog k)
 
 type f --> g = forall a. f a -> g a
 
 class (forall f. (Functor f) => Functor (k f)) => HFunctor k where
     hmap :: (Functor f, Functor f') => f --> f' -> k f --> k f'
 
-instance (HFunctor k) => Monad (Prog k) where
-    Return x >>= f = f x
-    Call op >>= f = Call (fmap (>>= f) op)
-
 instance (HFunctor k) => Applicative (Prog k) where
     pure = Return
     Return f <*> p = fmap f p
     Call op <*> p = Call (fmap (<*> p) op)
+
+instance (HFunctor k) => Monad (Prog k) where
+    Return x >>= f = f x
+    Call op >>= f = Call (fmap (>>= f) op)
 
 fold :: forall k f a b. (HFunctor k, Pointed f) => (a -> f b) -> (forall x. k f (f x) -> f x) -> Prog k a -> f b
 fold gen alg = go
@@ -62,39 +62,27 @@ fold gen alg = go
     fold' (Return x) = point x
     fold' (Call op) = alg (hmap fold' (fmap fold' op))
 
--- smartFold' :: forall k k' f a b. (f ~ SmartProg k', HFunctor k, Pointed f) => (a -> f b) -> (forall x. k f (f x) -> f x) -> SmartProg k a -> f b
--- smartFold' = smartFold
-
--- test :: (HFunctor k'1, HFunctor k'2, HFunctor k) => (a1 -> SmartProg k'2 a2) -> (forall x. k'1 (SmartProg k'2) (SmartProg k'2 x) -> SmartProg k'2 x) -> (a -> SmartProg k'1 a1) -> (forall x. k (SmartProg k'1) (SmartProg k'1 x) -> SmartProg k'1 x) -> SmartProg k a -> SmartProg k'2 a2
--- test gen1 alg1 gen2 alg2 p = smartFold' gen1 alg1 (smartFold' gen2 alg2 p)
--- test gen1 alg1 gen2 alg2 p = smartFold' gen alg p
---   where gen x = undefined
-        -- alg :: k (SmartProg k'2) (SmartProg k'2 x) -> SmartProg k'2 x
-        -- alg = hmap undefined alg1
-
 smartFold :: forall k f a b. (HFunctor k, Pointed f) => (a -> f b) -> (forall x. k f (f x) -> f x) -> SmartProg k a -> f b
-smartFold gen alg = smartFold'
+smartFold gen alg = go
   where
-    smartFold' :: SmartProg k a -> f b
-    smartFold' p = case view p of
-      (ViewReturn x) -> gen x
-      (ViewCall op) -> alg (hmap fold' (fmap smartFold' op))
+    go :: SmartProg k a -> f b
+    go p = case view p of
+        ViewReturn x -> gen x
+        ViewCall op -> alg (hmap fold' (fmap go op))
 
     fold' :: SmartProg k --> f
     fold' p = case view p of
-        (ViewReturn x) -> point x
-        (ViewCall op) -> alg (hmap fold' (fmap fold' op))
+        ViewReturn x -> point x
+        ViewCall op -> alg (hmap fold' (fmap fold' op))
 
 class (Functor f) => Pointed f where
     point :: a -> f a
+    default point :: (Applicative f) => a -> f a
+    point = pure
 
-instance Pointed [] where
-    point x = [x]
-    {-# INLINE point #-}
-
-instance Pointed ((->) r) where
-    point x = const x
-    {-# INLINE point #-}
+instance Pointed []
+instance Pointed ((->) r)
+instance Pointed IO
 
 instance (HFunctor k) => Pointed (Prog k) where
     point = Return
@@ -124,10 +112,9 @@ instance (Monad m, TermAlgebra m f, Pointed m) => TermMonad m f
 -- codensity --
 
 newtype Cod h a = Cod {unCod :: forall x. (a -> h x) -> h x}
+    deriving (Functor)
 
-instance Functor (Cod h) where
-    fmap f m = Cod (\k -> unCod m (k . f))
-    {-# INLINE fmap #-}
+instance Pointed (Cod h)
 
 instance Applicative (Cod h) where
     pure x = Cod ($ x)
@@ -144,12 +131,8 @@ instance (Pointed h, TermAlgebra h f) => TermAlgebra (Cod h) f where
     {-# INLINE var #-}
     con = algCod con
     {-# INLINE con #-}
-    peek (Cod m) = Nothing
+    peek _ = Nothing
     {-# INLINE peek #-}
-
-instance Pointed (Cod h) where
-    point = pure
-    {-# INLINE point #-}
 
 algCod :: forall f h a. (HFunctor f, Pointed h) => (forall x. f h (h x) -> h x) -> (f (Cod h) (Cod h a) -> Cod h a)
 algCod alg !op = Cod (\k -> alg (fmap (\(Cod m) -> m k) (hmap (\(Cod m) -> m point) op)))
@@ -168,11 +151,7 @@ data SmartProg k a where
     SmartCall :: k (SmartProg k) (SmartProg k a) -> SmartProg k a
     SmartBind :: SmartProg k a -> (a -> SmartProg k b) -> SmartProg k b
 
-instance (HFunctor k) => Functor (SmartProg k) where
-    fmap f (SmartReturn x) = SmartReturn (f x)
-    fmap f (SmartCall op) = SmartCall (fmap (fmap f) op)
-    fmap f (SmartBind p g) = SmartBind p (fmap f . g)
-    {-# INLINE fmap #-}
+deriving instance Functor (k (SmartProg k)) =>  Functor (SmartProg k)
 
 instance (HFunctor k) => Applicative (SmartProg k) where
     pure = SmartReturn
@@ -209,6 +188,3 @@ instance (HFunctor sig) => TermAlgebra (SmartProg sig) sig where
     {-# INLINE peek #-}
 
 instance (HFunctor k) => Pointed (SmartProg k) where
-    point = SmartReturn
-    {-# INLINE point #-}
-
