@@ -14,7 +14,6 @@ module Effect.FlatCurry.Let (let', Let, lvar) where
 
 import Effect.General.Memoization
 import Effect.General.State
-import Free
 import Signature
 import Type
 

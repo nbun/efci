@@ -33,6 +33,7 @@ import Effect.General.State (EffectCons, logCall)
 import Free
 import GHC.Conc
 import Signature
+import Data.Coerce (coerce)
 
 data ND a = Fail | Or a a
 
@@ -88,15 +89,15 @@ algND Fail = pure []
 algND (Or l r) = (++) <$> l <*> r
 
 instance (EffectMonad m sig sigs sigl (ListL l)) => TermAlgebra (NDC m) (Sig (ND :+: sig) sigs sigl l) where
-    con s = case s of
-        A (Algebraic op) -> ((NDC . algND . fmap unNDC) # (afwd . Algebraic)) op
+    con op = case op of
+        A (Algebraic op') -> (wrap algND # (afwd . Algebraic)) op'
         S op' -> sfwd op'
         L op' -> lfwd op'
     {-# INLINE con #-}
     var = cc . point . point
     {-# INLINE var #-}
 
-newtype NDC m a = NDC {unNDC :: m [a]} 
+newtype NDC m a = NDC {unNDC :: m [a]}
 
 instance OuterCarrier NDC []
 instance DeriveForward 'Outer NDC ListL

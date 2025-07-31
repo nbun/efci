@@ -15,6 +15,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# LANGUAGE TupleSections #-}
 
 module Effect.General.State (
     EffectCons,
@@ -198,27 +199,22 @@ hStateSmart = unSTC . smartFold point con
 instance StateCarrier (STC tag s) s
 instance DeriveForward 'State (STC tag s) (StateL s)
 
-instance LCarrier (StateL s) ((,) s) where
-    cl = StateL
-    unl = unStateL
+instance LCarrier (StateL s) ((,) s)
+
+algS :: StateF tag s (s -> m a) -> s -> m a
+algS (Get k) s = k s s
+algS (Put s' k) _ = k s'
+algS (Modify f k) s = k (f s)
 
 instance
     (EffectMonad m sig sigs sigl (StateL s l))
     => TermAlgebra (STC tag s m) (Sig (StateF tag s :+: sig) sigs sigl l)
     where
-    con (A (Algebraic op)) = STC . (algS # afwd) . fmap unSTC $ op
-      where
-        algS (Get k) s = k s s
-        algS (Put s' k) _ = k s'
-        algS (Modify f k) s = k (f s)
-
-        afwd op s = con (A (Algebraic (fmap (\k -> k s) op)))
+    con (A (Algebraic op)) = (wrapst algS # (afwd . Algebraic)) op 
     con (S op) = sfwd op
     con (L op) = lfwd op
     {-# INLINE con #-}
-    var = STC . gen'State
-      where
-        gen'State x = return . (\s -> (s, x))
+    var = STC . \x -> point . (, x)
     {-# INLINE var #-}
 
 runStateC

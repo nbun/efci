@@ -226,24 +226,22 @@ instance LCarrier ClosureL Closure where
 instance OuterCarrier PC Closure 
 instance DeriveForward 'Outer PC ClosureL
 
+algP :: (Monad m, LCarrier cL Closure, TermAlgebra m (Sig sig sigs sigl (cL l))) => Partial (m (Closure (m (Closure a)))) -> m (Closure a)
+algP (PartCall qn combtype args) = return $ Closure qn combtype args
+algP (FApply p k) = do
+        clsr <- p
+        case clsr of
+            Other x -> x
+            _ -> k (void clsr) >>= lift
+algP (Abs vs ptr) = return $ Lambda vs ptr
+algP (Ext s) = return $ External s
+
 instance
     (EffectMonad m sig sigs sigl (ClosureL l))
     => TermAlgebra (PC m) (Sig sig (Partial :+: sigs) sigl l)
     where
     con (A op) = afwd op
-    con (S (Enter op)) = PC . (algP # sfwd) $ op
-      where
-        algP (PartCall qn combtype args) = return $ Closure qn combtype args
-        algP (FApply f k) = do
-                cl <- unPC f
-                case cl of
-                    Other x -> unPC x
-                    _ -> do
-                        t' <- unPC $ k (void cl)
-                        (lift . fmap unPC) t'
-        algP (Abs vs ptr) = return $ Lambda vs ptr
-        algP (Ext s) = return $ External s
-        sfwd op = con $ S $ Enter $ fmap (fmap lift . unPC . fmap unPC) op
+    con (S (Enter op)) = ((PC . algP . fmap (unPC . fmap unPC)) # (sfwd . Enter)) op
     con (L op) = lfwd op
     {-# INLINE con #-}
     var = PC . gen'Reader

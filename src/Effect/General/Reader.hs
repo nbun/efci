@@ -49,17 +49,15 @@ hReader = unRC . fold point con
 instance ReaderCarrier (RC tag r) r
 instance DeriveForward 'Reader (RC tag r) VoidL
 
+algR :: ReaderF tag r (r -> m a) -> r -> m a
+algR (Ask k) r = k r r
+
 instance (EffectMonad m sig sigs sigl l) => TermAlgebra (RC tag r m) (Sig (ReaderF tag r :+: sig) sigs sigl l) where
-    con (A (Algebraic op)) = RC . (algR # afwd) . fmap unRC $ op
-      where
-        algR (Ask k) r = k r r
-        afwd op r = con (A (Algebraic (fmap (\k -> k r) op)))
+    con (A (Algebraic op)) = (wrapr algR # (afwd @VoidL . Algebraic)) op 
     con (S op) = sfwd @VoidL op
     con (L op) = lfwd @VoidL op
     {-# INLINE con #-}
-    var = RC . gen'Reader
-      where
-        gen'Reader x = return . const x
+    var = RC . \x -> point . const x
     {-# INLINE var #-}
 
 newtype RC tag r m a = RC {unRC :: r -> m a}

@@ -60,7 +60,6 @@ module Signature (
     lfwd,
     DeriveForward (..),
     CarrierDerivingStrat (..),
-    ahandle,
     VoidL,
 ) where
 
@@ -256,6 +255,8 @@ class OuterCarrier c f | c -> f where
     unc :: c m a -> m (f a)
     default unc :: (Coercible (m (f a)) (c m a)) => c m a -> m (f a)
     unc = coerce
+    wrap :: (Functor eff) => (eff (m (f a)) -> m (f a)) -> eff (c m a) -> c m a
+    wrap alg = cc . alg . fmap unc
 
 class StateCarrier c s | c -> s where
     ccst :: (s -> m (s, a)) -> c m a
@@ -264,6 +265,8 @@ class StateCarrier c s | c -> s where
     uncst :: c m a -> (s -> m (s, a))
     default uncst :: (Coercible (s -> m (s, a)) (c m a)) => c m a -> (s -> m (s, a))
     uncst = coerce
+    wrapst :: (Functor eff) => (eff (s -> m (s, a)) -> s -> m (s, a)) -> eff (c m a) -> c m a
+    wrapst alg = ccst . alg . fmap uncst
 
 class ReaderCarrier c r | c -> r where
     ccr :: (r -> m a) -> c m a
@@ -272,6 +275,8 @@ class ReaderCarrier c r | c -> r where
     uncr :: c m a -> (r -> m a)
     default uncr :: (Coercible (r -> m a) (c m a)) => c m a -> (r -> m a)
     uncr = coerce
+    wrapr :: (Functor eff) => (eff (r -> m a) -> r -> m a) -> eff (c m a) -> c m a
+    wrapr alg = ccr . alg . fmap uncr
 
 class LCarrier cL f | cL -> f where
     cl :: f (l x) -> cL l x
@@ -358,38 +363,5 @@ instance (ReaderCarrier c r) => DerivingStrat 'Reader c ll where
       where
         st' st2 c l' = undefined
         k' r = undefined -- (($) r) . uncr . k
-
-ahandle
-    :: (Applicative m, TermAlgebra m (Sig sig sigs sigl l), OuterCarrier c f)
-    => (eff (m (f a)) -> m (f a)) -> Algebraic (eff :+: sig) (c m) (c m a) -> c m a
-ahandle alg (Algebraic op) = cc . (alg # fwd) . fmap unc $ op
-  where fwd = con . A . Algebraic
-
--- lsthandle :: forall m sig sigs sigl l ll v p d eff f c a s. (TermAlgebra m (Sig sig sigs sigl (ll l)), OuterCarrier c f, LCarrier ll ((,) s)) =>
---   (eff v p d -> l ()
---   -> (forall x. d x -> l () -> c m (l x))
---   -> (l p -> c m a)
---   -> s
---   -> m (s, a))
---   -> Latent (eff v :+++: sigl) l (c m) (c m a) -> c ((->) s) (s, a)
--- --   -> Latent (eff v :+++: sigl) l (c m) (c m a) -> c m a
--- lsthandle alg (Node op l st k) = cc $ \s -> case op of
---     Inl3 op' -> alg op' l st k s
---     Inr3 op' -> con $
---                 L $
---                     Node
---                         op'
---                         (cl (s, l))
---                         (\c stl -> let (s', lv) = unl stl in cl <$> unc (st c lv) s')
---                         (\stl -> let (s', lv) = unl stl in unc (k lv) s')
--- {-# INLINE lsthandle #-}
-
--- lhandle :: (TermAlgebra m (Sig sig sigs sigl (ll l)), DeriveForward Outer c ll, OuterCarrier c f, Pointed m, Applicative m ) =>
---   (Latent (eff v) l (c m) (m (f a)) -> m (f a))
---   -> Latent (eff v :+++: sigl) l (c m) (c m a) -> c m a
--- lhandle alg (Node op l st k) = case op of
---     Inl3 op' -> cc $ alg (Node op' l (\c l -> unc $ st c l) (unc . k))
---     Inr3 op' -> lfwd @_ @'Outer (Node op' l st k)
-
 
 data VoidL (l :: Type -> Type) a

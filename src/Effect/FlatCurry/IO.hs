@@ -116,20 +116,17 @@ runIOSmart :: forall l a. SmartProg (Sig '[IOAction] '[] LVoid l) a -> IO a
 runIOSmart = unIOC . smartFold point con
 {-# INLINE runIOSmart #-}
 
+algIO :: IOAction (IO a) -> IO a
+algIO (PutChar c k) = putChar c >> k
+algIO (GetChar k) = getChar >>= k
+algIO (WriteFile fp s k) = writeFile fp s >> k
+algIO (ReadFile fp k) = readFile fp >>= k
+algIO (AppendFile fp s k) = appendFile fp s >> k
+
 instance TermAlgebra (IOC l) (Sig '[IOAction] '[] LVoid l) where
     con (A (Algebraic op)) = IOC . (algIO # absurd) . fmap unIOC $ op
-      where
-        algIO (PutChar c k) = putChar c >> k
-        algIO (GetChar k) = getChar >>= k
-        algIO (WriteFile fp s k) = writeFile fp s >> k
-        algIO (ReadFile fp k) = readFile fp >>= k
-        algIO (AppendFile fp s k) = appendFile fp s >> k
-    con (S (Enter op)) = case op of {}
-    con (L (Node op _ _ _)) = case op of {}
     {-# INLINE con #-}
-    var = IOC . gen'IO
-      where
-        gen'IO = return
+    var = IOC . return
     {-# INLINE var #-}
 
 newtype IOC (l :: * -> *) a

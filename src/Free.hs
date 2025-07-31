@@ -5,13 +5,11 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -59,7 +57,7 @@ fold gen alg = go
     go :: Prog k a -> f b
     go (Return x) = gen x
     go (Call op) = alg (hmap fold' (fmap go op))
-    
+
     fold' :: Prog k --> f
     fold' (Return x) = point x
     fold' (Call op) = alg (hmap fold' (fmap fold' op))
