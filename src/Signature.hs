@@ -12,6 +12,7 @@
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE InstanceSigs #-}
+{-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE RankNTypes #-}
@@ -22,7 +23,6 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE PartialTypeSignatures #-}
 
 module Signature (
     (:+:),
@@ -306,9 +306,6 @@ instance (ReaderCarrier c r) => DerivingStrat 'Reader c ll where
     dsfwd (Enter op) = ccr $ \r -> con $ S $ Enter $ fmap (go r) op
       where
         go r hhx = fmap (`uncr` r) (uncr hhx r)
-    dlfwd (Node op l st k) = ccr $ \r -> con $ L $ Node op l (st' st) (k' r)
-      where
-        st' st2 c l' = undefined
-        k' r = undefined -- (($) r) . uncr . k
+    dlfwd (Node op l st k) = ccr $ \r -> con $ L $ Node op l (\c lv -> uncr (st c lv) r) (\lv -> uncr (k lv) r)
 
 data VoidL (l :: Type -> Type) a
