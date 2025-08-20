@@ -143,7 +143,8 @@ apply lam args =
     k (Other _) = error "apply: Other encountered"
 
 callExternal
-    :: forall m sig sigs sigl a. (EffectCons m sig sigs sigl Id, Functions sig sigs sigl a)
+    :: forall m sig sigs sigl a
+     . (EffectCons m sig sigs sigl Id, Functions sig sigs sigl a)
     => String
     -> Args m a
     -> m a
@@ -167,7 +168,6 @@ callExternal f args =
                 ) -> do
                     ptr <- cbv px
                     apply pf (single (apply (force ptr) (Progs [])))
-
             ("Prelude.getChar", []) -> getCharIO
             ("Prelude.prim_putChar", [pc]) -> putCharIO pc
             ("Prelude.prim_writeFile", [pfp, ps]) -> writeFileIO pfp (normalform ps)
@@ -186,16 +186,16 @@ callExternal f args =
                         ++ show (length args')
 
 runPartial
-    :: forall sig sigs sigl l a
-     . Prog (Sig sig (Partial :+: sigs) sigl l) a
-    -> Prog (Sig sig sigs sigl (ClosureL l)) (Closure a)
+    :: (EffectCons m sig sigs sigl (ClosureL l))
+    => Prog (Sig sig (Partial :+: sigs) sigl l) a
+    -> m (Closure a)
 runPartial = unPC . fold point con
 {-# INLINE runPartial #-}
 
 runPartialSmart
-    :: forall sig sigs sigl l a
-     . SmartProg (Sig sig (Partial :+: sigs) sigl l) a
-    -> SmartProg (Sig sig sigs sigl (ClosureL l)) (Closure a)
+    :: (EffectCons m sig sigs sigl (ClosureL l))
+    => SmartProg (Sig sig (Partial :+: sigs) sigl l) a
+    -> m (Closure a)
 runPartialSmart = unPC . smartFold point con
 {-# INLINE runPartialSmart #-}
 
@@ -210,16 +210,16 @@ instance LCarrier ClosureL Closure where
     lift2 (External s) = pure $ ClosureL $ External s
     lift2 (Other x) = x
 
-instance OuterCarrier PC Closure 
+instance OuterCarrier PC Closure
 instance DeriveForward 'Outer PC ClosureL
 
 algP :: (Monad m, LCarrier cL Closure, TermAlgebra m (Sig sig sigs sigl (cL l))) => Partial (m (Closure (m (Closure a)))) -> m (Closure a)
 algP (PartCall qn combtype args) = return $ Closure qn combtype args
 algP (FApply p k) = do
-        clsr <- p
-        case clsr of
-            Other x -> x
-            _ -> k (void clsr) >>= lift
+    clsr <- p
+    case clsr of
+        Other x -> x
+        _ -> k (void clsr) >>= lift
 algP (Abs vs ptr) = return $ Lambda vs ptr
 algP (Ext s) = return $ External s
 

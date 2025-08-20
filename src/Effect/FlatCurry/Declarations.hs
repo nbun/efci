@@ -1,4 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# HLINT ignore "Use lambda-case" #-}
 {-# LANGUAGE EmptyCase #-}
@@ -16,7 +17,6 @@
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
-{-# LANGUAGE DataKinds #-}
 
 module Effect.FlatCurry.Declarations (
     DeclF (..),
@@ -53,26 +53,24 @@ instance (Functor m) => Functor (H (Progs l v m) m) where
     fmap f (H x) = H $ \th -> fmap f (x th)
     {-# INLINE fmap #-}
 
-runDecl :: (Functor l, m ~ Prog (Sig sig sigs sigl l), Show (l v)) => Progs l v m -> Prog (Sig sig sigs (DeclF v :+++: sigl) l) b -> m b
+runDecl :: (EffectCons m sig sigs sigl l) => Progs l v m -> Prog (Sig sig sigs (DeclF v :+++: sigl) l) a -> m a
 runDecl s p = hDecl p s
 {-# INLINE runDecl #-}
 
 hDecl
-    :: forall sig sigs sigl l m v a
-     . (Functor l, m ~ Prog (Sig sig sigs sigl l), Show (l v))
+    :: (EffectCons m sig sigs sigl l)
     => Prog (Sig sig sigs (DeclF v :+++: sigl) l) a
     -> Progs l v m
     -> m a
 hDecl = unH . fold point con
 {-# INLINE hDecl #-}
 
-runDeclSmart :: (Functor l, m ~ SmartProg (Sig sig sigs sigl l), Show (l v)) => Progs l v m -> SmartProg (Sig sig sigs (DeclF v :+++: sigl) l) b -> m b
+runDeclSmart :: (EffectCons m sig sigs sigl l) => Progs l v m -> SmartProg (Sig sig sigs (DeclF v :+++: sigl) l) a -> m a
 runDeclSmart s p = hDeclSmart p s
 {-# INLINE runDeclSmart #-}
 
 hDeclSmart
-    :: forall sig sigs sigl l m v a
-     . (Functor l, m ~ SmartProg (Sig sig sigs sigl l), Show (l v))
+    :: (EffectCons m sig sigs sigl l)
     => SmartProg (Sig sig sigs (DeclF v :+++: sigl) l) a
     -> Progs l v m
     -> m a
@@ -86,20 +84,20 @@ instance ReaderCarrier (H (Progs l v m)) (Progs l v m)
 instance DeriveForward 'Reader (H (Progs l v m)) VoidL
 
 algDecl
-    :: (Monad m, Functor l)
+    :: (Monad m)
     => Latent (DeclF v) l (H (Progs l v m) m) (H (Progs l v m) m a)
     -> H (Progs l v m) m a
 algDecl (Node op l st' k') = H $ \th ->
     let k = unH . k'
      in case op of
             DeclBody qn -> do
-              lv <- (unH . fdclBody (findModule (unProgs th) qn)) l th
-              k lv th
+                lv <- (unH . fdclBody (findModule (unProgs th) qn)) l th
+                k lv th
             Init ps ->
-              let th' = Progs $ map (\(AEProg mod imp tdecls fdecls opdecls) -> AEProg mod imp tdecls (Map.map (addBody st') fdecls) opdecls) ps
-              in k l th'
+                let th' = Progs $ map (\(AEProg mod imp tdecls fdecls opdecls) -> AEProg mod imp tdecls (Map.map (addBody st') fdecls) opdecls) ps
+                 in k l th'
 
-instance (Functor l, EffectMonad m sig sigs sigl l, Show (l v)) => TermAlgebra (H (Progs l v m) m) (Sig sig sigs (DeclF v :+++: sigl) l) where
+instance (EffectMonad m sig sigs sigl l) => TermAlgebra (H (Progs l v m) m) (Sig sig sigs (DeclF v :+++: sigl) l) where
     con (A op) = afwd @VoidL op
     con (S op) = sfwd @VoidL op
     con (L (Node op l st k)) = case op of
@@ -109,7 +107,7 @@ instance (Functor l, EffectMonad m sig sigs sigl l, Show (l v)) => TermAlgebra (
     var = H . (\x _ -> return x)
     {-# INLINE var #-}
 
-runDeclC :: (EffectMonad m sig sigs sigl l, Functor l, Show (l v)) => Progs l v m -> Cod (H (Progs l v m) m) a -> m a
+runDeclC :: (EffectMonad m sig sigs sigl l) => Progs l v m -> Cod (H (Progs l v m) m) a -> m a
 runDeclC th p = unH (runCod var p) th
 {-# INLINE runDeclC #-}
 

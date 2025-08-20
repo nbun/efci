@@ -1,4 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -11,7 +12,6 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
-{-# LANGUAGE DataKinds #-}
 
 module Effect.General.Reader () where
 
@@ -31,13 +31,13 @@ ask = logCall >> injectA (Ask @tag return)
 {-# INLINE ask #-}
 
 runReader
-    :: forall tag sig sigs sigl l r a
-     . r
+    :: (EffectCons m sig sigs sigl l)
+    => r
     -> Prog (Sig (ReaderF tag r :+: sig) sigs sigl l) a
     -> Prog (Sig sig sigs sigl l) a
 runReader r p = hReader p r
 
-runReaderC :: forall tag m sig sigs sigl l r a. (EffectMonad m sig sigs sigl l) => r -> Cod (RC tag r m) a -> m a
+runReaderC :: (EffectMonad m sig sigs sigl l) => r -> Cod (RC tag r m) a -> m a
 runReaderC r p = unRC (runCod var p) r
 {-# INLINE runReaderC #-}
 
@@ -53,7 +53,7 @@ algR :: ReaderF tag r (r -> m a) -> r -> m a
 algR (Ask k) r = k r r
 
 instance (EffectMonad m sig sigs sigl l) => TermAlgebra (RC tag r m) (Sig (ReaderF tag r :+: sig) sigs sigl l) where
-    con (A (Algebraic op)) = (wrapr algR # (afwd @VoidL . Algebraic)) op 
+    con (A (Algebraic op)) = (wrapr algR # (afwd @VoidL . Algebraic)) op
     con (S op) = sfwd @VoidL op
     con (L op) = lfwd @VoidL op
     {-# INLINE con #-}

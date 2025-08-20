@@ -2,6 +2,7 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE KindSignatures #-}
@@ -9,14 +10,13 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StarIsType #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 {-# HLINT ignore "Avoid lambda using `infix`" #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
-{-# LANGUAGE TupleSections #-}
-{-# LANGUAGE DeriveFunctor #-}
 
 module Effect.General.State (
     EffectCons,
@@ -69,7 +69,7 @@ import GHC.Types.Unique
 import GHC.Types.Unique.Supply
 import Signature
 import System.IO.Unsafe (unsafePerformIO)
-import Type (Ptr(..), analyzeVarIndex)
+import Type (Ptr (..), analyzeVarIndex)
 
 data StateF (tag :: Type) s a
     = Get (s -> a)
@@ -163,32 +163,36 @@ takeNfromSupply n sup =
      in (Ptr i : is, sup'')
 
 runState
-    :: forall tag sig sigs sigl l s a
-     . s
+    :: forall tag m sig sigs sigl l s a
+     . (EffectMonad m sig sigs sigl (StateL s l))
+    => s
     -> Prog (Sig (StateF tag s :+: sig) sigs sigl l) a
-    -> Prog (Sig sig sigs sigl (StateL s l)) a
+    -> m a
 runState s = fmap snd . \p -> hState p s
 {-# INLINE runState #-}
 
 runStateSmart
-    :: forall tag sig sigs sigl l s a
-     . s
+    :: forall tag m sig sigs sigl l s a
+     . (EffectMonad m sig sigs sigl (StateL s l))
+    => s
     -> SmartProg (Sig (StateF tag s :+: sig) sigs sigl l) a
-    -> SmartProg (Sig sig sigs sigl (StateL s l)) a
+    -> m a
 runStateSmart s = fmap snd . \p -> hStateSmart p s
 {-# INLINE runStateSmart #-}
 
 hState
-    :: forall tag sig sigs sigl l s a
-     . Prog (Sig (StateF tag s :+: sig) sigs sigl l) a
-    -> (s -> Prog (Sig sig sigs sigl (StateL s l)) (s, a))
+    :: forall tag m sig sigs sigl l s a
+     . (EffectMonad m sig sigs sigl (StateL s l))
+    => Prog (Sig (StateF tag s :+: sig) sigs sigl l) a
+    -> (s -> m (s, a))
 hState = unSTC . fold point con
 {-# INLINE hState #-}
 
 hStateSmart
-    :: forall tag sig sigs sigl l s a
-     . SmartProg (Sig (StateF tag s :+: sig) sigs sigl l) a
-    -> (s -> SmartProg (Sig sig sigs sigl (StateL s l)) (s, a))
+    :: forall tag m sig sigs sigl l s a
+     . (EffectMonad m sig sigs sigl (StateL s l))
+    => SmartProg (Sig (StateF tag s :+: sig) sigs sigl l) a
+    -> (s -> m (s, a))
 hStateSmart = unSTC . smartFold point con
 {-# INLINE hStateSmart #-}
 
@@ -196,9 +200,9 @@ instance StateCarrier (STC tag s) s
 instance DeriveForward 'State (STC tag s) (StateL s)
 
 instance LCarrier (StateL s) ((,) s) where
-  lift (_, x) = x
+    lift (_, x) = x
 
-  lift2 (_, x) = x
+    lift2 (_, x) = x
 
 algS :: StateF tag s (s -> m a) -> s -> m a
 algS (Get k) s = k s s
@@ -209,11 +213,11 @@ instance
     (EffectMonad m sig sigs sigl (StateL s l))
     => TermAlgebra (STC tag s m) (Sig (StateF tag s :+: sig) sigs sigl l)
     where
-    con (A (Algebraic op)) = (wrapst algS # (afwd . Algebraic)) op 
+    con (A (Algebraic op)) = (wrapst algS # (afwd . Algebraic)) op
     con (S op) = sfwd op
     con (L op) = lfwd op
     {-# INLINE con #-}
-    var = STC . \x -> point . (, x)
+    var = STC . \x -> point . (,x)
     {-# INLINE var #-}
 
 runStateC
@@ -235,14 +239,14 @@ runStateC' s p = snd <$> unSTC (runCod var p) s
 {-# INLINE runStateC' #-}
 
 newtype STC tag s m a = STC {unSTC :: s -> m (s, a)}
-  deriving (Functor)
+    deriving (Functor)
 
 instance (Pointed m) => Pointed (STC tag s m) where
     point x = STC (\s -> point (s, x))
     {-# INLINE point #-}
 
-newtype StateL s l a = StateL { unStateL :: (s, l a) }
-  deriving (Functor, Show)
+newtype StateL s l a = StateL {unStateL :: (s, l a)}
+    deriving (Functor, Show)
 
 -- constraint store --
 

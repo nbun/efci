@@ -120,17 +120,17 @@ redirect :: forall v m sig sigs sigl. (EffectCons m sig sigs sigl Id, Thunking v
 redirect p = logCall >> injectL (Redirect p :: Thunking v () NoSub) (Id ()) (\x -> case x of {}) (return . unId)
 {-# INLINE redirect #-}
 
-runLazy :: (Functor l, Show (l v), Show (l ()), m ~ Prog (Sig sig sigs sigl (StateL (ThunkStore l v) l)), Monad m) => UniqSupply -> Prog (Sig sig sigs (Thunking v :+++: sigl) l) b -> m b
+runLazy :: (Functor l, Show (l v), Show (l ()), EffectCons m sig sigs sigl (StateL (ThunkStore l v) l)) => UniqSupply -> Prog (Sig sig sigs (Thunking v :+++: sigl) l) b -> m b
 runLazy sup = fmap (\(s, r) -> strace (showTS s) r) . \p -> hLazy p (TS sup IntMap.empty)
 {-# INLINE runLazy #-}
 
-runLazySmart :: (Functor l, Show (l v), Show (l ()), m ~ SmartProg (Sig sig sigs sigl (StateL (ThunkStore l v) l)), Monad m) => UniqSupply -> SmartProg (Sig sig sigs (Thunking v :+++: sigl) l) b -> m b
+runLazySmart :: (Functor l, Show (l v), Show (l ()), EffectCons m sig sigs sigl (StateL (ThunkStore l v) l)) => UniqSupply -> SmartProg (Sig sig sigs (Thunking v :+++: sigl) l) b -> m b
 runLazySmart sup = fmap (\(s, r) -> strace (showTS s) r) . \p -> hLazySmart p (TS sup IntMap.empty)
 {-# INLINE runLazySmart #-}
 
 hLazy
-    :: forall m n sig sigs sigl l v a
-     . (Functor l, Show (l v), Show (l ()), m ~ Prog (Sig sig sigs sigl (StateL (ThunkStore l v) l)), Monad m)
+    :: forall m sig sigs sigl l v a
+     . (Functor l, Show (l v), Show (l ()), EffectCons m sig sigs sigl (StateL (ThunkStore l v) l))
     => Prog (Sig sig sigs (Thunking v :+++: sigl) l) a
     -> ThunkStore l v
     -> m (ThunkStore l v, a)
@@ -138,8 +138,8 @@ hLazy = unMC . fold point con
 {-# INLINE hLazy #-}
 
 hLazySmart
-    :: forall m n sig sigs sigl l v a
-     . (Functor l, Show (l v), Show (l ()), m ~ SmartProg (Sig sig sigs sigl (StateL (ThunkStore l v) l)), Monad m)
+    :: forall m sig sigs sigl l v a
+     . (Functor l, Show (l v), Show (l ()), EffectCons m sig sigs sigl (StateL (ThunkStore l v) l))
     => SmartProg (Sig sig sigs (Thunking v :+++: sigl) l) a
     -> ThunkStore l v
     -> m (ThunkStore l v, a)
@@ -261,9 +261,6 @@ newtype MC l v m a = MC {unMC :: ThunkStore l v -> m (ThunkStore l v, a)}
 instance (Functor m) => Functor (MC l v m) where
     fmap f (MC x) = MC $ \th -> fmap (fmap f) (x th)
     {-# INLINE fmap #-}
-
-instance Show (StableName a) where
-    show sn = show (hashStableName sn)
 
 showTS :: (Show (l v)) => ThunkStore l v -> String
 showTS (TS i im) =

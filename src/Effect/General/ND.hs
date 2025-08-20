@@ -1,17 +1,18 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RoleAnnotations #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE DerivingVia #-}
-{-# LANGUAGE RoleAnnotations #-}
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveFunctor #-}
 
 module Effect.General.ND (
     choose,
@@ -62,16 +63,16 @@ choose (p : ps) = foldr (?) p ps
 {-# INLINE choose #-}
 
 runND
-    :: forall sig sigs sigl l a
-     . Prog (Sig (ND :+: sig) sigs sigl l) a
-    -> Prog (Sig sig sigs sigl (ListL l)) [a]
+    :: (EffectCons m sig sigs sigl (ListL l))
+    => Prog (Sig (ND :+: sig) sigs sigl l) a
+    -> m [a]
 runND = unNDC . fold point con
 {-# INLINE runND #-}
 
 runNDSmart
-    :: forall sig sigs sigl l a
-     . SmartProg (Sig (ND :+: sig) sigs sigl l) a
-    -> SmartProg (Sig sig sigs sigl (ListL l)) [a]
+    :: (EffectCons m sig sigs sigl (ListL l))
+    => SmartProg (Sig (ND :+: sig) sigs sigl l) a
+    -> m [a]
 runNDSmart = unNDC . smartFold point con
 {-# INLINE runNDSmart #-}
 
@@ -92,25 +93,17 @@ instance (EffectMonad m sig sigs sigl (ListL l)) => TermAlgebra (NDC m) (Sig (ND
     var = cc . point . point
     {-# INLINE var #-}
 
-newtype NDC m a = NDC {unNDC :: m [a]}
+newtype NDC m a = NDC {unNDC :: m [a]} deriving (Functor)
 
 instance OuterCarrier NDC []
 instance DeriveForward 'Outer NDC ListL
-
-instance (Functor m) => Functor (NDC m) where
-    fmap f = NDC . fmap (fmap f) . unNDC
-    {-# INLINE fmap #-}
 
 instance (Pointed m) => Pointed (NDC m) where
     point = NDC . point . point
     {-# INLINE point #-}
 
 newtype ListL l a = ListL {unListL :: [l a]}
-    deriving (Show)
-
-instance (Functor l) => Functor (ListL l) where
-    fmap f (ListL la) = ListL (fmap f <$> la)
-    {-# INLINE fmap #-}
+    deriving (Show, Functor)
 
 instance LCarrier ListL [] where
     lift = foldr (liftA2 (++)) (pure [])

@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -9,7 +10,6 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE DataKinds #-}
 
 module Effect.FlatCurry.Constructor (
     CaseScope (..),
@@ -53,7 +53,6 @@ data ConsF a
     | FLit Literal
     | FFree Ptr
     deriving (Functor)
-
 
 data CaseScope a
     = Case a (Value () -> a)
@@ -128,8 +127,8 @@ match (Free i) pat = Just $ do
             e
 match (ValOther ()) (AEPattern ("Prelude", "()") [], e) = Just e
 match v ps =
-            error $
-                "Pattern match not implemented for " ++ show v ++ show (fst ps)
+    error $
+        "Pattern match not implemented for " ++ show v ++ show (fst ps)
 
 data Value a
     = Cons QName [Value a]
@@ -147,16 +146,16 @@ newtype ValueL l a = ValueL {unValueL :: Value (l a)}
     deriving (Functor, Show)
 
 runCons
-    :: forall sig sigs sigl l a
-     . Prog (Sig (ConsF :+: sig) (CaseScope :+: sigs) sigl l) a
-    -> Prog (Sig sig sigs sigl (ValueL l)) (Value a)
+    :: (EffectCons m sig sigs sigl (ValueL l))
+    => Prog (Sig (ConsF :+: sig) (CaseScope :+: sigs) sigl l) a
+    -> m (Value a)
 runCons = unCC . fold point con
 {-# INLINE runCons #-}
 
 runConsSmart
-    :: forall sig sigs sigl l a
-     . SmartProg (Sig (ConsF :+: sig) (CaseScope :+: sigs) sigl l) a
-    -> SmartProg (Sig sig sigs sigl (ValueL l)) (Value a)
+    :: (EffectCons m sig sigs sigl (ValueL l))
+    => SmartProg (Sig (ConsF :+: sig) (CaseScope :+: sigs) sigl l) a
+    -> m (Value a)
 runConsSmart = unCC . smartFold point con
 {-# INLINE runConsSmart #-}
 
@@ -194,27 +193,27 @@ instance
             hnf <- unCC ce
             unCC (k (void hnf)) >>= lift'
         algCs (Normalize ce k) = do
-                hnf <- unCC ce
-                case hnf of
-                    HNF qn args -> do
-                        hnf <- unCC (k (qn, args))
-                        case hnf of
-                            Cons qn args -> mapM lift' args <&> Cons qn
-                            Lit l -> return $ Lit l
-                            _ -> undefined
-                    Lit l -> return $ Lit l
-                    Free i -> return $ Free i
-                    Cons qn args -> mapM lift' args <&> Cons qn
-                    ValOther x -> unCC x
+            hnf <- unCC ce
+            case hnf of
+                HNF qn args -> do
+                    hnf <- unCC (k (qn, args))
+                    case hnf of
+                        Cons qn args -> mapM lift' args <&> Cons qn
+                        Lit l -> return $ Lit l
+                        _ -> undefined
+                Lit l -> return $ Lit l
+                Free i -> return $ Free i
+                Cons qn args -> mapM lift' args <&> Cons qn
+                ValOther x -> unCC x
         algCs (External ps k) = do
-                hnfs <- mapM unCC ps
-                hnf <- unCC $ k (map void hnfs)
-                lift' hnf
+            hnfs <- mapM unCC ps
+            hnf <- unCC $ k (map void hnfs)
+            lift' hnf
         algCs (Unify e1 e2 k) = do
-                hnf1 <- unCC e1
-                hnf2 <- unCC e2
-                hnf <- unCC (k (void hnf1, void hnf2))
-                lift' hnf
+            hnf1 <- unCC e1
+            hnf2 <- unCC e2
+            hnf <- unCC (k (void hnf1, void hnf2))
+            lift' hnf
         lift' = lift . fmap unCC
         sfwd op = con $ S $ Enter $ fmap (fmap lift . unCC . fmap unCC) op
     con (L op) = lfwd op

@@ -1,4 +1,6 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
@@ -7,8 +9,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveFunctor #-}
 
 module Effect.General.Error (
     Err (..),
@@ -20,6 +20,7 @@ module Effect.General.Error (
     EC,
 ) where
 
+import Effect.General.State (EffectCons)
 import Free
 import Signature
 
@@ -34,23 +35,23 @@ instance Pointed Error where
     {-# INLINE point #-}
 
 runError
-    :: forall sig sigs sigl l a
-     . Prog (Sig (Err :+: sig) sigs sigl l) a
-    -> Prog (Sig sig sigs sigl (ErrorL l)) (Error a)
+    :: (EffectCons m sig sigs sigl (ErrorL l))
+    => Prog (Sig (Err :+: sig) sigs sigl l) a
+    -> m (Error a)
 runError = unEC . fold point con
 {-# INLINE runError #-}
 
 runErrorSmart
-    :: forall sig sigs sigl l a
-     . SmartProg (Sig (Err :+: sig) sigs sigl l) a
-    -> SmartProg (Sig sig sigs sigl (ErrorL l)) (Error a)
+    :: (EffectCons m sig sigs sigl (ErrorL l))
+    => SmartProg (Sig (Err :+: sig) sigs sigl l) a
+    -> m (Error a)
 runErrorSmart = unEC . smartFold point con
 {-# INLINE runErrorSmart #-}
 
 instance OuterCarrier EC Error
 instance DeriveForward 'Outer EC ErrorL
 
-algE :: Pointed m => Err (m (Error a)) -> m (Error a)
+algE :: (Pointed m) => Err (m (Error a)) -> m (Error a)
 algE (Err s) = point (Error s)
 
 instance (EffectMonad m sig sigs sigl (ErrorL l)) => TermAlgebra (EC m) (Sig (Err :+: sig) sigs sigl l) where
@@ -76,7 +77,6 @@ instance (Functor m) => Functor (EC m) where
 instance (Pointed m) => Pointed (EC m) where
     point x = EC $ point (EOther x)
     {-# INLINE point #-}
-
 
 instance LCarrier ErrorL Error where
     lift (Error s) = pure (Error s)
