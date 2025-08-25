@@ -30,6 +30,7 @@ module Effect.FlatCurry.Function (
     runPartialSmart,
     missingArgs,
     runPartialC,
+    unReturn,
 ) where
 
 import Curry.FlatCurry.Type (QName, VarIndex)
@@ -79,6 +80,7 @@ data CombType
 data Partial a
     = PartCall QName CombType [Ptr]
     | FApply a (Closure () -> a)
+    | UnReturn a (Ptr -> a)
     | Abs [Ptr] Ptr
     | Ext String
     deriving (Functor)
@@ -121,6 +123,9 @@ missingArgs (ConsPartCall i) = i
 decArgs :: CombType -> CombType
 decArgs (FuncPartCall i) = FuncPartCall (i - 1)
 decArgs (ConsPartCall i) = ConsPartCall (i - 1)
+
+unReturn :: forall m sig sigs sigl a. (EffectCons m sig sigs sigl Id, Functions sig sigs sigl a) => m a -> m a
+unReturn e = logCall >> injectS (UnReturn (fmap return e) (return . force))
 
 apply :: forall m sig sigs sigl a. (EffectCons m sig sigs sigl Id, Functions sig sigs sigl a) => m a -> Args m a -> m a
 apply lam args =
@@ -220,6 +225,11 @@ algP (FApply p k) = do
     case clsr of
         Other x -> x
         _ -> k (void clsr) >>= lift
+algP (UnReturn e k) = do
+    clsr <- e
+    case clsr of
+        Lambda [] ptr -> k ptr >>= lift
+        _ -> lift clsr
 algP (Abs vs ptr) = return $ Lambda vs ptr
 algP (Ext s) = return $ External s
 

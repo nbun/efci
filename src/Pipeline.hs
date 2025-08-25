@@ -93,6 +93,8 @@ declutterHNF (Lit l) = RLit l
 declutterHNF (Free i) = RFree i
 declutterHNF (ValOther c) = case c of
     Closure qn ct _ -> RClosure qn ct
+    Lambda _ _ -> Unevaluated
+    Effect.FlatCurry.Function.External _ -> Unevaluated
     Other x -> ROther (show x)
 
 data Result
