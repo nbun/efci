@@ -74,13 +74,13 @@ type LEffects v = DeclF v :+++: ((Thunking v :+++: LVoid))
 type CurryEffects v = Sig AEffects SEffects (LEffects v) Id
 
 -- normalform = id
-fcyRunner2ae :: (() :<<<: v, TermMonad m (CurryEffects v)) => ARule TypeExpr -> m v
+fcyRunner2ae :: (TermMonad m (CurryEffects v)) => ARule TypeExpr -> m v
 fcyRunner2ae (AExternal _ _) = undefined
 fcyRunner2ae (ARule _ _ e) = unReturn $ normalform (join $ fcyExpr2ae [] e) -- normalform
 
 fcyExpr2ae
     :: forall m v
-     . (() :<<<: v, TermMonad m (CurryEffects v))
+     . (TermMonad m (CurryEffects v))
     => [VarIndex]
     -> AExpr TypeExpr
     -> m (m v)
@@ -149,7 +149,7 @@ patVars :: APattern ann -> [(VarIndex, ann)]
 patVars (ALPattern _ _) = []
 patVars (APattern _ _ bs) = bs
 
-fcyProg2ae :: (() :<<<: v, TermMonad m (CurryEffects v)) => AProg TypeExpr -> AEProg (m v)
+fcyProg2ae :: (TermMonad m (CurryEffects v)) => AProg TypeExpr -> AEProg (m v)
 fcyProg2ae (AProg name imports tdecls fdecls opdecls) =
     let fdecls' = map fcyFDecl2ae fdecls
         fdeclmap =
@@ -159,10 +159,10 @@ fcyProg2ae (AProg name imports tdecls fdecls opdecls) =
      in AEProg name imports tdeclmap fdeclmap opdecls
 
 fcyFDecl2ae
-    :: (() :<<<: v, TermMonad m (CurryEffects v)) => AFuncDecl TypeExpr -> AEFuncDecl (m v)
+    :: (TermMonad m (CurryEffects v)) => AFuncDecl TypeExpr -> AEFuncDecl (m v)
 fcyFDecl2ae (AFunc qn arity vis ty r) = AEFunc qn arity vis ty (fcyRule2ae r)
 
-fcyRule2ae :: (() :<<<: v, TermMonad m (CurryEffects v)) => ARule TypeExpr -> m v
+fcyRule2ae :: (TermMonad m (CurryEffects v)) => ARule TypeExpr -> m v
 fcyRule2ae (ARule _ vars e) = do
     vs' <- rename (fst $ unzip vars)
     lambda vs' (join $ (fcyExpr2ae [] e))

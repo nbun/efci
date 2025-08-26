@@ -32,7 +32,7 @@ import Effect.FlatCurry.Constructor (
     Value (..),
     lit,
     str2prog,
-    val2str,
+    val2str, unit,
  )
 import Effect.General.Memoization (Thunking)
 import Effect.General.State (EffectCons, logCall)
@@ -53,7 +53,6 @@ putCharIO
     :: forall sig sigs sigl l m a
      . ( ConsF :<: sig
        , IOAction :<: sig
-       , () :<<<: a
        , CaseScope :<: sigs
        , EffectCons m sig sigs sigl l
        )
@@ -62,7 +61,7 @@ putCharIO
 putCharIO x = logCall >> injectS (External [fmap return x] (return . f))
   where
     f :: [Value ()] -> m a
-    f [Lit (Charc c)] = injectA (PutChar c (return (injV ())))
+    f [Lit (Charc c)] = injectA (PutChar c unit)
 {-# INLINE putCharIO #-}
 
 writeFileIO
@@ -70,7 +69,6 @@ writeFileIO
         :: forall sig sigs sigl l m a
          . ( ConsF :<: sig
            , IOAction :<: sig
-           , () :<<<: a
            , CaseScope :<: sigs
            , EffectCons m sig sigs sigl l
            )
@@ -80,11 +78,11 @@ writeFileIO
 writeFileIO fp s = logCall >> injectS (External [fmap return fp, fmap return s] (return . f))
   where
     f :: [Value ()] -> m a
-    f [fpv, sv] = injectA (WriteFile (val2str fpv) (val2str sv) (return (injV ())))
+    f [fpv, sv] = injectA (WriteFile (val2str fpv) (val2str sv) unit)
 appendFileIO fp s = logCall >> injectS (External [fmap return fp, fmap return s] (return . f))
   where
     f :: [Value ()] -> m a
-    f [fpv, sv] = injectA (AppendFile (val2str fpv) (val2str sv) (return (injV ())))
+    f [fpv, sv] = injectA (AppendFile (val2str fpv) (val2str sv) unit)
 {-# INLINE writeFileIO #-}
 {-# INLINE appendFileIO #-}
 

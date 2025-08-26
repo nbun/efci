@@ -31,6 +31,10 @@ module Effect.FlatCurry.Constructor (
     runConsC,
     runConsSmart,
     case',
+    unit,
+    true,
+    false,
+    ccons,
 ) where
 
 import Control.Monad (void)
@@ -75,6 +79,12 @@ normalform p = logCall >> injectS (Normalize (fmap return p) (fmap return . f))
         let args = map (normalform . force) ptrs
         injectA (FStrictCons qn args)
 {-# INLINE normalform #-}
+
+ccons
+    :: (EffectCons m sig sigs sigl l, ConsF :<: sig)
+    => QName
+    -> m a
+ccons qn = logCall >> injectA (FCons qn [])
 
 cons
     :: (EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl, ConsF :<: sig)
@@ -234,6 +244,11 @@ instance (Pointed m) => Pointed (CC m) where
     point x = CC $ point (ValOther x)
     {-# INLINE point #-}
 
+unit, true, false :: (ConsF :<: sig, EffectCons m sig sigs sigl l) => m a
+unit = ccons ("Prelude", "()")
+true = ccons ("Prelude", "True") 
+false = ccons ("Prelude", "False")
+
 arithInt
     :: (ConsF :<: sig, CaseScope :<: sigs, EffectCons m sig sigs sigl l)
     => (Integer -> Integer -> Integer)
@@ -259,8 +274,8 @@ compInt
 compInt op x y = logCall >> injectS (External [fmap return x, fmap return y] (return . f))
   where
     f [Lit (Intc x), Lit (Intc y)]
-        | x `op` y = cons ("Prelude", "True") (Progs [])
-        | otherwise = cons ("Prelude", "False") (Progs [])
+        | x `op` y = true
+        | otherwise = false
 {-# INLINE compInt #-}
 
 compChar
@@ -278,9 +293,8 @@ compChar op x y =
     logCall >> injectS (External [fmap return x, fmap return y] (return . f))
   where
     f [Lit (Charc x), Lit (Charc y)]
-        | x `op` y = cons ("Prelude", "True") (Progs [])
-        | otherwise = cons ("Prelude", "False") (Progs [])
-{-# INLINE compChar #-}
+        | x `op` y = true
+        | otherwise = false
 
 err
     :: forall sig sigs sigl m v

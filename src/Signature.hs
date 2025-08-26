@@ -43,8 +43,6 @@ module Signature (
     (#),
     OneSub (..),
     LVoid,
-    (:<<<:),
-    injV,
     Union,
     absurd,
     (:.:),
@@ -92,14 +90,6 @@ instance HFunctor HVoid where
 type family (:.:) effs sig :: Constraint where
     '[] :.: sig = ()
     (x ': xs) :.: sig = (x :<: sig, xs :.: sig)
-
-class v1 :<<<: v2 where
-    injV :: v1 -> v2
-    projV :: v2 -> Maybe v1
-
-instance (a :<<<: a) where
-    injV = id
-    projV = Just
 
 newtype Id a = Id {unId :: a} deriving (Functor, Show)
 
