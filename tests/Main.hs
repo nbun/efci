@@ -57,6 +57,7 @@ progs =
     , ("Prelude.curry", "return 42 :: IO Int", [RLit (Intc 42)], "")
     , ("Prelude.curry", "return (2 * 2) :: IO Int", [RLit (Intc 4)], "")
     , ("Prelude.curry", "return [(1 :: Int)..] >>= const (return True) :: IO Bool", [true], "")
+    , ("Arith.Curry", "return loop >> return True :: IO Bool", [true], "")
     , ("Prelude.curry", "let io = putStrLn \"don't share me\" in io >> io", [unit], "don't share me\ndon't share me\n")
 
 

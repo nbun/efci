@@ -169,9 +169,7 @@ callExternal f args =
             ("Prelude.returnIO", [px]) -> lambda [] px
             ( "Prelude.bindIO"
                 , [px, pf]
-                ) -> do
-                    ptr <- cbv px
-                    apply pf (single (apply (force ptr) (Progs [])))
+                ) -> hnf px >> apply pf (single px) --(single (apply px (Progs [])))
             ("Prelude.getChar", []) -> getCharIO
             ("Prelude.prim_putChar", [pc]) -> putCharIO pc
             ("Prelude.prim_writeFile", [pfp, ps]) -> writeFileIO pfp (normalform ps)
