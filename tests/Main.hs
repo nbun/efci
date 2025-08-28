@@ -40,6 +40,12 @@ progs =
     , ("Binary.curry", "run", [RCons ("Binary", "O") [RCons ("Binary", "O") [RCons ("Binary", "O") [RCons ("Binary", "I") [RCons ("Binary", "IHi") []]]]]], "")
     , ("Prelude.curry", "let f x = x + 1 in f 1 :: Int", [int 2], "")
 
+    -- Higher order
+    , ("Prelude.curry", "map (+1) [1..3] :: [Int]", [toList [int 2, int 3, int 4]], "")
+    , ("Prelude.curry", "filter even [1..3] :: [Int]", [toList [int 2]], "")
+    , ("Prelude.curry", "foldr (+) 0 [1..3] :: Int", [int 6], "")
+    , ("Prelude.curry", "flip const (1 :: Int) (2 ? 3 :: Int)", [int 2, int 3], "")
+
     -- Laziness
     , ("Prelude.curry", "const (1 :: Int) (2 ? 3 :: Int)", [int 1], "")
     , ("Prelude.curry", "head [1 :: Int, 2 ? 3]", [int 1], "")
