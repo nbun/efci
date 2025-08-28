@@ -26,6 +26,8 @@ If you have `rlwrap` installed, use `rlwrap efci [filename]` to get an input his
 
 * Without an option, the input is interpreted as a Curry expression within the loaded file.
 * `:q` exits interpreter.
+* `:o` rotates between the available interpretation modes
+* `:time` toggles printing time elapsed during interpretation
 * `:fcy` toggles printing of the `main` expression generated from the input.
 
 ## Run tests
