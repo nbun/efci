@@ -40,6 +40,7 @@ pred n = case n of
   (O IHi) -> IHi
   I m     -> O m
   O m     -> I (pred m)
+  IHi     -> failed
 
 fac :: Nat -> Nat
 fac n = case n of

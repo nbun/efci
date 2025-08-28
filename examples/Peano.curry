@@ -25,7 +25,7 @@ fac (S n) = mult (S n) (fac n)
 i2p :: Int -> Peano
 i2p n = case n of
   0 -> O
-  n -> S (i2p (n - 1))
+  m -> S (i2p (m - 1))
 
 p2i :: Peano -> Int
 p2i O     = 0

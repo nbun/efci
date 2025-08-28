@@ -21,8 +21,11 @@ main = do
 
 progs :: [(String, String, [Result], String)]
 progs =
-    [-- ND
-      ("Prelude.curry", "0 ? 1 :: Int", [int 0, int 1], "")
+    [-- Modules
+    ("A.curry", "a", [int 50], "")
+        
+    -- ND
+    , ("Prelude.curry", "0 ? 1 :: Int", [int 0, int 1], "")
     , ("Prelude.curry", "let x = 0 ? 1 in x + x :: Int", [int 0, int 2], "")
     , ("Prelude.curry", "let x = 0 ? 1 :: Int in (x + (0 ? 1)) + (x + (0 ? 1))", [int 0, int 1, int 1, int 2, int 2, int 3, int 3, int 4], "")
     , ("PermSort.curry", "sort [5,4,3,2,1::Int]", [toList [int 1, int 2, int 3, int 4, int 5]], "")

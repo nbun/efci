@@ -23,4 +23,5 @@ insert  x xs = (x : xs) ? (insert2 x xs)
 
 insert2 :: a -> [a] -> [a]
 insert2 x xs = case xs of
+                    [] -> failed
                     (y:ys) -> y : insert x ys
