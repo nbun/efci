@@ -35,6 +35,20 @@ module Effect.FlatCurry.Constructor (
     true,
     false,
     ccons,
+    arithFloat,
+    compFloat,
+    arithFloat2Float,
+    arithFloat2Int,
+    arithInt2Float,
+    showCharLiteral,
+    showIntLiteral,
+    showFloatLiteral,
+    readCharLiteral,
+    readIntLiteral,
+    readFloatLiteral,
+    readStringLiteral,
+    ordChar,
+    chrChar
 ) where
 
 import Control.Monad (void)
@@ -50,6 +64,8 @@ import Effect.General.State
 import Free
 import Signature
 import Type
+import Data.Char (ord, chr)
+import GHC.Num (integerFromInt)
 
 data ConsF a
     = FCons QName [Ptr]
@@ -296,6 +312,20 @@ compChar op x y =
         | x `op` y = true
         | otherwise = false
 
+-- prim_ord
+ordChar :: (ConsF :<: sig, CaseScope :<: sigs, EffectCons m sig sigs sigl Id) => m a -> m a
+ordChar x = logCall >> injectS (External [fmap return x] (return . f))
+  where
+    f [Lit (Charc c)] = lit (Intc (integerFromInt $ ord c))
+    f _ = error "prim_ord: unexpected argument"
+
+-- prim_chr
+chrChar :: (ConsF :<: sig, CaseScope :<: sigs, EffectCons m sig sigs sigl Id) => m a -> m a
+chrChar x = logCall >> injectS (External [fmap return x] (return . f))
+  where
+    f [Lit (Intc n)] = lit (Charc (chr (fromInteger n)))
+    f _ = error "prim_chr: unexpected argument"
+
 err
     :: forall sig sigs sigl m v
      . ( CaseScope :<: sigs
@@ -321,8 +351,14 @@ str2prog
     :: (Thunking a :<<<<: sigl, ConsF :<: sig, EffectCons m sig sigs sigl Id)
     => String
     -> m a
-str2prog [] = cons ("Prelude", "[]") (Progs [])
-str2prog (c : cs) = cons ("Prelude", ":") (Progs [lit (Charc c), str2prog cs])
+str2prog cs = list2prog (map (lit . Charc) cs)
+
+list2prog
+    :: (Thunking a :<<<<: sigl, ConsF :<: sig, EffectCons m sig sigs sigl Id)
+    => [m a]
+    -> m a
+list2prog [] = cons ("Prelude", "[]") (Progs [])
+list2prog (x : xs) = cons ("Prelude", ":") (Progs [x, list2prog xs])
 
 -- free variables --
 
@@ -346,3 +382,127 @@ fvar i =
         Just (VarC j) -> applyC store j
         Just (LitC l) -> lit l
         _ -> injectA $ FFree n
+
+--------
+
+compFloat :: ( ConsF :<: sig
+       , Thunking v :<<<<: sigl
+       , ConsF :<: sig
+       , CaseScope :<: sigs
+       , EffectCons m sig sigs sigl Id
+       )
+    => (Double -> Double -> Bool)
+    -> m v
+    -> m v
+    -> m v
+compFloat op x y = logCall >> injectS (External [fmap return x, fmap return y] (return . f))
+  where
+    f [Lit (Floatc x), Lit (Floatc y)]
+        | x `op` y = true
+        | otherwise = false
+{-# INLINE compFloat #-}
+
+arithFloat
+    :: (ConsF :<: sig, CaseScope :<: sigs, EffectCons m sig sigs sigl l)
+    => (Double -> Double -> Double)
+    -> m a
+    -> m a
+    -> m a
+arithFloat op x y = logCall >> injectS (External [fmap return x, fmap return y] (return . f))
+  where
+    f [Lit (Floatc x), Lit (Floatc y)] = lit (Floatc (x `op` y))
+{-# INLINE arithFloat #-}
+
+arithFloat2Float 
+    :: (ConsF :<: sig, CaseScope :<: sigs, EffectCons m sig sigs sigl l)
+    => (Double -> Double)
+    -> m a
+    -> m a
+arithFloat2Float op x = logCall >> injectS (External [fmap return x] (return . f))
+  where
+    f [Lit (Floatc x)] = lit (Floatc (op x))
+{-# INLINE arithFloat2Float #-}
+
+arithFloat2Int 
+    :: (ConsF :<: sig, CaseScope :<: sigs, EffectCons m sig sigs sigl l)
+    => (Double -> Integer)
+    -> m a
+    -> m a
+arithFloat2Int op x = logCall >> injectS (External [fmap return x] (return . f))
+  where
+    f [Lit (Floatc x)] = lit (Intc (op x))
+{-# INLINE arithFloat2Int #-}
+
+arithInt2Float
+    :: (ConsF :<: sig, CaseScope :<: sigs, EffectCons m sig sigs sigl l)
+    => (Integer -> Double)
+    -> m a
+    -> m a
+arithInt2Float op x = logCall >> injectS (External [fmap return x] (return . f))
+  where
+    f [Lit (Intc x)] = lit (Floatc (op x))
+{-# INLINE arithInt2Float #-}
+
+
+showCharLiteral
+    :: (ConsF :<: sig, CaseScope :<: sigs, EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl)
+    => m a
+    -> m a
+showCharLiteral x = logCall >> injectS (External [fmap return x] (return . f))
+  where
+    f [Lit (Charc c)] = str2prog (show c)
+{-# INLINE showCharLiteral #-}
+
+showIntLiteral
+    :: (ConsF :<: sig, CaseScope :<: sigs, EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl)
+    => m a
+    -> m a
+showIntLiteral x = logCall >> injectS (External [fmap return x] (return . f))
+  where
+    f [Lit (Intc n)] = str2prog (show n)
+{-# INLINE showIntLiteral #-}
+
+showFloatLiteral
+    :: (ConsF :<: sig, CaseScope :<: sigs, EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl)
+    => m a
+    -> m a
+showFloatLiteral x = logCall >> injectS (External [fmap return x] (return . f))
+  where
+    f [Lit (Floatc n)] = str2prog (show n)
+{-# INLINE showFloatLiteral #-}
+
+readCharLiteral
+    :: (ConsF :<: sig, CaseScope :<: sigs, EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl)
+    => m a
+    -> m a
+readCharLiteral x = logCall >> injectS (External [fmap return x] (return . f))
+  where
+    f [r] = let res = read (val2str r)
+            in list2prog $ map (\(c, rest) -> cons ("Prelude", "(,)") (Progs [lit (Charc c), str2prog rest])) res
+{-# INLINE readCharLiteral #-}
+
+readIntLiteral
+    :: (ConsF :<: sig, CaseScope :<: sigs, EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl)
+    => m a
+    -> m a
+readIntLiteral x = logCall >> injectS (External [fmap return x] (return . f))
+  where
+    f [r] = let res = read (val2str r)
+            in list2prog $ map (\(i, rest) -> cons ("Prelude", "(,)") (Progs [lit (Intc i), str2prog rest])) res
+{-# INLINE readIntLiteral #-}
+
+readFloatLiteral
+    :: (ConsF :<: sig, CaseScope :<: sigs, EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl)
+    => m a
+    -> m a
+readFloatLiteral x = logCall >> injectS (External [fmap return x] (return . f))
+  where
+    f [r] = let res = read (val2str r)
+            in list2prog $ map (\(f, rest) -> cons ("Prelude", "(,)") (Progs [lit (Floatc f), str2prog rest])) res
+{-# INLINE readFloatLiteral #-}
+
+readStringLiteral
+    :: (ConsF :<: sig, CaseScope :<: sigs, EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl)
+    => m a
+    -> m a
+readStringLiteral x = list2prog [cons ("Prelude", "(,)") (Progs [x, ccons ("Prelude", "[]")])]

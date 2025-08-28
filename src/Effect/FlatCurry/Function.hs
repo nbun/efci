@@ -47,6 +47,7 @@ import Effect.General.State
 import Free
 import Signature
 import Type
+import GHC.Float (roundDouble)
 
 type Functions sig sigs sigl a =
     ( '[ConsF, Err, IOAction, ConstraintStore, ND] :.: sig
@@ -163,23 +164,72 @@ callExternal f args =
             ("Prelude.timesInt", [px, py]) -> arithInt (*) px py
             ("Prelude.divInt", [px, py]) -> arithInt div px py
             ("Prelude.modInt", [px, py]) -> arithInt mod px py
+
             ("Prelude.eqInt", [px, py]) -> compInt (==) px py
             ("Prelude.ltEqInt", [px, py]) -> compInt (<=) px py
+
+            ("Prelude.eqFloat", [px, py]) -> compFloat (==) px py
+            ("Prelude.ltEqFloat", [px, py]) -> compFloat (<=) px py
+
+            ("Prelude.plusFloat", [px, py]) -> arithFloat (+) px py
+            ("Prelude.minusFloat", [px, py]) -> arithFloat (-) px py
+            ("Prelude.timesFloat", [px, py]) -> arithFloat (*) px py
+            ("Prelude.divFloat", [px, py]) -> arithFloat (/) px py
+
+            ("Prelude.negateFloat", [px]) -> arithFloat2Float negate px
+            ("Prelude.logFloat", [px]) -> arithFloat2Float log px
+            ("Prelude.expFloat", [px]) -> arithFloat2Float exp px
+            ("Prelude.sqrtFloat", [px]) -> arithFloat2Float sqrt px
+            ("Prelude.sinFloat", [px]) -> arithFloat2Float sin px
+            ("Prelude.cosFloat", [px]) -> arithFloat2Float cos px
+            ("Prelude.tanFloat", [px]) -> arithFloat2Float tan px
+            ("Prelude.asinFloat", [px]) -> arithFloat2Float asin px
+            ("Prelude.acosFloat", [px]) -> arithFloat2Float acos px
+            ("Prelude.atanFloat", [px]) -> arithFloat2Float atan px
+            ("Prelude.sinhFloat", [px]) -> arithFloat2Float sinh px
+            ("Prelude.coshFloat", [px]) -> arithFloat2Float cosh px
+            ("Prelude.tanhFloat", [px]) -> arithFloat2Float tanh px
+            ("Prelude.asinhFloat", [px]) -> arithFloat2Float asinh px
+            ("Prelude.acoshFloat", [px]) -> arithFloat2Float acosh px
+            ("Prelude.atanhFloat", [px]) -> arithFloat2Float atanh px
+
+            ("Prelude.truncateFloat", [px]) -> arithFloat2Int truncate px
+            ("Prelude.roundFloat", [px]) -> arithFloat2Int round px
+
+            ("Prelude.intToFloat", [px]) -> arithInt2Float fromInteger px
+
             ("Prelude.eqChar", [px, py]) -> compChar (==) px py
+            ("Prelude.ltEqChar", [px, py]) -> compChar (<=) px py
+            ("Prelude.ord", [px]) -> ordChar px
+            ("Prelude.chr", [px]) -> chrChar px
+
+            
             ("Prelude.returnIO", [px]) -> lambda [] px
             ( "Prelude.bindIO"
                 , [px, pf]
-                ) -> hnf px >> apply pf (single px) --(single (apply px (Progs [])))
+                ) -> hnf px >> apply pf (single px)
             ("Prelude.getChar", []) -> getCharIO
             ("Prelude.prim_putChar", [pc]) -> putCharIO pc
             ("Prelude.prim_writeFile", [pfp, ps]) -> writeFileIO pfp (normalform ps)
             ("Prelude.prim_appendFile", [pfp, ps]) -> appendFileIO pfp (normalform ps)
             ("Prelude.prim_readFile", [pfp]) -> readFileIO pfp
-            ("Prelude.ensureNotFree", [p]) -> p
-            ("Prelude.$!", [pf, px]) -> apply pf (single px)
+            
+            ("Prelude.ensureNotFree", [p]) -> hnf p >> p
+            ("Prelude.$!", [pf, px]) -> hnf px >> apply pf (single px)
             ("Prelude.$##", [pf, px]) -> apply pf (single $ normalform px)
             ("Prelude.prim_error", [p]) -> err p
             ("Prelude.=:=", [_, px, py]) -> unify px py
+
+            ("Prelude.showStringLiteral", [ps]) -> ps
+            ("Prelude.showCharLiteral", [pc]) -> showCharLiteral pc
+            ("Prelude.showIntLiteral", [pi]) -> showIntLiteral pi
+            ("Prelude.showFloatLiteral", [pf]) -> showFloatLiteral pf
+
+            ("Prelude.readCharLiteral", [ps]) -> readCharLiteral ps
+            ("Prelude.readIntLiteral", [ps]) -> readIntLiteral ps
+            ("Prelude.readFloatLiteral", [ps]) -> readFloatLiteral ps
+            ("Prelude.readStringLiteral", [ps]) -> readStringLiteral ps
+
             _ ->
                 error $
                     "Missing definition for "
