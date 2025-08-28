@@ -92,7 +92,7 @@ declutterHNF (HNF qn ptrs) = RCons qn (replicate (length ptrs) Unevaluated)
 declutterHNF (Lit l) = RLit l
 declutterHNF (Free i) = RFree i
 declutterHNF (ValOther c) = case c of
-    Closure qn ct _ -> RClosure qn ct
+    Closure qn ct args -> RClosure qn ct (length args)
     Lambda _ _ -> Unevaluated
     Effect.FlatCurry.Function.External _ -> Unevaluated
     Other x -> ROther (show x)
@@ -101,7 +101,7 @@ data Result
     = RLit Literal
     | RCons QName [Result]
     | Unevaluated
-    | RClosure QName CombType
+    | RClosure QName CombType Int
     | RError String
     | RFree Ptr
     | ROther String
@@ -128,8 +128,8 @@ instance Pretty Result where
     pretty (RLit (Floatc f)) = show f
     pretty (RFree i) = "_" ++ show i
     pretty Unevaluated = "Unevaluated"
-    pretty (RClosure qn ct) =
-        snd qn ++ " " ++ unwords (replicate (missingArgs ct) "_")
+    pretty (RClosure qn ct argc) =
+        snd qn ++ " " ++ unwords (replicate argc "_") ++ (if argc == 0 then "" else " ") ++ unwords (replicate (missingArgs ct) "?")
     pretty (RError s) = "Error: " ++ s
     pretty (RBindings cs r) =
         "{" ++ intercalate ", " (map pretty (Map.toList cs)) ++ "} " ++ pretty r
