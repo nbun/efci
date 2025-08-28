@@ -140,7 +140,6 @@ lookupRenaming v =
         r <- get @Rename
         case lookup v (renaming r) of
             Just !v' -> return v'
-            -- Just !v' -> trace (analyzeVarIndex "lookup" v') (return v')
             Nothing -> error $ "lookupRenaming: " ++ show v ++ " in "
 {-# INLINE lookupRenaming #-}
 

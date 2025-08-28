@@ -164,6 +164,7 @@ callExternal f args =
             ("Prelude.timesInt", [px, py]) -> arithInt (*) px py
             ("Prelude.divInt", [px, py]) -> arithInt div px py
             ("Prelude.modInt", [px, py]) -> arithInt mod px py
+            ("Prelude.remInt", [px, py]) -> arithInt rem px py
 
             ("Prelude.eqInt", [px, py]) -> compInt (==) px py
             ("Prelude.ltEqInt", [px, py]) -> compInt (<=) px py

@@ -114,7 +114,11 @@ execute
   :: ToolOpts -> Either (FilePath, String) ([AProg TypeExpr], AFuncDecl TypeExpr) -> IO [Result]
 execute topts preloaded = do
   safeRes <- try $ timeout 10000000000 $ case preloaded of
-                                         Left (file, query) -> loadProg topts file query >>= uncurry (run topts)
+                                         Left (file, query) -> do
+                                          e <- loadProg topts file query
+                                          case e of
+                                            Left err -> putStrLn err >> return []
+                                            Right r -> uncurry (run topts) r
                                          Right (progs, fcyrunner) -> run topts progs fcyrunner
   case safeRes of
     Left e -> putStrLn "" >> print (e :: SomeException) >> return []
@@ -158,7 +162,7 @@ opts warn dump dirs =
         (optOptimizations defaultOptions){optAddFailed = True}
     }
 
-loadProg :: ToolOpts -> FilePath -> String -> IO ([AProg TypeExpr], AFuncDecl TypeExpr)
+loadProg :: ToolOpts -> FilePath -> String -> IO (Either String ([AProg TypeExpr], AFuncDecl TypeExpr))
 loadProg topts file query = do
   let runmod = "Run"
       runmodfn = runmod ++ ".curry"
@@ -178,9 +182,12 @@ loadProg topts file query = do
   -- load modules
   progs <- genTAFCY (opts True True dirs) runmod
   removeFile runmodfn
-  let fcyrunner = findRunner (last progs)
-  let progs' = map withoutTDecls (reqFuncs progs (fdclBdy fcyrunner))
-  return (progs', fcyrunner)
+  let efcyrunner = findRunner (last progs)
+  case efcyrunner of
+    Left err -> return $ Left err
+    Right fcyrunner -> do
+      let progs' = map withoutTDecls (reqFuncs progs (fdclBdy fcyrunner))
+      return $ Right (progs', fcyrunner)
 
 run :: ToolOpts -> [AProg TypeExpr] -> AFuncDecl TypeExpr -> IO [Result]
 run topts progs fcyrunner = do
@@ -288,11 +295,13 @@ isPrefix (x : xs) (y : ys)
   | x == y = isPrefix xs ys
 isPrefix _ _ = False
 
-findRunner :: AProg ann -> AFuncDecl ann
+findRunner :: AProg ann -> Either String (AFuncDecl ann)
 findRunner (AProg _ _ _ fdecls _) =
   case filter (\(AFunc (_, qn') _ _ _ _) -> "main" == qn') fdecls of
-    [] -> error "Missing 'main' definition"
-    (x : _) -> x
+    [] -> Left "Missing 'main' definition"
+    (f : _) -> case f of
+      AFunc _ arity _ _ _ | arity == 0 -> Right f
+                          | otherwise -> Left "Expression too general, please provide a (more specific) type."
 
 printMessages :: (Message -> Doc) -> [Message] -> IO ()
 printMessages msgType msgs =
