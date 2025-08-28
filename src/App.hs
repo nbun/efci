@@ -99,7 +99,11 @@ loop topts file = do
     ":fcy" -> let topts' = topts {showFlatCurryExpr = not $ showFlatCurryExpr topts} in print topts' >> loop topts' file
     ":o" -> let topts' = topts {mode = rotateMode $ mode topts} in print topts' >> loop topts' file
     ":time" -> let topts' = topts {time = not $ time topts} in print topts' >> loop topts' file
-
+    ":h"   -> putStrLn (unlines ["Available commands:"
+                                 , ":q    - quit"
+                                 , ":fcy  - toggle dumping FlatCurry programs"
+                                 , ":o    - rotate optimization mode"
+                                 , ":time - toggle timing"]) >> loop topts file
     _ -> do
       let query = case input :: String of
             "" -> "main"
