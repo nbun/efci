@@ -57,7 +57,7 @@ benchmarks = [
   ]
 
 prepare :: ToolOpts -> (String, String) -> IO (String, [AProg TypeExpr], AFuncDecl TypeExpr)
-prepare opts (mod, expr) = loadProg opts (mod ++ ".curry") expr >>= \(ps, expr) -> return (mod, ps, expr)
+prepare opts (mod, expr) = loadProg opts (mod ++ ".curry") expr >>= \(Right (ps, expr)) -> return (mod, ps, expr)
 
 setMode :: Mode -> ToolOpts
 setMode m = defaultToolOpts { mode = m, time = False}
