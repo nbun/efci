@@ -33,7 +33,7 @@ import Curry.FlatCurry.Annotated.Type (
 import Curry.Frontend.CurryBuilder (findCurry, processPragmas)
 import Curry.Frontend.CurryDeps (Source (..), flatDeps)
 import Data.Functor ((<&>))
-import Data.List (sort, (\\))
+import Data.List (sort, (\\), intercalate)
 import Data.Map (fromList)
 import Data.Maybe (catMaybes)
 import GHC.GHCi.Helpers (flushAll)
@@ -53,7 +53,7 @@ import System.FilePath (
   addTrailingPathSeparator,
   normalise,
   pathSeparator,
-  takeDirectory,
+  takeDirectory, splitPath,
  )
 import System.Timeout (timeout)
 import Transformation.FCY2AE (fcyProg2ae, fcyRunner2ae)
@@ -65,6 +65,8 @@ import Debug (tracingActive)
 import System.Clock (getTime, Clock (..), TimeSpec (sec, nsec))
 import Control.Concurrent (setNumCapabilities)
 import GHC.Stats
+import Data.Char (toUpper)
+import GHC.Utils.Misc (capitalise)
 
 data Mode = Tree | Codensity | Monolithic | Smart deriving Show
 
@@ -240,6 +242,13 @@ genRun dump name expr imports =
       ++ map (("import " ++) . dropExtension . takeFileName) imports
       -- ++ ["", "main :: IO ()", "main = print (" ++ expr ++ ")"]
       ++ ["", "main = " ++ expr]
+
+fp2hs :: FilePath -> String
+fp2hs fp = case splitPath fp of
+            [fn] -> capitalise $ dropExtension fn
+            "/" : _ -> error "Total directory paths are not supported"
+            xs -> let (ms, fn) = (map (filter (/= pathSeparator)) (init xs), last xs)
+                  in intercalate "." (map capitalise ms) ++ "." ++ capitalise (dropExtension fn)
 
 fdclRule :: AFuncDecl ann -> ARule ann
 fdclRule (AFunc _ _ _ _ r) = r
