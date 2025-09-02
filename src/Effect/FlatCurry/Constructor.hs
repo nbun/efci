@@ -6,7 +6,6 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -52,8 +51,8 @@ module Effect.FlatCurry.Constructor (
 ) where
 
 import Control.Monad (void)
-import Curry.FlatCurry.Annotated.Type (APattern (..), Literal (..), VarIndex)
-import Curry.FlatCurry.Type (CaseType (..), QName)
+import Curry.FlatCurry.Annotated.Type (Literal (..))
+import Curry.FlatCurry.Type (QName)
 import Data.Functor ((<&>))
 import Data.Maybe (mapMaybe)
 import Effect.FlatCurry.Let
@@ -128,7 +127,7 @@ case' cp brs =
         >> injectS (Case (fmap return cp) (return . cnt))
   where
     cnt :: Value () -> m a
-    cnt hnf = case mapMaybe (match hnf) brs of
+    cnt val = case mapMaybe (match val) brs of
         [] -> failed
         [x] -> x
         xs -> choose xs
@@ -201,47 +200,47 @@ instance LCarrier ValueL Value where
 instance OuterCarrier CC Value
 instance DeriveForward 'Outer CC ValueL
 
+algCa :: Monad m => ConsF (m (Value a)) -> m (Value a)
+algCa (FCons qn args) = return (HNF qn args)
+algCa (FStrictCons qn args) = sequence args <&> Cons qn
+algCa (FLit l) = return (Lit l)
+algCa (FFree i) = return (Free i)
+
+algCs :: (Monad m, TermAlgebra m (Sig sig sigs sigl (cL l)),  LCarrier cL Value) => CaseScope (m (Value (m (Value a)))) -> m (Value a)
+algCs (Case ce k) = do
+            hnf <- ce
+            k (void hnf) >>= lift
+algCs (Normalize ce k) = do
+    hnf <- ce
+    case hnf of
+        HNF qn args -> do
+            hnf' <- k (qn, args)
+            case hnf' of
+                Cons qn' args' -> mapM lift args' <&> Cons qn'
+                Lit l -> return $ Lit l
+                Free i -> return $ Free i
+                ValOther x -> x
+                HNF _ _ -> error "Normalize: unexpected HNF"
+        Lit l -> return $ Lit l
+        Free i -> return $ Free i
+        Cons qn args -> mapM lift args <&> Cons qn
+        ValOther x -> x
+algCs (External ps k) = do
+    hnfs <- sequence ps
+    hnf <- k (map void hnfs)
+    lift hnf
+algCs (Unify e1 e2 k) = do
+    hnf1 <- e1
+    hnf2 <- e2
+    hnf <- k (void hnf1, void hnf2)
+    lift hnf
+
 instance
     (EffectMonad m sig sigs sigl (ValueL l))
     => TermAlgebra (CC m) (Sig (ConsF :+: sig) (CaseScope :+: sigs) sigl l)
     where
-    con (A (Algebraic op)) = CC . (algCa # afwd) . fmap unCC $ op
-      where
-        algCa (FCons qn args) = return (HNF qn args)
-        algCa (FStrictCons qn args) = sequence args <&> Cons qn
-        algCa (FLit l) = return (Lit l)
-        algCa (FFree i) = return (Free i)
-
-        afwd = con . A . Algebraic
-    con (S (Enter op)) = CC . (algCs # sfwd) $ op
-      where
-        algCs (Case ce k) = do
-            hnf <- unCC ce
-            unCC (k (void hnf)) >>= lift'
-        algCs (Normalize ce k) = do
-            hnf <- unCC ce
-            case hnf of
-                HNF qn args -> do
-                    hnf <- unCC (k (qn, args))
-                    case hnf of
-                        Cons qn args -> mapM lift' args <&> Cons qn
-                        Lit l -> return $ Lit l
-                        _ -> undefined
-                Lit l -> return $ Lit l
-                Free i -> return $ Free i
-                Cons qn args -> mapM lift' args <&> Cons qn
-                ValOther x -> unCC x
-        algCs (External ps k) = do
-            hnfs <- mapM unCC ps
-            hnf <- unCC $ k (map void hnfs)
-            lift' hnf
-        algCs (Unify e1 e2 k) = do
-            hnf1 <- unCC e1
-            hnf2 <- unCC e2
-            hnf <- unCC (k (void hnf1, void hnf2))
-            lift' hnf
-        lift' = lift . fmap unCC
-        sfwd op = con $ S $ Enter $ fmap (fmap lift . unCC . fmap unCC) op
+    con (A (Algebraic op)) = (wrap algCa # (afwd . Algebraic)) op
+    con (S (Enter op)) = ((cc . algCs . fmap (unc . fmap unc)) # (sfwd . Enter)) op
     con (L op) = lfwd op
     {-# INLINE con #-}
     var = CC . gen'Error
@@ -262,8 +261,11 @@ instance (Pointed m) => Pointed (CC m) where
 
 unit, true, false :: (ConsF :<: sig, EffectCons m sig sigs sigl l) => m a
 unit = ccons ("Prelude", "()")
-true = ccons ("Prelude", "True") 
+true = ccons ("Prelude", "True")
 false = ccons ("Prelude", "False")
+
+externalError :: [Value ()] -> a
+externalError vs = error $ "Malformed arguments to externally defined function: " ++ show vs
 
 arithInt
     :: (ConsF :<: sig, CaseScope :<: sigs, EffectCons m sig sigs sigl l)
@@ -271,9 +273,10 @@ arithInt
     -> m a
     -> m a
     -> m a
-arithInt op x y = logCall >> injectS (External [fmap return x, fmap return y] (return . f))
+arithInt op p1 p2 = logCall >> injectS (External [fmap return p1, fmap return p2] (return . f))
   where
     f [Lit (Intc x), Lit (Intc y)] = lit (Intc (x `op` y))
+    f vs = externalError vs
 {-# INLINE arithInt #-}
 
 compInt
@@ -289,9 +292,10 @@ compInt
     -> m v
 compInt op x y = logCall >> injectS (External [fmap return x, fmap return y] (return . f))
   where
-    f [Lit (Intc x), Lit (Intc y)]
-        | x `op` y = true
+    f [Lit (Intc x1), Lit (Intc y1)]
+        | x1 `op` y1 = true
         | otherwise = false
+    f vs = externalError vs
 {-# INLINE compInt #-}
 
 compChar
@@ -308,23 +312,24 @@ compChar
 compChar op x y =
     logCall >> injectS (External [fmap return x, fmap return y] (return . f))
   where
-    f [Lit (Charc x), Lit (Charc y)]
-        | x `op` y = true
+    f [Lit (Charc x1), Lit (Charc y1)]
+        | x1 `op` y1 = true
         | otherwise = false
+    f vs = externalError vs
+{-# INLINE compChar #-}
 
--- prim_ord
 ordChar :: (ConsF :<: sig, CaseScope :<: sigs, EffectCons m sig sigs sigl Id) => m a -> m a
 ordChar x = logCall >> injectS (External [fmap return x] (return . f))
   where
     f [Lit (Charc c)] = lit (Intc (integerFromInt $ ord c))
-    f _ = error "prim_ord: unexpected argument"
+    f vs = externalError vs
 
--- prim_chr
 chrChar :: (ConsF :<: sig, CaseScope :<: sigs, EffectCons m sig sigs sigl Id) => m a -> m a
 chrChar x = logCall >> injectS (External [fmap return x] (return . f))
   where
     f [Lit (Intc n)] = lit (Charc (chr (fromInteger n)))
-    f _ = error "prim_chr: unexpected argument"
+    f vs = externalError vs
+
 
 err
     :: forall sig sigs sigl m v
@@ -340,6 +345,7 @@ err p =
   where
     f :: [Value ()] -> m v
     f [hnf] = injectA (Err (val2str hnf))
+    f vs = externalError vs
 {-# INLINE err #-}
 
 val2str :: (Show a) => Value a -> [Char]
@@ -376,10 +382,10 @@ fvar i =
         cs <- get @CStore
         applyC cs i
   where
-    applyC store n = case lookupC n store of
+    applyC cstore n = case lookupC n cstore of
         Just (ConsC qn vs) -> do
-            cons qn (Progs $ map (applyC store) vs)
-        Just (VarC j) -> applyC store j
+            cons qn (Progs $ map (applyC cstore) vs)
+        Just (VarC j) -> applyC cstore j
         Just (LitC l) -> lit l
         _ -> injectA $ FFree n
 
@@ -397,9 +403,10 @@ compFloat :: ( ConsF :<: sig
     -> m v
 compFloat op x y = logCall >> injectS (External [fmap return x, fmap return y] (return . f))
   where
-    f [Lit (Floatc x), Lit (Floatc y)]
-        | x `op` y = true
+    f [Lit (Floatc x1), Lit (Floatc y1)]
+        | x1 `op` y1 = true
         | otherwise = false
+    f vs = externalError vs
 {-# INLINE compFloat #-}
 
 arithFloat
@@ -410,27 +417,30 @@ arithFloat
     -> m a
 arithFloat op x y = logCall >> injectS (External [fmap return x, fmap return y] (return . f))
   where
-    f [Lit (Floatc x), Lit (Floatc y)] = lit (Floatc (x `op` y))
+    f [Lit (Floatc x1), Lit (Floatc y1)] = lit (Floatc (x1 `op` y1))
+    f vs = externalError vs
 {-# INLINE arithFloat #-}
 
-arithFloat2Float 
+arithFloat2Float
     :: (ConsF :<: sig, CaseScope :<: sigs, EffectCons m sig sigs sigl l)
     => (Double -> Double)
     -> m a
     -> m a
 arithFloat2Float op x = logCall >> injectS (External [fmap return x] (return . f))
   where
-    f [Lit (Floatc x)] = lit (Floatc (op x))
+    f [Lit (Floatc x1)] = lit (Floatc (op x1))
+    f vs = externalError vs
 {-# INLINE arithFloat2Float #-}
 
-arithFloat2Int 
+arithFloat2Int
     :: (ConsF :<: sig, CaseScope :<: sigs, EffectCons m sig sigs sigl l)
     => (Double -> Integer)
     -> m a
     -> m a
 arithFloat2Int op x = logCall >> injectS (External [fmap return x] (return . f))
   where
-    f [Lit (Floatc x)] = lit (Intc (op x))
+    f [Lit (Floatc x1)] = lit (Intc (op x1))
+    f vs = externalError vs
 {-# INLINE arithFloat2Int #-}
 
 arithInt2Float
@@ -440,7 +450,8 @@ arithInt2Float
     -> m a
 arithInt2Float op x = logCall >> injectS (External [fmap return x] (return . f))
   where
-    f [Lit (Intc x)] = lit (Floatc (op x))
+    f [Lit (Intc x1)] = lit (Floatc (op x1))
+    f vs = externalError vs
 {-# INLINE arithInt2Float #-}
 
 
@@ -451,6 +462,7 @@ showCharLiteral
 showCharLiteral x = logCall >> injectS (External [fmap return x] (return . f))
   where
     f [Lit (Charc c)] = str2prog (show c)
+    f vs = externalError vs
 {-# INLINE showCharLiteral #-}
 
 showIntLiteral
@@ -460,6 +472,7 @@ showIntLiteral
 showIntLiteral x = logCall >> injectS (External [fmap return x] (return . f))
   where
     f [Lit (Intc n)] = str2prog (show n)
+    f vs = externalError vs
 {-# INLINE showIntLiteral #-}
 
 showFloatLiteral
@@ -469,6 +482,7 @@ showFloatLiteral
 showFloatLiteral x = logCall >> injectS (External [fmap return x] (return . f))
   where
     f [Lit (Floatc n)] = str2prog (show n)
+    f vs = externalError vs
 {-# INLINE showFloatLiteral #-}
 
 readCharLiteral
@@ -479,6 +493,7 @@ readCharLiteral x = logCall >> injectS (External [fmap return x] (return . f))
   where
     f [r] = let res = read (val2str r)
             in list2prog $ map (\(c, rest) -> cons ("Prelude", "(,)") (Progs [lit (Charc c), str2prog rest])) res
+    f vs = externalError vs
 {-# INLINE readCharLiteral #-}
 
 readIntLiteral
@@ -489,6 +504,7 @@ readIntLiteral x = logCall >> injectS (External [fmap return x] (return . f))
   where
     f [r] = let res = read (val2str r)
             in list2prog $ map (\(i, rest) -> cons ("Prelude", "(,)") (Progs [lit (Intc i), str2prog rest])) res
+    f vs = externalError vs
 {-# INLINE readIntLiteral #-}
 
 readFloatLiteral
@@ -498,7 +514,8 @@ readFloatLiteral
 readFloatLiteral x = logCall >> injectS (External [fmap return x] (return . f))
   where
     f [r] = let res = read (val2str r)
-            in list2prog $ map (\(f, rest) -> cons ("Prelude", "(,)") (Progs [lit (Floatc f), str2prog rest])) res
+            in list2prog $ map (\(fl, rest) -> cons ("Prelude", "(,)") (Progs [lit (Floatc fl), str2prog rest])) res
+    f vs = externalError vs
 {-# INLINE readFloatLiteral #-}
 
 readStringLiteral

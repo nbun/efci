@@ -54,22 +54,16 @@ module Effect.General.State (
 ) where
 
 import Curry.FlatCurry.Annotated.Type (Literal, QName, VarIndex)
-import Data.Bifunctor (Bifunctor (first))
-import qualified Data.IntMap as IntMap
 import Data.Kind (Type)
 import Data.List (sortBy)
 import qualified Data.Map as Map
-import Data.Unique (Unique)
 import Debug (tracingActive)
-import Debug.Trace (trace)
 import Free
-import GHC.StableName
 import GHC.Stack (callStack, getCallStack)
 import GHC.Types.Unique
 import GHC.Types.Unique.Supply
 import Signature
-import System.IO.Unsafe (unsafePerformIO)
-import Type (Ptr (..), analyzeVarIndex)
+import Type (Ptr (..))
 
 data StateF (tag :: Type) s a
     = Get (s -> a)
@@ -110,7 +104,7 @@ instance Identify Rename where
     identify = "Rename"
 
 initRenaming :: UniqSupply -> RState
-initRenaming s = RState [] s
+initRenaming = RState []
 
 type Renaming = StateF Rename RState
 
@@ -287,7 +281,9 @@ type EffectCons m sig sigs sigl l = (TermMonad m (Sig sig sigs sigl l), Tracing 
 
 logCall :: (EffectCons m sig sigs sigl l) => m ()
 logCall
-    | tracingActive = let (_ : (name, _) : _) = getCallStack callStack in modifyWithoutLog ((name, "") :)
+    | tracingActive = case getCallStack callStack of
+                        (_ : (name, _) : _)  -> modifyWithoutLog ((name, "") :)
+                        _ -> return ()
     | otherwise = return ()
   where
     modifyWithoutLog f = do
@@ -297,12 +293,14 @@ logCall
 
 logCallWith :: (EffectCons m sig sigs sigl l) => String -> m ()
 logCallWith s
-    | tracingActive = let (_ : (name, _) : _) = getCallStack callStack in modifyWithoutLog ((name, s) :)
+    | tracingActive = case getCallStack callStack of
+                        (_ : (name, _) : _)  -> modifyWithoutLog ((name, s) :)
+                        _ -> return ()
     | otherwise = return ()
   where
     modifyWithoutLog f = do
-        s <- injectA (Get @Trace return)
-        injectA (Put @Trace (f s) (return ()))
+        s' <- injectA (Get @Trace return)
+        injectA (Put @Trace (f s') (return ()))
 {-# INLINE logCallWith #-}
 
 statistics :: [TraceInfo] -> [(TraceInfo, Int)]

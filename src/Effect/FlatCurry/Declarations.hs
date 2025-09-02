@@ -1,13 +1,11 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveFunctor #-}
 {-# HLINT ignore "Use lambda-case" #-}
 {-# LANGUAGE EmptyCase #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE KindSignatures #-}
-{-# LANGUAGE MonoLocalBinds #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -29,23 +27,23 @@ module Effect.FlatCurry.Declarations (
     Progs (..),
 ) where
 
-import Control.Monad (ap, void)
-import Curry.FlatCurry.Annotated.Type (ARule (AExternal), QName, TypeExpr, VarIndex, Visibility)
+import Control.Monad (void)
+import Curry.FlatCurry.Annotated.Type (QName)
 import qualified Data.Map as Map
-import Debug.Trace (trace, traceShowId)
 import Effect.General.State (EffectCons, logCall)
 import Free
 import Signature
 import Type (AEFuncDecl (AEFunc), AEProg (..), fdclBody)
+import Data.Kind (Type)
 
-data DeclF v :: * -> (* -> *) -> * where
+data DeclF v :: Type -> (Type -> Type) -> Type where
     DeclBody :: QName -> DeclF v v NoSub
     Init :: [AEProg ()] -> DeclF v () (ManySub v)
 
-data ManySub v :: * -> * where
+data ManySub v :: Type -> Type where
     Many :: QName -> ManySub v v
 
-newtype Progs (l :: * -> *) (v :: *) (m :: * -> *) = Progs {unProgs :: [AEProg (l () -> H (Progs l v m) m (l v))]}
+newtype Progs (l :: Type -> Type) (v :: Type) (m :: Type -> Type) = Progs {unProgs :: [AEProg (l () -> H (Progs l v m) m (l v))]}
 
 newtype H r m a = H {unH :: r -> m a}
 
@@ -94,7 +92,7 @@ algDecl (Node op l st' k') = H $ \th ->
                 lv <- (unH . fdclBody (findModule (unProgs th) qn)) l th
                 k lv th
             Init ps ->
-                let th' = Progs $ map (\(AEProg mod imp tdecls fdecls opdecls) -> AEProg mod imp tdecls (Map.map (addBody st') fdecls) opdecls) ps
+                let th' = Progs $ map (\(AEProg m imp tdecls fdecls opdecls) -> AEProg m imp tdecls (Map.map (addBody st') fdecls) opdecls) ps
                  in k l th'
 
 instance (EffectMonad m sig sigs sigl l) => TermAlgebra (H (Progs l v m) m) (Sig sig sigs (DeclF v :+++: sigl) l) where
@@ -120,25 +118,25 @@ getBody
      . (EffectCons m sig sigs sigl Id)
     => (DeclF a :<<<<: sigl)
     => QName -> m a
-getBody qn = logCall >> injectL (DeclBody qn :: DeclF a _ _) (Id ()) (\x -> case x of {}) (return . unId)
+getBody qn = logCall >> injectL (DeclBody qn :: DeclF a a NoSub) (Id ()) (\x -> case x of {}) (return . unId)
 {-# INLINE getBody #-}
 
 initDecls
     :: forall sig sigs sigl m v
      . (DeclF v :<<<<: sigl, EffectCons m sig sigs sigl Id)
     => [AEProg (m v)] -> m ()
-initDecls ps = logCall >> injectL (Init (map void ps) :: DeclF v _ _) (Id ()) (\(Many qn) _ -> fmap Id (fdclBody $ findModule ps qn)) (const (return ()))
+initDecls ps = logCall >> injectL (Init (map void ps) :: DeclF v () (ManySub v :: Type -> Type)) (Id ()) (\(Many qn) _ -> fmap Id (fdclBody $ findModule ps qn)) (const (return ()))
 {-# INLINE initDecls #-}
 
 findModule :: [AEProg a] -> QName -> AEFuncDecl a
-findModule ps qn@(mod, _) = case res of
+findModule ps qn@(moduleName, _) = case res of
     Just fdecl -> fdecl
     Nothing -> error $ "Function declaration " ++ show qn ++ " not found"
   where
     res =
         foldr
             ( \(AEProg name _ _ fdecls _) acc ->
-                if name == mod
+                if name == moduleName
                     then findFuncDecl fdecls qn
                     else acc
             )

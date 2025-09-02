@@ -1,7 +1,6 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveFunctor #-}
-{-# LANGUAGE EmptyCase #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
@@ -38,6 +37,7 @@ import Effect.General.Memoization (Thunking)
 import Effect.General.State (EffectCons, logCall)
 import Free
 import Signature
+import Data.Kind (Type)
 
 data IOAction a
     = PutChar Char a
@@ -127,7 +127,7 @@ instance TermAlgebra (IOC l) (Sig '[IOAction] '[] LVoid l) where
     var = IOC . return
     {-# INLINE var #-}
 
-newtype IOC (l :: * -> *) a
+newtype IOC (l :: Type -> Type) a
     = IOC {unIOC :: IO a}
     deriving (Functor)
 

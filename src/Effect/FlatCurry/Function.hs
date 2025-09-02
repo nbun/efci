@@ -7,10 +7,8 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# HLINT ignore "Use lambda-case" #-}
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -33,7 +31,7 @@ module Effect.FlatCurry.Function (
     unReturn,
 ) where
 
-import Curry.FlatCurry.Type (QName, VarIndex)
+import Curry.FlatCurry.Type (QName)
 
 import Control.Monad (void)
 import Effect.FlatCurry.Constructor hiding (External)
@@ -47,7 +45,6 @@ import Effect.General.State
 import Free
 import Signature
 import Type
-import GHC.Float (roundDouble)
 
 type Functions sig sigs sigl a =
     ( '[ConsF, Err, IOAction, ConstraintStore, ND] :.: sig
@@ -208,22 +205,22 @@ callExternal f args =
             ("Prelude.returnIO", [px]) -> lambda [] px
             ( "Prelude.bindIO"
                 , [px, pf]
-                ) -> hnf px >> apply pf (single px)
+                ) -> eval2HNF px >> apply pf (single px)
             ("Prelude.getChar", []) -> getCharIO
             ("Prelude.prim_putChar", [pc]) -> putCharIO pc
             ("Prelude.prim_writeFile", [pfp, ps]) -> writeFileIO pfp (normalform ps)
             ("Prelude.prim_appendFile", [pfp, ps]) -> appendFileIO pfp (normalform ps)
             ("Prelude.prim_readFile", [pfp]) -> readFileIO pfp
             
-            ("Prelude.ensureNotFree", [p]) -> hnf p >> p
-            ("Prelude.$!", [pf, px]) -> hnf px >> apply pf (single px)
+            ("Prelude.ensureNotFree", [p]) -> eval2HNF p >> p
+            ("Prelude.$!", [pf, px]) -> eval2HNF px >> apply pf (single px)
             ("Prelude.$##", [pf, px]) -> apply pf (single $ normalform px)
             ("Prelude.prim_error", [p]) -> err p
             ("Prelude.=:=", [_, px, py]) -> unify px py
 
             ("Prelude.showStringLiteral", [ps]) -> ps
             ("Prelude.showCharLiteral", [pc]) -> showCharLiteral pc
-            ("Prelude.showIntLiteral", [pi]) -> showIntLiteral pi
+            ("Prelude.showIntLiteral", [p]) -> showIntLiteral p
             ("Prelude.showFloatLiteral", [pf]) -> showFloatLiteral pf
 
             ("Prelude.readCharLiteral", [ps]) -> readCharLiteral ps

@@ -1,7 +1,6 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
@@ -10,14 +9,14 @@
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
-{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
+{-# OPTIONS_GHC -Wno-unused-do-bind #-}
 
 module Transformation.FCY2AE (CurryEffects, fcyProg2ae, fcyRunner2ae) where
 
-import Control.Monad (join, liftM2, void)
+import Control.Monad (join, liftM2)
 import Curry.FlatCurry.Annotated.Goodies (typeName)
 import Curry.FlatCurry.Annotated.Type (
     ABranchExpr (ABranch),
@@ -31,10 +30,8 @@ import Curry.FlatCurry.Annotated.Type (
     VarIndex,
  )
 import Data.Bifunctor (first)
-import Data.IntMap (IntMap)
 import qualified Data.Map as Map
 import Data.Maybe (fromJust)
-import Debug.Trace (trace)
 import Effect.FlatCurry.Constructor
 import Effect.FlatCurry.Declarations (DeclF)
 import Effect.FlatCurry.Function (
@@ -51,8 +48,6 @@ import Effect.FlatCurry.Let
 import Effect.General.Error (Err)
 import Effect.General.Memoization
 import Effect.General.ND (ND, failed, (?))
-import Effect.General.Reader
-import Effect.General.State (get, put)
 import Effect.General.State hiding (get, put)
 import Free
 import Signature
@@ -65,11 +60,9 @@ data VarKind
     | CaseVar
     deriving (Show)
 
-type VarKindMap = Map.Map VarIndex VarKind
-
 type AEffects = '[ConsF, Renaming, ConstraintStore, ND, Err, StateF Trace [TraceInfo], IOAction]
 type SEffects = '[Partial, CaseScope]
-type LEffects v = DeclF v :+++: ((Thunking v :+++: LVoid))
+type LEffects v = DeclF v :+++: (Thunking v :+++: LVoid)
 
 type CurryEffects v = Sig AEffects SEffects (LEffects v) Id
 
@@ -125,25 +118,22 @@ fcyExpr2ae frees expr =
                 fcyExpr2ae (map fst bs ++ frees) e
             AOr _ e1 e2 -> do
                 liftM2 (?) (rec e1) (rec e2)
-            ACase _ ct e brs -> do
+            ACase _ _ e brs -> do
                 let vs = map fst $ concatMap (patVars . (\(ABranch pat _) -> pat)) brs
                 vs' <- rename vs
                 let r = zip vs vs'
                 e' <- rec e
                 brs' <-
                     mapM
-                        (\(ABranch pat e') -> fmap (newPat r pat,) (rec e'))
+                        (\(ABranch pat be) -> fmap (newPat r pat,) (rec be))
                         brs
                 return $ case' e' brs'
               where
                 newPat r (APattern _ (qn, _) vars) = AEPattern qn newVars
                   where
-                    newVars = map (\(v, _) -> (fromJust $ lookup v r)) vars
+                    newVars = map (\(v, _) -> fromJust $ lookup v r) vars
                 newPat _ (ALPattern _ l) = AELPattern l
-            ATyped _ e t -> rec e -- type annotations not required
-
-insertBinds :: VarKind -> VarKindMap -> [(VarIndex, ann)] -> VarKindMap
-insertBinds k = foldl (\s' (v, _) -> Map.insert v k s')
+            ATyped _ e _ -> rec e -- type annotations not required
 
 patVars :: APattern ann -> [(VarIndex, ann)]
 patVars (ALPattern _ _) = []
@@ -164,6 +154,6 @@ fcyFDecl2ae (AFunc qn arity vis ty r) = AEFunc qn arity vis ty (fcyRule2ae r)
 
 fcyRule2ae :: (TermMonad m (CurryEffects v)) => ARule TypeExpr -> m v
 fcyRule2ae (ARule _ vars e) = do
-    vs' <- rename (fst $ unzip vars)
-    lambda vs' (join $ (fcyExpr2ae [] e))
+    vs' <- rename (map fst vars)
+    lambda vs' (join $ fcyExpr2ae [] e)
 fcyRule2ae (AExternal _ s) = external s

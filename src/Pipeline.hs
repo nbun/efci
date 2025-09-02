@@ -6,8 +6,6 @@
 {-# HLINT ignore "Avoid lambda using `infix`" #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
-{-# OPTIONS_GHC -ddump-simpl -dsuppress-all #-}
-
 
 module Pipeline (
     Result (..),
@@ -19,7 +17,7 @@ module Pipeline (
     withoutBindings,
 ) where
 
-import Curry.FlatCurry (Literal (..), QName, VarIndex)
+import Curry.FlatCurry (Literal (..), QName)
 import Data.List (intercalate)
 import qualified Data.Map as Map
 import Effect.FlatCurry.Constructor
@@ -177,7 +175,7 @@ type L a =
 
 type M a =
     Cod
-        ( H ((Progs Id a (Cod
+        ( H (Progs Id a (Cod
                          (PC
                             (Cod
                               (CC
@@ -203,7 +201,7 @@ type M a =
                                             [TraceInfo]
                                                                       (Cod
                                                                          (IOC
-                                                                            (L a)))))))))))))))))))))
+                                                                            (L a))))))))))))))))))))
             ( Cod
                 ( PC
                     ( Cod

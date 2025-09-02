@@ -1,5 +1,4 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
-{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DefaultSignatures #-}
@@ -56,16 +55,17 @@ module Signature (
     afwd,
     sfwd,
     lfwd,
-    DeriveForward (..),
+    DeriveForward,
     CarrierDerivingStrat (..),
     VoidL,
+    absurdNoSub,
 ) where
 
 import Data.Coerce
 import Data.Kind (Type)
 import Data.Union
 import Free
-import GHC.Base (Constraint, MonadPlus (..))
+import GHC.Base (Constraint)
 import GHC.Stack (HasCallStack)
 
 type (:<:) e r = Elem e r
@@ -77,15 +77,6 @@ infixr 0 :+:
 data ((sig1 :: Type -> (Type -> Type) -> Type) :+++: sig2) p c
     = Inl3 (sig1 p c)
     | Inr3 (sig2 p c)
-
-data HVoid (f :: Type -> Type) a deriving (Functor)
-
-runHVoid :: Prog HVoid a -> a
-runHVoid (Return x) = x
-runHVoid (Call op) = case op of {}
-
-instance HFunctor HVoid where
-    hmap f x = case x of {}
 
 type family (:.:) effs sig :: Constraint where
     '[] :.: sig = ()
@@ -125,6 +116,10 @@ instance HFunctor (Latent sig l) where
     {-# INLINE hmap #-}
 
 data NoSub :: Type -> Type
+
+absurdNoSub :: NoSub a -> b
+absurdNoSub x = case x of {}
+{-# INLINE absurdNoSub #-}
 
 data OneSub v :: Type -> Type where
     One :: OneSub v v
@@ -288,7 +283,7 @@ instance (StateCarrier c s, LCarrier ll ((,) s)) => DerivingStrat 'State c ll wh
     dlfwd (Node op l st k) = ccst $
         \s -> con $ L $ Node op (cl (s, l)) (st' st) k'
       where
-        st' st c stl = let (s', lv) = unl stl in cl <$> uncst (st c lv) s'
+        st' st2 c stl = let (s', lv) = unl stl in cl <$> uncst (st2 c lv) s'
         k' stl = let (s', lv) = unl stl in uncst (k lv) s'
 
 instance (ReaderCarrier c r) => DerivingStrat 'Reader c ll where

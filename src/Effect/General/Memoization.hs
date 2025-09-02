@@ -3,7 +3,6 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
 {-# HLINT ignore "Use newtype instead of data" #-}
-{-# LANGUAGE EmptyCase #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# HLINT ignore "Use >=>" #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -16,13 +15,13 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE Strict #-}
-{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 {-# HLINT ignore "Avoid lambda using `infix`" #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 
 module Effect.General.Memoization (
     Thunking,
@@ -35,26 +34,22 @@ module Effect.General.Memoization (
     runLazy,
     runLazySmart,
     runLazyC,
-    hnf,
+    eval2HNF,
 ) where
 
 import Free
 
 import Control.Monad.Primitive
-import Curry.FlatCurry (VarIndex)
 import qualified Data.IntMap.Strict as IntMap
 import Data.Kind (Type)
 import Data.List (sortBy)
-import Data.Maybe (fromJust)
 import Debug (ctrace, strace)
 import Effect.General.State (EffectCons, StateL (..), logCall)
-import GHC.Types.Unique (getKey)
 import GHC.Types.Unique.Supply
 import GHC.Weak
 import Signature
 import System.IO.Unsafe (unsafePerformIO)
 import System.Mem (performGC)
-import System.Mem.StableName
 import Type
 import Unsafe.Coerce (unsafeCoerce)
 
@@ -65,15 +60,15 @@ data Thunking v :: Type -> (Type -> Type) -> Type where
     Force :: Ptr -> Thunking v v NoSub
     Redirect :: (Ptr, Ptr) -> Thunking v () NoSub
 
-hnf
+eval2HNF
     :: forall m sig sigs sigl v
      . (EffectCons m sig sigs sigl Id, Thunking v :<<<<: sigl)
     => m v
     -> m ()
-hnf t =
+eval2HNF t =
     logCall
         >> injectL (Eval :: Thunking v () (OneSub v)) (Id ()) (\One _ -> fmap Id t) (return . unId)
-{-# INLINE hnf #-}
+{-# INLINE eval2HNF #-}
 
 store
     :: forall m sig sigs sigl v
@@ -86,7 +81,7 @@ store t =
             in case peek t of
                 Nothing -> res
                 Just sig -> case sig of
-                    A (Algebraic op) -> res
+                    A (Algebraic _) -> res
                     S (Enter _) -> res
                     L (Node op _ _ _) -> case prj3 op of
                         Just (Force ptr' :: Thunking v p c) -> return ptr'
@@ -105,7 +100,7 @@ thunk ptr t =
             in case peek t of
                 Nothing -> res
                 Just sig -> case sig of
-                    A (Algebraic op) -> res
+                    A (Algebraic _) -> res
                     S (Enter _) -> res
                     L (Node op _ _ _) -> case prj3 op of
                         Just (Force ptr' :: Thunking v p c) -> redirect @v (ptr, ptr')
@@ -113,11 +108,11 @@ thunk ptr t =
 {-# INLINE thunk #-}
 
 force :: (EffectCons m sig sigs sigl Id, Thunking v :<<<<: sigl) => Ptr -> m v
-force e = logCall >> injectL (Force e) (Id ()) (\x -> case x of {}) (return . unId)
+force e = logCall >> injectL (Force e) (Id ()) absurdNoSub (return . unId)
 {-# INLINE force #-}
 
 redirect :: forall v m sig sigs sigl. (EffectCons m sig sigs sigl Id, Thunking v :<<<<: sigl) => (Ptr, Ptr) -> m ()
-redirect p = logCall >> injectL (Redirect p :: Thunking v () NoSub) (Id ()) (\x -> case x of {}) (return . unId)
+redirect p = logCall >> injectL (Redirect p :: Thunking v () NoSub) (Id ()) absurdNoSub (return . unId)
 {-# INLINE redirect #-}
 
 runLazy :: (Functor l, Show (l v), Show (l ()), EffectCons m sig sigs sigl (StateL (ThunkStore l v) l)) => UniqSupply -> Prog (Sig sig sigs (Thunking v :+++: sigl) l) b -> m b
@@ -155,7 +150,7 @@ algLazy
     -> MC l v m a
 algLazy (Node op l st' k') = MC $ \ts@(TS sup th) ->
     let k = unMC . k'
-        st c l = unMC $ st' c l
+        st c' l' = unMC $ st' c' l'
      in case op of
             Thunk ptr -> k l (TS sup (addEntry ptr (Thunked (unsafeCoerce $ st One)) th))
             Store ->
@@ -172,8 +167,8 @@ algLazy (Node op l st' k') = MC $ \ts@(TS sup th) ->
                     Evaluated lv -> k lv ts
                     Redirected p' -> retrieve p'
             Redirect (p, p') -> do
-                let skipRedirects th ptr = case lookupEntry ptr th of
-                        Redirected ptr' -> skipRedirects th ptr'
+                let skipRedirects th' ptr = case lookupEntry ptr th' of
+                        Redirected ptr' -> skipRedirects th' ptr'
                         _ -> ptr
                 k l (TS sup (addEntry p (Redirected (skipRedirects th p')) th))
 
@@ -215,10 +210,6 @@ addEntry (Ptr !i) p th = unsafePerformIO $ do
     return (IntMap.insert i w th)
 {-# NOINLINE addEntry #-}
 
-removeEntry :: Ptr -> TSM m l v -> TSM m l v
-removeEntry (Ptr !i) th = IntMap.delete i th
-{-# NOINLINE removeEntry #-}
-
 lookupEntry :: Ptr -> TSM m l v -> Entry m l v
 lookupEntry (Ptr !i) th = unsafePerformIO $ keepAlive i $ do
     case IntMap.lookup i th of
@@ -259,15 +250,19 @@ instance (Functor m) => Functor (MC l v m) where
     {-# INLINE fmap #-}
 
 showTS :: (Show (l v)) => ThunkStore l v -> String
-showTS (TS i im) =
-    let m = IntMap.mapMaybe (\w -> unsafePerformIO $ deRefWeak w) (majorPurge im)
+showTS (TS _ im) =
+    let m = IntMap.mapMaybe (unsafePerformIO . deRefWeak) (majorPurge im)
+        xs = IntMap.toList m
+        evls = filter (isEvaluated . snd) xs
+        thnks = filter (isThunked . snd) xs
+        rdrs = filter (isRedirected . snd) xs
      in "MAJOR PURGE!\n"
             ++ concat
                 ( sortBy
                     cmp
-                    ( (map ((++ "\n") . show . (\(i, (Evaluated lv)) -> (i, lv))) ((filter (\(_, (e)) -> isEvaluated e)) (IntMap.toList m)))
-                        ++ (map ((++ "\n") . show . (\(i, (Thunked lv)) -> (i, ("-")))) ((filter (\(_, (e)) -> isThunked e)) (IntMap.toList m)))
-                        ++ (map ((++ "\n") . show . (\(i, (Redirected p)) -> (i, ("-> " ++ show p)))) ((filter (\(_, (e)) -> isRedirected e)) (IntMap.toList m)))
+                    ( map ((++ "\n") . show . (\(i, Evaluated lv) -> (i, lv))) evls
+                        ++ map ((++ "\n") . show . (\(i, Thunked _) -> (i, "-"))) thnks
+                        ++ map ((++ "\n") . show . (\(i, Redirected p) -> (i, "-> " ++ show p))) rdrs
                     )
                 )
             ++ "unpurged: "
@@ -276,11 +271,11 @@ showTS (TS i im) =
             ++ show (IntMap.size m)
             ++ "\n\n"
             ++ "evaluated: "
-            ++ show (length (filter (\(e) -> isEvaluated e) $ map snd (IntMap.toList m)))
+            ++ show (length evls)
             ++ " thunks: "
-            ++ show (length ((filter (\(e) -> isThunked e)) $ map snd (IntMap.toList m)))
+            ++ show (length thnks)
             ++ " redirects: "
-            ++ show (length ((filter (\(e) -> isRedirected e)) $ map snd (IntMap.toList m)))
+            ++ show (length rdrs)
   where
     cmp ('(' : s1) ('(' : s2) = compare (read (takeInt s1) :: Int) (read (takeInt s2) :: Int)
     takeInt = takeWhile (/= ',')

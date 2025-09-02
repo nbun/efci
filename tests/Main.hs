@@ -1,8 +1,6 @@
 module Main where
 
 import App (ToolOpts (..), defaultToolOpts, execute)
-import Control.Concurrent
-import Control.Monad (when)
 import Curry.FlatCurry.Type
 import Pipeline
 import Test.HUnit.Base
@@ -15,7 +13,7 @@ import System.IO.Silently (capture)
 main :: IO ()
 main = do
     setCurrentDirectory "examples"
-    res <- mapM (\(mod, expr, _, _) -> putStrLn (mod ++ " " ++ expr) >> capture (execute (defaultToolOpts{time = False}) (Left (mod, expr)))) progs
+    res <- mapM (\(moduleName, expr, _, _) -> putStrLn (moduleName ++ " " ++ expr) >> capture (execute (defaultToolOpts{time = False}) (Left (moduleName, expr)))) progs
     let tests = zipWith (\(imp, expr, expctdRes, expctdOut) (output, result) -> (imp, expr, (expctdRes, expctdOut), (map withoutBindings result, output))) progs res
     hspec $ mapM_ (\(_, expr, expected, result) -> parallel $ it expr $ assertEqual "" expected result) tests
 

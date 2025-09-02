@@ -1,6 +1,6 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE BangPatterns #-}
-module App (main, execute, defaultToolOpts, loadProg, ToolOpts(..), Mode(..)) where
+module App (main, execute, defaultToolOpts, loadProg, ToolOpts(..), Mode(..), fp2hs) where
 
 import Curry.Frontend.Base.Messages (Message, putErrLn)
 import Curry.Frontend.Checks (expandExports)
@@ -65,7 +65,6 @@ import Debug (tracingActive)
 import System.Clock (getTime, Clock (..), TimeSpec (sec, nsec))
 import Control.Concurrent (setNumCapabilities)
 import GHC.Stats
-import Data.Char (toUpper)
 import GHC.Utils.Misc (capitalise)
 
 data Mode = Tree | Codensity | Monolithic | Smart deriving Show
@@ -85,10 +84,9 @@ main :: IO ()
 main = do
   setNumCapabilities 16
   (_, _, files, _) <- getCompilerOpts
-  let file =
-        if null files
-          then "Prelude.curry"
-          else head files
+  let file = case files of
+               [] -> "Prelude.curry"
+               (f:_) -> f
   loop defaultToolOpts file
 
 loop :: ToolOpts -> FilePath -> IO ()
@@ -131,19 +129,13 @@ execute topts preloaded = do
     Right (Just res) -> return res
     Right Nothing -> print "Timeout!" >> return []
 
-prepare :: IO (AProg TypeExpr, FilePath)
-prepare = do
-  dir <- preludeDir
-  [p] <- genTAFCY (opts False False [dir]) "Prelude.curry"
-  return (p, dir)
-
-preludeDir :: IO FilePath
-preludeDir = do
+getPreludeDir :: IO FilePath
+getPreludeDir = do
   fn <- getDataFileName "Prelude.curry"
   return (normalise (addTrailingPathSeparator (takeDirectory fn)))
 
-opts :: Bool -> Bool -> [FilePath] -> Options
-opts warn dump dirs =
+buildOpts :: Bool -> [FilePath] -> Options
+buildOpts warn dirs =
   defaultOptions
     { optCppOpts =
         CppOpts
@@ -175,7 +167,7 @@ loadProg topts file query = do
       qualQuery = if query == "main" then dropExtension file ++ "." ++ query else query
   writeFile runmodfn (genRun (showFlatCurryExpr topts) runmod qualQuery [file])
   currentDir <- getCurrentDirectory
-  preludeDir <- preludeDir
+  preludeDir <- getPreludeDir
   let dirs =
         preludeDir
           : [ ( normalise
@@ -186,7 +178,7 @@ loadProg topts file query = do
                 runmod
             ]
   -- load modules
-  progs <- genTAFCY (opts True True dirs) runmod
+  progs <- genTAFCY (buildOpts True dirs) runmod
   removeFile runmodfn
   let efcyrunner = findRunner (last progs)
   case efcyrunner of
@@ -214,6 +206,7 @@ run topts progs fcyrunner = do
               let aprogs' = map fcyProg2ae progs
                   runner = fcyRunner2ae (fdclRule fcyrunner)
               runSmartCurryEffects aprogs' runner
+           _ -> error $ "Unimplemented mode: " ++ show (mode topts)
   -- when (showFlatCurryExpr topts) $ print fcyrunner\
   end <- getTime Monotonic
   when (time topts) (printTime start end)
@@ -223,9 +216,9 @@ run topts progs fcyrunner = do
       putStrLn $ show (max_mem_in_use_bytes s `div` 1000000) ++ "MB allocated"
   let (ti, values) = declutter res
       stats = statistics ti
-      sum = foldr (\(_, n) !acc -> n + acc) 0 stats
+      totalSum = foldr (\(_, n) !acc -> n + acc) 0 stats
   -- when tracingActive (print ti)
-  when tracingActive (mapM_ print stats >> putStrLn ("Total: " ++ show sum))
+  when tracingActive (mapM_ print stats >> putStrLn ("Total: " ++ show totalSum))
   return values
 
 printTime :: TimeSpec -> TimeSpec -> IO ()
@@ -252,7 +245,6 @@ fp2hs fp = case splitPath fp of
 
 fdclRule :: AFuncDecl ann -> ARule ann
 fdclRule (AFunc _ _ _ _ r) = r
-fdclRule _ = error "Syntax.fdclExpr: external rule"
 
 genTAFCY :: Options -> String -> IO [AProg TypeExpr]
 genTAFCY opts s = do
@@ -276,21 +268,20 @@ compileModule opts m fn = do
       -- qmdl' <- dumpWith opts show pPrint DumpFlatCurry $ qual mdl'
       intf <- uncurry (exportInterface opts) qmdl'
       writeInterface opts (fst mdl') intf
-      res@(_, qmdl'') <- transModule opts qmdl'
-      return res
+      transModule opts qmdl'
   unless (null warns) (printMessages ppWarning warns)
   case res of
     Left errs -> printMessages ppError errs >> error "Loading file failed"
     Right ((env, il), mdl'') -> do
-      let res = genAnnotatedFlatCurry False env (snd mdl'') il
-      _ <- dumpWith opts show (pPrint . genFlatCurry) DumpFlatCurry (env, res)
-      return res
+      let res' = genAnnotatedFlatCurry False env (snd mdl'') il
+      _ <- dumpWith opts show (pPrint . genFlatCurry) DumpFlatCurry (env, res')
+      return res'
 
 -- | Compiles the given source modules, which must be in topological order.
 makeCurry :: Options -> [(ModuleIdent, Source)] -> IO [AProg TypeExpr]
-makeCurry opts srcs = mapM process' (zip [1 ..] srcs) <&> catMaybes
+makeCurry opts srcs = mapM process' (zip [(1 :: Int) ..] srcs) <&> catMaybes
  where
-  process' (n, (m, Source fn ps is)) = do
+  process' (_, (m, Source fn ps _)) = do
     (res, warns) <- runCYIO $ processPragmas opts ps
     unless (null warns) (printMessages ppWarning warns)
     case res of
