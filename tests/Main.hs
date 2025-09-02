@@ -22,7 +22,7 @@ main = do
 progs :: [(String, String, [Result], String)]
 progs =
     [-- Modules
-    ("A.curry", "a", [int 50], "")
+    ("A.curry", "a", [int 100], "")
         
     -- ND
     , ("Prelude.curry", "0 ? 1 :: Int", [int 0, int 1], "")
