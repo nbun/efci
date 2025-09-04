@@ -8,9 +8,12 @@ The most recent code might differ from the version shown in the paper. You can c
 * [1421632](https://github.com/nbun/efci/tree/1421632a166990b8369bdd7d12a46c6b8b9663c3) for an extended version featuring unification
 * [90dfb99](https://github.com/nbun/efci/tree/90dfb99d4d1b4b9cfa7fed71503f6486237b46ac) for 'fusion all the way'
 
-## Installation
+## Installation (tested with stack 3.7.1 and cabal 3.12.1.0)
 
 ```
+git clone https://github.com/nbun/efci
+cd efci
+git submodules pull --init
 stack install
 ```
 
