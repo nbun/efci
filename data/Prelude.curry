@@ -71,6 +71,7 @@ module Prelude
   -- * Internal Functions
   , apply, cond, eqString
   , DET, PEVAL
+  , dumpMemory
   ) where
 
 infixr 9 .
@@ -2349,5 +2350,9 @@ type DET a = a
 --- to mark expressions to be partially evaluated.
 PEVAL   :: a -> a
 PEVAL x = x
+
+--- efci: Marks expression where memory should be dumped
+dumpMemory :: a -> a
+dumpMemory external
 
 ----------------------------------------------------------------

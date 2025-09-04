@@ -20,8 +20,8 @@
 {-# HLINT ignore "Avoid lambda using `infix`" #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
-{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
 module Effect.General.Memoization (
     Thunking,
@@ -35,6 +35,7 @@ module Effect.General.Memoization (
     runLazySmart,
     runLazyC,
     eval2HNF,
+    dumpMemory,
 ) where
 
 import Free
@@ -44,6 +45,7 @@ import qualified Data.IntMap.Strict as IntMap
 import Data.Kind (Type)
 import Data.List (sortBy)
 import Debug (ctrace, strace)
+import Debug.HTrace (htrace)
 import Effect.General.State (EffectCons, StateL (..), logCall)
 import GHC.Types.Unique.Supply
 import GHC.Weak
@@ -59,6 +61,13 @@ data Thunking v :: Type -> (Type -> Type) -> Type where
     Eval :: Thunking v () (OneSub v)
     Force :: Ptr -> Thunking v v NoSub
     Redirect :: (Ptr, Ptr) -> Thunking v () NoSub
+    DumpMemory :: Thunking v () NoSub
+
+dumpMemory
+    :: forall v m sig sigs sigl
+     . (EffectCons m sig sigs sigl Id, Thunking v :<<<<: sigl)
+    => m ()
+dumpMemory = logCall >> injectL (DumpMemory :: Thunking v () NoSub) (Id ()) absurdNoSub (return . unId)
 
 eval2HNF
     :: forall m sig sigs sigl v
@@ -145,7 +154,7 @@ instance StateCarrier (MC l v) (ThunkStore l v)
 instance DeriveForward 'State (MC l v) (StateL (ThunkStore l v))
 
 algLazy
-    :: (Monad m, Functor l)
+    :: (Monad m, Functor l, Show (l v))
     => Latent (Thunking v) l (MC l v m) (MC l v m a)
     -> MC l v m a
 algLazy (Node op l st' k') = MC $ \ts@(TS sup th) ->
@@ -171,6 +180,7 @@ algLazy (Node op l st' k') = MC $ \ts@(TS sup th) ->
                         Redirected ptr' -> skipRedirects th' ptr'
                         _ -> ptr
                 k l (TS sup (addEntry p (Redirected (skipRedirects th p')) th))
+            DumpMemory -> htrace (showTS ts) $ k l ts
 
 instance (Functor l, EffectMonad m sig sigs sigl (StateL (ThunkStore l v) l), Show (l v)) => TermAlgebra (MC l v m) (Sig sig sigs (Thunking v :+++: sigl) l) where
     con (A op) = afwd op
@@ -256,26 +266,26 @@ showTS (TS _ im) =
         evls = filter (isEvaluated . snd) xs
         thnks = filter (isThunked . snd) xs
         rdrs = filter (isRedirected . snd) xs
-     in "MAJOR PURGE!\n"
-            ++ concat
-                ( sortBy
-                    cmp
-                    ( map ((++ "\n") . show . (\(i, Evaluated lv) -> (i, lv))) evls
-                        ++ map ((++ "\n") . show . (\(i, Thunked _) -> (i, "-"))) thnks
-                        ++ map ((++ "\n") . show . (\(i, Redirected p) -> (i, "-> " ++ show p))) rdrs
-                    )
+     in concat
+            ( sortBy
+                cmp
+                ( map ((++ "\n") . show . (\(i, Evaluated lv) -> (i, lv))) evls
+                    ++ map ((++ "\n") . show . (\(i, Thunked _) -> (i, "-"))) thnks
+                    ++ map ((++ "\n") . show . (\(i, Redirected p) -> (i, "-> " ++ show p))) rdrs
                 )
+            )
             ++ "unpurged: "
             ++ show (IntMap.size im)
             ++ " purged: "
             ++ show (IntMap.size m)
-            ++ "\n\n"
+            ++ "\n"
             ++ "evaluated: "
             ++ show (length evls)
             ++ " thunks: "
             ++ show (length thnks)
             ++ " redirects: "
             ++ show (length rdrs)
+            ++ "\n\n"
   where
     cmp ('(' : s1) ('(' : s2) = compare (read (takeInt s1) :: Int) (read (takeInt s2) :: Int)
     takeInt = takeWhile (/= ',')

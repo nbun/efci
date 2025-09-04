@@ -218,16 +218,17 @@ callExternal f args =
             ("Prelude.prim_error", [p]) -> err p
             ("Prelude.=:=", [_, px, py]) -> unify px py
 
-            ("Prelude.showStringLiteral", [ps]) -> ps
-            ("Prelude.showCharLiteral", [pc]) -> showCharLiteral pc
-            ("Prelude.showIntLiteral", [p]) -> showIntLiteral p
-            ("Prelude.showFloatLiteral", [pf]) -> showFloatLiteral pf
+            ("Prelude.prim_showStringLiteral", [ps]) -> ps
+            ("Prelude.prim_showCharLiteral", [pc]) -> showCharLiteral pc
+            ("Prelude.prim_showIntLiteral", [p]) -> showIntLiteral p
+            ("Prelude.prim_showFloatLiteral", [pf]) -> showFloatLiteral pf
 
-            ("Prelude.readCharLiteral", [ps]) -> readCharLiteral ps
-            ("Prelude.readIntLiteral", [ps]) -> readIntLiteral ps
-            ("Prelude.readFloatLiteral", [ps]) -> readFloatLiteral ps
-            ("Prelude.readStringLiteral", [ps]) -> readStringLiteral ps
+            ("Prelude.prim_readCharLiteral", [ps]) -> readCharLiteral ps
+            ("Prelude.prim_readIntLiteral", [ps]) -> readIntLiteral ps
+            ("Prelude.prim_readFloatLiteral", [ps]) -> readFloatLiteral ps
+            ("Prelude.prim_readStringLiteral", [ps]) -> readStringLiteral ps
 
+            ("Prelude.dumpMemory", [p]) -> dumpMemory @a >> p
             _ ->
                 error $
                     "Missing definition for "
