@@ -1,5 +1,3 @@
-module Monolith (runMonolithic) where
-
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -7,70 +5,82 @@ module Monolith (runMonolithic) where
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
+module Monolith (runMonolithic) where
+
 import Curry.FlatCurry.Annotated.Type
 import Effect.FlatCurry.Constructor (Value(..))
-import Effect.FlatCurry.Function (Closure(..), CombType(FuncPartCall))
-import Effect.General.Error (Error(EOther))
+import qualified Effect.FlatCurry.Function as FCF
+import Effect.FlatCurry.Function (Closure(..))
+
+
+-- A Thunk is an unevaluated expression with its environment (not cyclic)
+data Thunk = Thunk [(VarIndex, Thunk)] (AExpr TypeExpr)
+
+-- Extend Value to allow constructor arguments to be thunks
+data LValue = LCons QName [Thunk] | LLit Literal | LClosure QName [Thunk]
 
 runMonolithic :: [AProg TypeExpr] -> AFuncDecl TypeExpr -> [Value (Closure ())]
-runMonolithic progs fdecl = vals
-	where
-		funs = concat [fs | AProg _ _ _ fs _ <- progs]
-		expr = case fdecl of
-			AFunc _ _ _ _ (ARule _ _ e) -> e
-			_ -> error "External function not supported"
-		env0 = []
-		-- Evaluate the entry function body
-		eval :: [(VarIndex, Value (Closure ()))] -> AExpr TypeExpr -> [Value (Closure ())]
-		eval env ex = case ex of
-			AVar _ v ->
-				case lookup v env of
-					Just v' -> [v']
-					Nothing -> error $ "Unbound variable: " ++ show v
-			ALit _ l -> [Lit l]
-			AComb _ ctype (qn, _) args ->
-				let
-					argVals = map (eval env) args
-					argVals' = map getSingleton argVals
-				in case ctype of
-					ConsCall -> [Effect.FlatCurry.Constructor.Cons qn argVals']
-					ConsPartCall _ -> [Effect.FlatCurry.Constructor.Cons qn argVals']
-					FuncCall -> applyFun qn argVals'
-					Curry.FlatCurry.Annotated.Type.FuncPartCall _ -> applyFun qn argVals'
-			ALet _ bs e ->
-				let env' = [(v, getSingleton (eval env be)) | ((v, _), be) <- bs] ++ env
-				in eval env' e
-			AFree _ _ e -> eval env e
-			AOr _ e1 e2 -> eval env e1 ++ eval env e2
-			ACase _ _ e brs ->
-				let vs = eval env e
-				in concatMap (matchBranches env brs) vs
-			ATyped _ e _ -> eval env e
-		getSingleton [x] = x
-		getSingleton [] = error "Empty list in eval"
-		getSingleton _  = error "Non-singleton list in eval"
+runMonolithic progs fdecl =
+  let funs = concat [fs | AProg _ _ _ fs _ <- progs]
+      expr = case fdecl of
+        AFunc _ _ _ _ (ARule _ _ e) -> e
+        _ -> error "External function not supported"
+      env0 = []
+      lvals = leval funs env0 expr
+  in concatMap (fromLValue funs) lvals
 
-		applyFun :: QName -> [Value (Closure ())] -> [Value (Closure ())]
-		applyFun qn args =
-			case [f | f@(AFunc qn' ar _ _ r) <- funs, qn' == qn, ar == length args] of
-				(AFunc _ _ _ _ (ARule _ params body) : _) ->
-					let env' = zip (map fst params) args
-					in eval env' body
-				_ -> [ValOther (Closure qn (Effect.FlatCurry.Function.FuncPartCall (length args)) [])]
+leval :: [AFuncDecl TypeExpr] -> [(VarIndex, Thunk)] -> AExpr TypeExpr -> [LValue]
+leval funs env ex = case ex of
+  AVar _ v ->
+    case lookup v env of
+      Just th -> lwhnf funs th
+      Nothing -> error $ "Unbound variable: " ++ show v
+  ALit _ l -> [LLit l]
+  AComb _ ctype (qn, _) args ->
+    let argThunks = map (\a -> Thunk env a) args in
+    case ctype of
+      ConsCall -> [LCons qn argThunks]
+      ConsPartCall _ -> [LCons qn argThunks]
+      FuncCall -> lapplyFun funs qn argThunks
+      Curry.FlatCurry.Annotated.Type.FuncPartCall _ -> lapplyFun funs qn argThunks
+  ALet _ bs e ->
+    let env' = [(v, Thunk env be) | ((v, _), be) <- bs] ++ env in
+    leval funs env' e
+  AFree _ _ e -> leval funs env e
+  AOr _ e1 e2 -> leval funs env e1 ++ leval funs env e2
+  ACase _ _ e brs ->
+    let vs = leval funs env e in
+    concatMap (lmatchBranches funs env brs) vs
+  ATyped _ e _ -> leval funs env e
 
-		matchBranches :: [(VarIndex, Value (Closure ()))] -> [ABranchExpr TypeExpr] -> Value (Closure ()) -> [Value (Closure ())]
-		matchBranches _ [] _ = []
-		matchBranches env (ABranch pat be : bs) v =
-			case matchPat pat v of
-				Just env' -> eval (env' ++ env) be
-				Nothing   -> matchBranches env bs v
+lwhnf :: [AFuncDecl TypeExpr] -> Thunk -> [LValue]
+lwhnf funs (Thunk env ex) = leval funs env ex
 
-		matchPat :: APattern TypeExpr -> Value (Closure ()) -> Maybe [(VarIndex, Value (Closure ()))]
-		matchPat (ALPattern _ l) (Lit l') | l == l' = Just []
-		matchPat (APattern _ (qn, _) vars) (Effect.FlatCurry.Constructor.Cons qn' args)
-			| qn == qn' && length vars == length args = Just (zip (map fst vars) args)
-			| otherwise = Nothing
-		matchPat _ _ = Nothing
+lapplyFun :: [AFuncDecl TypeExpr] -> QName -> [Thunk] -> [LValue]
+lapplyFun funs qn args =
+  case [f | f@(AFunc qn' ar _ _ _) <- funs, qn' == qn, ar == length args] of
+    (AFunc _ _ _ _ (ARule _ params body) : _) ->
+      let env' = zip (map fst params) args
+      in leval funs env' body
+    _ -> [LClosure qn args]
 
-		vals = eval env0 expr
-		
+lmatchBranches :: [AFuncDecl TypeExpr] -> [(VarIndex, Thunk)] -> [ABranchExpr TypeExpr] -> LValue -> [LValue]
+lmatchBranches _ _ [] _ = []
+lmatchBranches funs env (ABranch pat be : bs) v =
+  case lmatchPat pat v of
+    Just env' -> leval funs (env' ++ env) be
+    Nothing   -> lmatchBranches funs env bs v
+
+lmatchPat :: APattern TypeExpr -> LValue -> Maybe [(VarIndex, Thunk)]
+lmatchPat (ALPattern _ l) (LLit l') | l == l' = Just []
+lmatchPat (APattern _ (qn, _) vars) (LCons qn' args)
+  | qn == qn' && length vars == length args = Just (zip (map fst vars) args)
+  | otherwise = Nothing
+lmatchPat _ _ = Nothing
+
+fromLValue :: [AFuncDecl TypeExpr] -> LValue -> [Value (Closure ())]
+fromLValue _ (LLit l) = [Lit l]
+fromLValue funs (LCons qn thunks) =
+  let argVals = map (\th -> fromLValue funs =<< lwhnf funs th) thunks
+  in [Effect.FlatCurry.Constructor.Cons qn vs | vs <- sequence argVals]
+fromLValue _ (LClosure qn thunks) = [ValOther (Closure qn (FCF.FuncPartCall (length thunks)) [])]
