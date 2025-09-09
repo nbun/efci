@@ -15,6 +15,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE Strict #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 {-# HLINT ignore "Avoid lambda using `infix`" #-}
@@ -36,6 +37,7 @@ module Effect.General.Memoization (
     runLazyC,
     eval2HNF,
     dumpMemory,
+    retrieve,
 ) where
 
 import Free
@@ -57,9 +59,9 @@ import Unsafe.Coerce (unsafeCoerce)
 
 data Thunking v :: Type -> (Type -> Type) -> Type where
     Thunk :: Ptr -> Thunking v () (OneSub v)
-    Store :: Thunking v Ptr (OneSub v)
+    Store :: String -> Thunking v Ptr (OneSub v)
     Eval :: Thunking v () (OneSub v)
-    Force :: Ptr -> Thunking v v NoSub
+    Force :: Bool -> Ptr -> Thunking v v NoSub
     Redirect :: (Ptr, Ptr) -> Thunking v () NoSub
     DumpMemory :: Thunking v () NoSub
 
@@ -82,18 +84,19 @@ eval2HNF t =
 store
     :: forall m sig sigs sigl v
      . (EffectCons m sig sigs sigl Id, Thunking v :<<<<: sigl)
-    => m v
+    => String
+    -> m v
     -> m Ptr
-store t =
+store loc t =
     logCall
-        >> let res = injectL (Store :: Thunking v Ptr (OneSub v)) (Id ()) (\One _ -> fmap Id t) (return . unId)
+        >> let res = injectL (Store loc :: Thunking v Ptr (OneSub v)) (Id ()) (\One _ -> fmap Id t) (return . unId)
             in case peek t of
                 Nothing -> res
                 Just sig -> case sig of
                     A (Algebraic _) -> res
                     S (Enter _) -> res
                     L (Node op _ _ _) -> case prj3 op of
-                        Just (Force ptr' :: Thunking v p c) -> return ptr'
+                        Just (Force _ ptr' :: Thunking v p c) -> return ptr'
                         _ -> res
 {-# INLINE store #-}
 
@@ -112,13 +115,17 @@ thunk ptr t =
                     A (Algebraic _) -> res
                     S (Enter _) -> res
                     L (Node op _ _ _) -> case prj3 op of
-                        Just (Force ptr' :: Thunking v p c) -> redirect @v (ptr, ptr')
+                        Just (Force _ ptr' :: Thunking v p c) -> redirect @v (ptr, ptr')
                         _ -> res
 {-# INLINE thunk #-}
 
 force :: (EffectCons m sig sigs sigl Id, Thunking v :<<<<: sigl) => Ptr -> m v
-force e = logCall >> injectL (Force e) (Id ()) absurdNoSub (return . unId)
+force e = logCall >> injectL (Force False e) (Id ()) absurdNoSub (return . unId)
 {-# INLINE force #-}
+
+retrieve :: (EffectCons m sig sigs sigl Id, Thunking v :<<<<: sigl) => Ptr -> m v
+retrieve e = logCall >> injectL (Force True e) (Id ()) absurdNoSub (return . unId)
+{-# INLINE retrieve #-}
 
 redirect :: forall v m sig sigs sigl. (EffectCons m sig sigs sigl Id, Thunking v :<<<<: sigl) => (Ptr, Ptr) -> m ()
 redirect p = logCall >> injectL (Redirect p :: Thunking v () NoSub) (Id ()) absurdNoSub (return . unId)
@@ -162,19 +169,21 @@ algLazy (Node op l st' k') = MC $ \ts@(TS sup th) ->
         st c' l' = unMC $ st' c' l'
      in case op of
             Thunk ptr -> k l (TS sup (addEntry ptr (Thunked (unsafeCoerce $ st One)) th))
-            Store ->
-                let (!fresh, sup') = freshPtr sup
+            Store loc ->
+                let (!fresh, sup') = freshPtr sup loc
                     th' = if ptrKey fresh `mod` 20000 == 0 then purge th else th
                  in k (fresh <$ l) (TS sup' (addEntry fresh (Thunked (unsafeCoerce $ st One)) th'))
             Eval -> st One l ts >> k l ts
-            Force p -> retrieve p
+            Force delete p -> fetch p
               where
-                retrieve ptr = case lookupEntry ptr th of
+                fetch ptr = case lookupEntry ptr th of
                     Thunked t -> do
-                        (TS sup' th', lv) <- unMC (unsafeCoerce $ t l) ts
-                        k lv (TS sup' (addEntry ptr (Evaluated lv) th'))
-                    Evaluated lv -> k lv ts
-                    Redirected p' -> retrieve p'
+                        (TS sup' th', lv) <- unMC (unsafeCoerce $ t l) (if delete then TS sup (removeEntry ptr th) else ts)
+                        let th'' = if delete then removeEntry ptr th' else addEntry ptr (Evaluated lv) th'
+                        k lv (TS sup' th'')
+                    Evaluated lv -> let th' = if delete then removeEntry ptr th else th
+                                    in k lv (TS sup th')
+                    Redirected p' -> fetch p'
             Redirect (p, p') -> do
                 let skipRedirects th' ptr = case lookupEntry ptr th' of
                         Redirected ptr' -> skipRedirects th' ptr'
@@ -212,18 +221,22 @@ isRedirected (Redirected _) = True
 isRedirected _ = False
 
 data ThunkStore l v = forall m. TS !UniqSupply !(TSM m l v) -- (IntMap.IntMap (Entry m l v))
-type TSM m l v = IntMap.IntMap (Weak (Entry m l v))
+type TSM m l v = IntMap.IntMap (String, Weak (Entry m l v))
 
 addEntry :: Ptr -> Entry m l v -> TSM m l v -> TSM m l v
-addEntry (Ptr !i) p th = unsafePerformIO $ do
+addEntry (Ptr !i loc) p th = unsafePerformIO $ do
     w <- mkWeak i (unsafeCoerce p) Nothing
-    return (IntMap.insert i w th)
+    return (IntMap.insert i (loc, w) th)
 {-# NOINLINE addEntry #-}
 
+removeEntry :: Ptr -> TSM m l v -> TSM m l v
+removeEntry (Ptr !i _) = IntMap.delete i
+{-# INLINE removeEntry #-}
+
 lookupEntry :: Ptr -> TSM m l v -> Entry m l v
-lookupEntry (Ptr !i) th = unsafePerformIO $ keepAlive i $ do
+lookupEntry (Ptr !i _) th = unsafePerformIO $ keepAlive i $ do
     case IntMap.lookup i th of
-        Just w -> do
+        Just (_, w) -> do
             m <- deRefWeak w
             case m of
                 Just v -> return (unsafeCoerce v)
@@ -240,7 +253,7 @@ purge m = strace stats m'
     old = IntMap.size m
     new = IntMap.size m'
     stats = if old == 0 then "empty" else "Purged " ++ show (old - new) ++ " dead pointers of total " ++ show old ++ " pointers (now " ++ show new ++ ")" -- ++ showTS (TS undefined m')
-    isAlive w = case unsafePerformIO $ deRefWeak w of
+    isAlive (_, w) = case unsafePerformIO $ deRefWeak w of
         Just _ -> True
         Nothing -> False
 {-# NOINLINE purge #-}
@@ -261,18 +274,15 @@ instance (Functor m) => Functor (MC l v m) where
 
 showTS :: (Show (l v)) => ThunkStore l v -> String
 showTS (TS _ im) =
-    let m = IntMap.mapMaybe (unsafePerformIO . deRefWeak) (majorPurge im)
+    let m = IntMap.mapMaybe (\(s, w) -> (s,) <$> (unsafePerformIO . deRefWeak) w) (majorPurge im)
         xs = IntMap.toList m
-        evls = filter (isEvaluated . snd) xs
-        thnks = filter (isThunked . snd) xs
-        rdrs = filter (isRedirected . snd) xs
+        evls = filter (isEvaluated . snd . snd) xs
+        thnks = filter (isThunked . snd . snd) xs
+        rdrs = filter (isRedirected . snd . snd) xs
      in concat
             ( sortBy
                 cmp
-                ( map ((++ "\n") . show . (\(i, Evaluated lv) -> (i, lv))) evls
-                    ++ map ((++ "\n") . show . (\(i, Thunked _) -> (i, "-"))) thnks
-                    ++ map ((++ "\n") . show . (\(i, Redirected p) -> (i, "-> " ++ show p))) rdrs
-                )
+                (map prettyVal xs)
             )
             ++ "unpurged: "
             ++ show (IntMap.size im)
@@ -287,9 +297,22 @@ showTS (TS _ im) =
             ++ show (length rdrs)
             ++ "\n\n"
   where
-    cmp ('(' : s1) ('(' : s2) = compare (read (takeInt s1) :: Int) (read (takeInt s2) :: Int)
-    takeInt = takeWhile (/= ',')
+    cmp s1 s2 = compare (read (takeInt s1) :: Int) (read (takeInt s2) :: Int)
+    takeInt = takeWhile (/= '(')
 {-# NOINLINE showTS #-}
+
+prettyVal :: (Show (l v)) => (Int, (String, Entry m l v)) -> String
+prettyVal (i, (loc, e)) =
+    show i
+        ++ " ("
+        ++ loc
+        ++ ")"
+        ++ ( case e of
+                Evaluated lv -> " = (" ++ show lv ++ ")"
+                Thunked _ -> ""
+                Redirected (Ptr ptr _) -> " -> " ++ show ptr
+           )
+        ++ "\n"
 
 instance (Show (l v)) => Show (ThunkStore l v) where
     show = showTS

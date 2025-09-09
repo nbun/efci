@@ -51,6 +51,7 @@ module Effect.General.State (
     runStateC',
     lookupRenaming,
     rename,
+    getCurrentQName,
 ) where
 
 import Curry.FlatCurry.Annotated.Type (Literal, QName, VarIndex)
@@ -104,11 +105,11 @@ instance Identify Rename where
     identify = "Rename"
 
 initRenaming :: UniqSupply -> RState
-initRenaming = RState []
+initRenaming sup = RState [] sup Nothing
 
 type Renaming = StateF Rename RState
 
-data RState = RState {renaming :: [(VarIndex, Ptr)], supply :: !UniqSupply}
+data RState = RState {renaming :: [(VarIndex, Ptr)], supply :: !UniqSupply, currentQName :: Maybe QName}
 
 freshNames
     :: (EffectCons m sig sigs sigl l, Renaming :<: sig)
@@ -118,15 +119,19 @@ freshNames 0 = logCall >> return []
 freshNames n =
     logCall >> do
         r <- get @Rename
-        let (!vs', sup') = takeNfromSupply n (supply r)
+        let (!vs', sup') = renameFromSupply (Just ("generated", "")) (replicate n (-1)) (supply r)
         put @Rename (r{supply = sup'})
         return vs'
 {-# INLINE freshNames #-}
 
-newRenamingScope :: (EffectCons m sig sigs sigl l, Renaming :<: sig) => m ()
-newRenamingScope =
-    logCall >> modify @Rename (\r -> r{renaming = []})
+newRenamingScope :: (EffectCons m sig sigs sigl l, Renaming :<: sig) => QName -> m ()
+newRenamingScope qn =
+    logCall >> modify @Rename (\r -> r{renaming = [], currentQName = Just qn})
 {-# INLINE newRenamingScope #-}
+
+getCurrentQName :: (EffectCons m sig sigs sigl l, Renaming :<: sig) => m (Maybe QName)
+getCurrentQName = logCall >> fmap currentQName (get @Rename)
+{-# INLINE getCurrentQName #-}
 
 lookupRenaming :: (EffectCons m sig sigs sigl l, Renaming :<: sig) => VarIndex -> m Ptr
 lookupRenaming v =
@@ -141,19 +146,21 @@ rename :: (EffectCons m sig sigs sigl l, Renaming :<: sig) => [VarIndex] -> m [P
 rename vs =
     logCall >> do
         r <- get @Rename
-        let (!vs', sup') = takeNfromSupply (length vs) (supply r)
+        let (vs', sup') = renameFromSupply (currentQName r) vs (supply r)
         put @Rename (r{renaming = renaming r ++ zip vs vs', supply = sup'})
-        -- trace (concatMap (analyzeVarIndex "rename") vs') (return ())
         return vs'
 {-# INLINE rename #-}
 
-takeNfromSupply :: Int -> UniqSupply -> ([Ptr], UniqSupply)
-takeNfromSupply 0 sup = ([], sup)
-takeNfromSupply n sup =
+renameFromSupply :: Maybe QName -> [VarIndex] -> UniqSupply -> ([Ptr], UniqSupply)
+renameFromSupply _ [] sup = ([], sup)
+renameFromSupply mqn (v:vs) sup =
     let (!u, sup') = takeUniqFromSupply sup
         !i = fromIntegral (getKey u)
-        (is, sup'') = takeNfromSupply (n - 1) sup'
-     in (Ptr i : is, sup'')
+        (is, sup'') = renameFromSupply mqn vs sup'
+        loc = case mqn of
+                Just (mdl, fn) -> mdl ++ "." ++ fn ++ " " ++ show v
+                Nothing -> show v
+     in (Ptr i loc : is, sup'')
 
 runState
     :: forall tag m sig sigs sigl l s a

@@ -34,7 +34,7 @@ import Curry.Frontend.CurryBuilder (findCurry, processPragmas)
 import Curry.Frontend.CurryDeps (Source (..), flatDeps)
 import Data.Functor ((<&>))
 import Data.List (sort, (\\), intercalate)
-import Data.Map (fromList)
+import Data.Map (fromList, empty)
 import Data.Maybe (catMaybes)
 import GHC.GHCi.Helpers (flushAll)
 import Curry.Frontend.Generators (genFlatCurry)
@@ -66,6 +66,8 @@ import System.Clock (getTime, Clock (..), TimeSpec (sec, nsec))
 import Control.Concurrent (setNumCapabilities)
 import GHC.Stats
 import GHC.Utils.Misc (capitalise)
+import Monolith (runMonolithic)
+import Effect.General.Error (Error(..))
 
 data Mode = Tree | Codensity | Monolithic | Smart deriving Show
 
@@ -78,7 +80,7 @@ rotateMode Smart = Tree
 data ToolOpts = ToolOpts { showFlatCurryExpr :: Bool, mode :: Mode, time :: Bool} deriving Show
 
 defaultToolOpts :: ToolOpts
-defaultToolOpts = ToolOpts { showFlatCurryExpr = False, mode = Smart, time = True}
+defaultToolOpts = ToolOpts { showFlatCurryExpr = False, mode = Monolithic, time = True}
 
 main :: IO ()
 main = do
@@ -201,7 +203,7 @@ run topts progs fcyrunner = do
              let aprogs' = map fcyProg2ae progs
                  runner = fcyRunner2ae (fdclRule fcyrunner)
              runCurryEffects @() aprogs' runner
-           -- Monolithic -> return $ ([], runMonolithic progs fcyrunner)
+           Monolithic -> return $ ([], (EOther . fmap (\r -> (Data.Map.empty, r))) (runMonolithic progs fcyrunner))
            Smart -> do
               let aprogs' = map fcyProg2ae progs
                   runner = fcyRunner2ae (fdclRule fcyrunner)

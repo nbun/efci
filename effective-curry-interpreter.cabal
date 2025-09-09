@@ -2,15 +2,9 @@ cabal-version:      2.4
 name:               effective-curry-interpreter
 version:            0.1.0.0
 
--- The license under which the package is released.
--- license:
 author:             Niels Bunkenburg
 maintainer:         nbu@informatik.uni-kiel.de
 
--- A copyright notice.
--- copyright:
--- category:
-extra-source-files: CHANGELOG.md
 data-files: Prelude.curry
 data-dir: data
 
@@ -36,19 +30,18 @@ library
                    
     exposed-modules: App, Pipeline
     build-depends:    
-      , base ^>=4.16
-      , curry-frontend ^>=2.1.0
-      , containers ^>=0.6.2.1
-      , mtl ^>=2.2.2
-      , filepath ^>=1.4.2.1
-      , htrace ^>= 0.1
-      , directory ^>= 1.3.6.0
-      , random ^>= 1.2.0
+      , base
+      , curry-frontend ^>=3.0.0
+      , containers
+      , mtl
+      , filepath
+      , htrace
+      , directory
+      , random
       , clock
       , ghc
       , unordered-containers
       , primitive
-      -- , ghc-heap-view
     hs-source-dirs:   src
     default-language: Haskell2010
     default-extensions: StrictData
@@ -60,7 +53,7 @@ executable efci
   default-language: Haskell2010
   ghc-options:      -O2 -fprof-late-overloaded-calls -threaded -rtsopts
   build-depends:
-      base >= 4.11
+      base
     , effective-curry-interpreter
 
 test-suite tests

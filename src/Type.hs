@@ -129,7 +129,7 @@ analyzeVarIndex loc i = unsafePerformIO $ do
     sn <- makeStableName i
     return $ loc ++ " VarIndex " ++ show i ++ " with stable name hash " ++ show (hashStableName sn)
 
-data Ptr = Ptr {-# NOUNPACK #-} Int
+data Ptr = Ptr {-# NOUNPACK #-} Int String
     deriving (Eq, Ord, Show)
 
 data Args m a = Progs [m a] | Thunks [Ptr]
@@ -141,13 +141,13 @@ foldArgs :: ([m a] -> b) -> ([Ptr] -> b) -> Args m a -> b
 foldArgs f _ (Progs xs) = f xs
 foldArgs _ g (Thunks xs) = g xs
 
-freshPtr :: UniqSupply -> (Ptr, UniqSupply)
-freshPtr sup =
+freshPtr :: UniqSupply -> String -> (Ptr, UniqSupply)
+freshPtr sup loc =
     let (!u, sup') = takeUniqFromSupply sup
         !i = fromIntegral (getKey u)
-     in (Ptr i, sup')
+     in (Ptr i loc, sup')
 {-# INLINE freshPtr #-}
 
 ptrKey :: Ptr -> VarIndex
-ptrKey (Ptr i) = i
+ptrKey (Ptr i _) = i
 {-# INLINE ptrKey #-}

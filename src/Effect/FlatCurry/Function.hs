@@ -61,9 +61,9 @@ fun
     => QName
     -> Args m a
     -> m a
-fun qn args =
+fun qn args = 
     logCallWith (show qn) >> do
-        newRenamingScope
+        newRenamingScope qn
         apply (getBody qn) args
 {-# INLINE fun #-}
 
@@ -96,10 +96,10 @@ instance Pointed Closure where
 external :: (EffectCons m sig sigs sigl Id, Partial :<: sigs, Thunking a :<<<<: sigl) => String -> m a
 external s = logCall >> injectS (Ext s)
 
-lambda :: (EffectCons m sig sigs sigl Id, Partial :<: sigs, Thunking a :<<<<: sigl) => [Ptr] -> m a -> m a
+lambda :: (EffectCons m sig sigs sigl Id, Partial :<: sigs, Thunking a :<<<<: sigl, Renaming :<: sig ) => [Ptr] -> m a -> m a
 lambda vs e =
     logCall >> do
-        ptr <- store e
+        ptr <- store "lambda" e
         injectS (Abs vs ptr)
 
 partial
@@ -110,7 +110,7 @@ partial
     -> m a
 partial qn combtype args =
     logCall >> do
-        ptrs <- mapM store args
+        ptrs <- mapM (store (fst qn ++ "." ++ snd qn ++ ".partial")) args
         injectS $ PartCall qn combtype ptrs
 
 missingArgs :: CombType -> Int
@@ -130,11 +130,11 @@ apply lam args =
         injectS $ FApply (fmap return lam) (return . k)
   where
     k :: Closure () -> m a
-    k (Lambda vs ptr) = let' vs args (force ptr)
+    k (Lambda vs ptr) = let' vs args (retrieve ptr)
     k (External s) = callExternal s args
     k (Closure qn combtype ptrs) = do
         new <- case args of
-            Progs ps -> mapM store ps
+            Progs ps -> mapM (store (fst qn ++ "." ++ snd qn ++ ".closure")) ps
             Thunks ptrs' -> return ptrs'
         let ptrs' = ptrs ++ new
          in case combtype of

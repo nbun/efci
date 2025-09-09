@@ -108,7 +108,7 @@ cons
     -> m a
 cons qn args =
     logCall >> do
-        ptrs <- foldArgs (mapM store) return args
+        ptrs <- foldArgs (mapM (store (fst qn ++ "." ++ snd qn ++ ".cons"))) return args
         injectA (FCons qn ptrs)
 {-# INLINE cons #-}
 

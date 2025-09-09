@@ -42,21 +42,7 @@ packages: [., curry-frontend]
 #
 extra-deps:
   - set-extra-1.4.2
-  # - template-haskell-2.17.0.0
-  # - parsec-3.1.15.1
-  # - text-1.2.5.0
   - htrace-0.1
-  # - Cabal-3.6.3.0
-  # - directory-1.3.8.0
-  # - binary-0.8.9.1
-  # - filepath-1.4.100.4
-  # - process-1.6.17.0
-  # - bytestring-0.12.0.2
-  # - unix-2.8.1.1
-  # - exceptions-0.10.7
-  - ghc-heap-view-0.6.4.1@sha256:3db52b253513cf086fc80c878efc5582116323307eda41e066de908cd33215ec,3270
-  - ghc-debug-stub-0.7.0.0
-  - ghc-debug-convention-0.7.0.0
 
 
 # Override default flag values for local packages and extra-deps

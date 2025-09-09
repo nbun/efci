@@ -34,6 +34,7 @@ import GHC.Types.Unique.Supply (mkSplitUniqSupply)
 import Signature (Id)
 import Transformation.FCY2AE
 import Type (AEProg, Ptr (..))
+import Data.Char (chr)
 
 runCurryEffects
     :: (Show a)
@@ -61,7 +62,7 @@ runSmartCurryEffects
     -> SmartProg (CurryEffects ()) ()
     -> IO ([TraceInfo], Error [(Constraints, Value (Closure ()))])
 runSmartCurryEffects ps e = do
-    sup <- mkSplitUniqSupply 'a'
+    sup <- mkSplitUniqSupply (chr 0)
     let (sup1, sup2) = splitUniqSupply sup
         pipeline =
             runIOSmart
@@ -81,7 +82,7 @@ declutter (ti, Error s) = (ti, [RError s])
 declutter (ti, EOther xs) = (ti, map addBindings xs)
   where
     addBindings (bs, v)
-        | Map.null bs || all (\(Ptr i) -> i > 999) (Map.keys bs) = declutterHNF v
+        | Map.null bs || all (\(Ptr i _) -> i > 999) (Map.keys bs) = declutterHNF v
         | otherwise = RBindings bs (declutterHNF v)
 
 declutterHNF :: (Show a) => Value (Closure a) -> Result
