@@ -203,7 +203,7 @@ run topts progs fcyrunner = do
              let aprogs' = map fcyProg2ae progs
                  runner = fcyRunner2ae (fdclRule fcyrunner)
              runCurryEffects @() aprogs' runner
-           Monolithic -> return $ ([], (EOther . fmap (\r -> (Data.Map.empty, r))) (runMonolithic progs fcyrunner))
+           Monolithic -> fmap (\x -> ([], EOther $ fmap (\r -> (Data.Map.empty, r)) x)) (runMonolithic progs fcyrunner)
            Smart -> do
               let aprogs' = map fcyProg2ae progs
                   runner = fcyRunner2ae (fdclRule fcyrunner)
