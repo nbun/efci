@@ -47,7 +47,7 @@ module Effect.FlatCurry.Constructor (
     readFloatLiteral,
     readStringLiteral,
     ordChar,
-    chrChar
+    chrChar,
 ) where
 
 import Control.Monad (void)

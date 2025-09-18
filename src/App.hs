@@ -80,7 +80,7 @@ rotateMode Smart = Tree
 data ToolOpts = ToolOpts { showFlatCurryExpr :: Bool, mode :: Mode, time :: Bool} deriving Show
 
 defaultToolOpts :: ToolOpts
-defaultToolOpts = ToolOpts { showFlatCurryExpr = False, mode = Monolithic, time = True}
+defaultToolOpts = ToolOpts { showFlatCurryExpr = False, mode = Smart, time = True}
 
 main :: IO ()
 main = do

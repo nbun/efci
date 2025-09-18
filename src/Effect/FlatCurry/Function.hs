@@ -202,10 +202,10 @@ callExternal f args =
             ("Prelude.chr", [px]) -> chrChar px
 
             
-            ("Prelude.returnIO", [px]) -> lambda [] px
+            ("Prelude.returnIO", [px]) -> returnIO px
             ( "Prelude.bindIO"
                 , [px, pf]
-                ) -> eval2HNF px >> apply pf (single px)
+                ) -> bindIO px pf
             ("Prelude.getChar", []) -> getCharIO
             ("Prelude.prim_putChar", [pc]) -> putCharIO pc
             ("Prelude.prim_writeFile", [pfp, ps]) -> writeFileIO pfp (normalform ps)
@@ -235,6 +235,16 @@ callExternal f args =
                         ++ show f
                         ++ " with arity "
                         ++ show (length args')
+
+returnIO :: (EffectCons m sig sigs sigl Id, Partial :<: sigs, Thunking a :<<<<: sigl, Renaming :<: sig) 
+          => m a -> m a
+returnIO = lambda []
+{-# INLINE returnIO #-}
+
+bindIO :: (EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl, Functions sig sigs sigl a) 
+          => m a -> m a -> m a
+bindIO px pf = eval2HNF px >> apply pf (single px)
+{-# INLINE bindIO #-}
 
 runPartial
     :: (EffectCons m sig sigs sigl (ClosureL l))

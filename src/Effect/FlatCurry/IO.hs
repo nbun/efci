@@ -45,8 +45,8 @@ data IOAction a
     | ReadFile FilePath (String -> a)
     | WriteFile FilePath String a
     | AppendFile FilePath String a
-    | IOError
-    | Catch
+    -- | IOError
+    -- | Catch
     deriving (Functor)
 
 putCharIO
