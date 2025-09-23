@@ -35,14 +35,14 @@ instance Pointed Error where
     {-# INLINE point #-}
 
 runError
-    :: (EffectCons m sig sigs sigl (ErrorL l))
+    :: (EffectMonad m sig sigs sigl (ErrorL l))
     => Prog (Sig (Err :+: sig) sigs sigl l) a
     -> m (Error a)
 runError = unEC . fold point con
 {-# INLINE runError #-}
 
 runErrorSmart
-    :: (EffectCons m sig sigs sigl (ErrorL l))
+    :: (EffectMonad m sig sigs sigl (ErrorL l))
     => SmartProg (Sig (Err :+: sig) sigs sigl l) a
     -> m (Error a)
 runErrorSmart = unEC . smartFold point con

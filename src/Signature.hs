@@ -176,7 +176,7 @@ instance HFunctor (Sig sig sigs sigl l) where
     hmap f (L l) = L (hmap f l)
     {-# INLINE hmap #-}
 
-type EffectMonad m sig sigs sigl l = (TermMonad m (Sig sig sigs sigl l))
+type EffectMonad m sig sigs sigl l = (TermMonad m (Sig sig sigs sigl l), Functor l)
 
 -- {-# RULES "fmapCoerce/coerce" fmap coerce = unsafeCoerce #-}
 

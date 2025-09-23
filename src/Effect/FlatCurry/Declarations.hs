@@ -51,24 +51,24 @@ instance (Functor m) => Functor (H (Progs l v m) m) where
     fmap f (H x) = H $ \th -> fmap f (x th)
     {-# INLINE fmap #-}
 
-runDecl :: (EffectCons m sig sigs sigl l) => Progs l v m -> Prog (Sig sig sigs (DeclF v :+++: sigl) l) a -> m a
+runDecl :: (EffectMonad m sig sigs sigl l) => Progs l v m -> Prog (Sig sig sigs (DeclF v :+++: sigl) l) a -> m a
 runDecl s p = hDecl p s
 {-# INLINE runDecl #-}
 
 hDecl
-    :: (EffectCons m sig sigs sigl l)
+    :: (EffectMonad m sig sigs sigl l)
     => Prog (Sig sig sigs (DeclF v :+++: sigl) l) a
     -> Progs l v m
     -> m a
 hDecl = unH . fold point con
 {-# INLINE hDecl #-}
 
-runDeclSmart :: (EffectCons m sig sigs sigl l) => Progs l v m -> SmartProg (Sig sig sigs (DeclF v :+++: sigl) l) a -> m a
+runDeclSmart :: (EffectMonad m sig sigs sigl l) => Progs l v m -> SmartProg (Sig sig sigs (DeclF v :+++: sigl) l) a -> m a
 runDeclSmart s p = hDeclSmart p s
 {-# INLINE runDeclSmart #-}
 
 hDeclSmart
-    :: (EffectCons m sig sigs sigl l)
+    :: (EffectMonad m sig sigs sigl l)
     => SmartProg (Sig sig sigs (DeclF v :+++: sigl) l) a
     -> Progs l v m
     -> m a

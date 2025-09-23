@@ -63,14 +63,14 @@ choose (p : ps) = foldr (?) p ps
 {-# INLINE choose #-}
 
 runND
-    :: (EffectCons m sig sigs sigl (ListL l))
+    :: (EffectMonad m sig sigs sigl (ListL l))
     => Prog (Sig (ND :+: sig) sigs sigl l) a
     -> m [a]
 runND = unNDC . fold point con
 {-# INLINE runND #-}
 
 runNDSmart
-    :: (EffectCons m sig sigs sigl (ListL l))
+    :: (EffectMonad m sig sigs sigl (ListL l))
     => SmartProg (Sig (ND :+: sig) sigs sigl l) a
     -> m [a]
 runNDSmart = unNDC . smartFold point con

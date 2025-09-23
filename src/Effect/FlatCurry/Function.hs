@@ -247,14 +247,14 @@ bindIO px pf = eval2HNF px >> apply pf (single px)
 {-# INLINE bindIO #-}
 
 runPartial
-    :: (EffectCons m sig sigs sigl (ClosureL l))
+    :: (EffectMonad m sig sigs sigl (ClosureL l))
     => Prog (Sig sig (Partial :+: sigs) sigl l) a
     -> m (Closure a)
 runPartial = unPC . fold point con
 {-# INLINE runPartial #-}
 
 runPartialSmart
-    :: (EffectCons m sig sigs sigl (ClosureL l))
+    :: (EffectMonad m sig sigs sigl (ClosureL l))
     => SmartProg (Sig sig (Partial :+: sigs) sigl l) a
     -> m (Closure a)
 runPartialSmart = unPC . smartFold point con

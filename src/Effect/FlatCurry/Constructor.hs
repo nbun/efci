@@ -171,14 +171,14 @@ newtype ValueL l a = ValueL {unValueL :: Value (l a)}
     deriving (Functor, Show)
 
 runCons
-    :: (EffectCons m sig sigs sigl (ValueL l))
+    :: (EffectMonad m sig sigs sigl (ValueL l))
     => Prog (Sig (ConsF :+: sig) (CaseScope :+: sigs) sigl l) a
     -> m (Value a)
 runCons = unCC . fold point con
 {-# INLINE runCons #-}
 
 runConsSmart
-    :: (EffectCons m sig sigs sigl (ValueL l))
+    :: (EffectMonad m sig sigs sigl (ValueL l))
     => SmartProg (Sig (ConsF :+: sig) (CaseScope :+: sigs) sigl l) a
     -> m (Value a)
 runConsSmart = unCC . smartFold point con

@@ -13,7 +13,7 @@
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
-module Effect.General.Reader (ask, runReader, runReaderC) where
+module Effect.General.Reader (ask, runReaderC) where
 
 import Effect.General.State (EffectCons, logCall)
 import Free
@@ -29,21 +29,21 @@ ask
 ask = logCall >> injectA (Ask @tag return)
 {-# INLINE ask #-}
 
-runReader
-    :: (EffectCons m sig sigs sigl l)
-    => r
-    -> Prog (Sig (ReaderF tag r :+: sig) sigs sigl l) a
-    -> Prog (Sig sig sigs sigl l) a
-runReader r p = hReader p r
+-- runReader
+--     :: (EffectCons m sig sigs sigl l)
+--     => r
+--     -> Prog (Sig (ReaderF tag r :+: sig) sigs sigl l) a
+--     -> Prog (Sig sig sigs sigl l) a
+-- runReader r p = hReader p r
 
 runReaderC :: (EffectMonad m sig sigs sigl l) => r -> Cod (RC tag r m) a -> m a
 runReaderC r p = unRC (runCod var p) r
 {-# INLINE runReaderC #-}
 
-hReader
-    :: Prog (Sig (ReaderF tag r :+: sig) sigs sigl l) a
-    -> (r -> Prog (Sig sig sigs sigl l) a)
-hReader = unRC . fold point con
+-- hReader
+    -- :: Prog (Sig (ReaderF tag r :+: sig) sigs sigl l) a
+    -- -> (r -> Prog (Sig sig sigs sigl l) a)
+-- hReader = unRC . fold point con
 
 instance ReaderCarrier (RC tag r) r
 instance DeriveForward 'Reader (RC tag r) VoidL

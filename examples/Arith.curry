@@ -8,7 +8,7 @@ fac n = case n of
 
 pointless :: Int -> ()
 pointless n = case n of
-  0 -> ()
+  0 -> dumpMemory ()
   m -> pointless (m - 1)
 
 loop :: Int
