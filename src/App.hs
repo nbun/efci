@@ -208,7 +208,6 @@ run topts progs fcyrunner = do
               let aprogs' = map fcyProg2ae progs
                   runner = fcyRunner2ae (fdclRule fcyrunner)
               runSmartCurryEffects aprogs' runner
-           _ -> error $ "Unimplemented mode: " ++ show (mode topts)
   -- when (showFlatCurryExpr topts) $ print fcyrunner\
   end <- getTime Monotonic
   when (time topts) (printTime start end)

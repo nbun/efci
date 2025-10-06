@@ -20,7 +20,6 @@ module Effect.General.Error (
     EC,
 ) where
 
-import Effect.General.State (EffectCons)
 import Free
 import Signature
 

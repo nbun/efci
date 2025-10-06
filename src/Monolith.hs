@@ -7,11 +7,11 @@
 
 module Monolith (runMonolithic) where
 
-import Control.Applicative ((<|>), (<$>))
+import Control.Applicative ((<|>))
 import Control.Monad (foldM, forM, forM_, msum, mzero)
 import Control.Monad.State
 import Curry.FlatCurry.Annotated.Type
-import Data.Map (Map, fromList, insert, lookup)
+import Data.Map (Map, insert)
 import qualified Data.Map as Map
 import Effect.FlatCurry.Constructor (Value (..))
 import qualified Effect.FlatCurry.Function as FCF
