@@ -90,10 +90,10 @@ instance (HFunctor k) => Pointed (Prog k) where
 
 -- fusion for free --
 
-class (HFunctor f) => TermAlgebra h f | h -> f where
+class (HFunctor k) => TermAlgebra h k | h -> k where
     var :: a -> h a
-    con :: f h (h a) -> h a
-    peek :: h a -> Maybe (f h (h a))
+    con :: k h (h a) -> h a
+    peek :: h a -> Maybe (k h (h a))
     peek _ = Nothing
 
 instance (HFunctor sig) => TermAlgebra (Prog sig) sig where

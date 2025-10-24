@@ -243,7 +243,7 @@ returnIO = lambda []
 
 bindIO :: (EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl, Functions sig sigs sigl a) 
           => m a -> m a -> m a
-bindIO px pf = eval2HNF px >> apply pf (single px)
+bindIO px pf = eval2HNF px >> apply pf (single (unReturn px))
 {-# INLINE bindIO #-}
 
 runPartial
