@@ -9,6 +9,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE DeriveTraversable #-}
 
 module Effect.FlatCurry.Constructor (
     CaseScope (..),
@@ -161,7 +162,22 @@ data Value a
     | Lit Literal
     | Free Ptr
     | ValOther a
-    deriving (Functor, Show)
+    deriving (Functor, Show, Foldable, Traversable)
+
+instance Applicative Value where
+    pure = ValOther
+    Cons qn args <*> v = Cons qn (map (<*> v) args)
+    HNF qn ptrs <*> _ = HNF qn ptrs
+    Lit l <*> _ = Lit l
+    Free i <*> _ = Free i
+    ValOther f <*> x = fmap f x
+
+instance Monad Value where
+    Cons qn args >>= f = Cons qn (map (>>= f) args)
+    HNF qn ptrs >>= _ = HNF qn ptrs
+    Lit l >>= _ = Lit l
+    Free i >>= _ = Free i
+    ValOther x >>= f = f x
 
 instance Pointed Value where
     point = ValOther
@@ -206,7 +222,7 @@ algCa (FStrictCons qn args) = sequence args <&> Cons qn
 algCa (FLit l) = return (Lit l)
 algCa (FFree i) = return (Free i)
 
-algCs :: (Monad m, TermAlgebra m (Sig sig sigs sigl (cL l)),  LCarrier cL Value) => CaseScope (m (Value (m (Value a)))) -> m (Value a)
+algCs :: (Monad m, TermAlgebra m (Sig sig sigs sigl (cL l)),  LCarrier cL Value, Pointed m    ) => CaseScope (m (Value (m (Value a)))) -> m (Value a)
 algCs (Case ce k) = do
             hnf <- ce
             k (void hnf) >>= lift

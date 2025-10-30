@@ -9,6 +9,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE DeriveTraversable #-}
 
 module Effect.General.Error (
     Err (..),
@@ -27,7 +28,18 @@ newtype Err a = Err String
     deriving (Functor, Show)
 
 data Error a = Error String | EOther a
-    deriving (Functor, Show)
+    deriving (Functor, Show, Traversable, Foldable)
+
+instance Applicative Error where
+    pure = EOther
+    {-# INLINE pure #-}
+    Error s <*> _ = Error s
+    _ <*> Error s = Error s
+    EOther f <*> EOther x = EOther (f x)
+
+instance Monad Error where
+    Error s >>= _ = Error s
+    EOther x >>= f = f x
 
 instance Pointed Error where
     point = EOther
@@ -49,6 +61,14 @@ runErrorSmart = unEC . smartFold point con
 
 instance OuterCarrier EC Error
 instance DeriveForward 'Outer EC ErrorL
+instance LCarrier ErrorL Error where
+    lift (Error s) = pure (Error s)
+    lift (EOther x) = x
+    {-# INLINE lift #-}
+
+    lift2 (Error s) = pure (ErrorL $ Error s)
+    lift2 (EOther x) = x
+    {-# INLINE lift2 #-}
 
 algE :: (Pointed m) => Err (m (Error a)) -> m (Error a)
 algE (Err s) = point (Error s)
@@ -76,15 +96,6 @@ instance (Functor m) => Functor (EC m) where
 instance (Pointed m) => Pointed (EC m) where
     point x = EC $ point (EOther x)
     {-# INLINE point #-}
-
-instance LCarrier ErrorL Error where
-    lift (Error s) = pure (Error s)
-    lift (EOther x) = x
-    {-# INLINE lift #-}
-
-    lift2 (Error s) = pure (ErrorL $ Error s)
-    lift2 (EOther x) = x
-    {-# INLINE lift2 #-}
 
 newtype ErrorL l a = ErrorL {unErrorL :: Error (l a)}
     deriving (Show)

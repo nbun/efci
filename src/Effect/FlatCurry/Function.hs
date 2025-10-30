@@ -12,6 +12,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE DeriveTraversable #-}
 
 module Effect.FlatCurry.Function (
     apply,
@@ -87,7 +88,21 @@ data Closure a
     | Lambda [Ptr] Ptr
     | External String
     | Other a
-    deriving (Functor, Show)
+    deriving (Functor, Show, Foldable, Traversable)
+
+instance Applicative Closure where
+    pure = Other
+    {-# INLINE pure #-}
+    Other f <*> x = fmap f x
+    Closure qn ct ptrs <*> _ = Closure qn ct ptrs
+    Lambda vs ptr <*> _ = Lambda vs ptr
+    External s <*> _ = External s
+
+instance Monad Closure where
+    Other x >>= f = f x
+    Closure qn ct ptrs >>= _ = Closure qn ct ptrs
+    Lambda vs ptr >>= _ = Lambda vs ptr
+    External s >>= _ = External s
 
 instance Pointed Closure where
     point = Other
@@ -274,7 +289,7 @@ instance LCarrier ClosureL Closure where
 instance OuterCarrier PC Closure
 instance DeriveForward 'Outer PC ClosureL
 
-algP :: (Monad m, LCarrier cL Closure, TermAlgebra m (Sig sig sigs sigl (cL l))) => Partial (m (Closure (m (Closure a)))) -> m (Closure a)
+algP :: (Monad m, LCarrier cL Closure, TermAlgebra m (Sig sig sigs sigl (cL l)), Pointed m  ) => Partial (m (Closure (m (Closure a)))) -> m (Closure a)
 algP (PartCall qn combtype args) = return $ Closure qn combtype args
 algP (FApply p k) = do
     clsr <- p

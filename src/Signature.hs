@@ -67,6 +67,8 @@ import Data.Union
 import Free
 import GHC.Base (Constraint)
 import GHC.Stack (HasCallStack)
+import Control.Monad (join)
+import Unsafe.Coerce (unsafeCoerce)
 
 type (:<:) e r = Elem e r
 
@@ -178,14 +180,16 @@ instance HFunctor (Sig sig sigs sigl l) where
 
 type EffectMonad m sig sigs sigl l = (TermMonad m (Sig sig sigs sigl l), Functor l)
 
--- {-# RULES "fmapCoerce/coerce" fmap coerce = unsafeCoerce #-}
+{-# RULES "fmapCoerce/coerce" fmap coerce = unsafeCoerce #-}
 
 class OuterCarrier c f | c -> f where
     cc :: m (f a) -> c m a
     default cc :: (Coercible (c m a) (m (f a))) => m (f a) -> c m a
+    {-# INLINE cc #-}
     cc = coerce
     unc :: c m a -> m (f a)
     default unc :: (Coercible (m (f a)) (c m a)) => c m a -> m (f a)
+    {-# INLINE unc #-}
     unc = coerce
     wrap :: (Functor eff) => (eff (m (f a)) -> m (f a)) -> eff (c m a) -> c m a
     wrap alg = cc . alg . fmap unc
@@ -193,9 +197,11 @@ class OuterCarrier c f | c -> f where
 class StateCarrier c s | c -> s where
     ccst :: (s -> m (s, a)) -> c m a
     default ccst :: (Coercible (c m a) (s -> m (s, a))) => (s -> m (s, a)) -> c m a
+    {-# INLINE ccst #-}
     ccst = coerce
     uncst :: c m a -> (s -> m (s, a))
     default uncst :: (Coercible (s -> m (s, a)) (c m a)) => c m a -> (s -> m (s, a))
+    {-# INLINE uncst #-}
     uncst = coerce
     wrapst :: (Functor eff) => (eff (s -> m (s, a)) -> s -> m (s, a)) -> eff (c m a) -> c m a
     wrapst alg = ccst . alg . fmap uncst
@@ -203,9 +209,11 @@ class StateCarrier c s | c -> s where
 class ReaderCarrier c r | c -> r where
     ccr :: (r -> m a) -> c m a
     default ccr :: (Coercible (c m a) (r -> m a)) => (r -> m a) -> c m a
+    {-# INLINE ccr #-}
     ccr = coerce
     uncr :: c m a -> (r -> m a)
     default uncr :: (Coercible (r -> m a) (c m a)) => c m a -> (r -> m a)
+    {-# INLINE uncr #-}
     uncr = coerce
     wrapr :: (Functor eff) => (eff (r -> m a) -> r -> m a) -> eff (c m a) -> c m a
     wrapr alg = ccr . alg . fmap uncr
@@ -213,20 +221,32 @@ class ReaderCarrier c r | c -> r where
 class LCarrier cL f | cL -> f where
     cl :: f (l x) -> cL l x
     default cl :: (Coercible (cL l x) (f (l x))) => f (l x) -> cL l x
+    {-# INLINE cl #-}
     cl = coerce
     unl :: cL l x -> f (l x)
     default unl :: (Coercible (f (l x)) (cL l x)) => cL l x -> f (l x)
+    {-# INLINE unl #-}
     unl = coerce
 
     lift
-        :: (TermAlgebra m (Sig sig sigs sigl (cL l)), Applicative m)
+        :: (TermMonad m (Sig sig sigs sigl (cL l)))
         => f (m (f a))
         -> m (f a)
+    default lift :: (TermMonad m (Sig sig sigs sigl (cL l)), Traversable f, Monad f)
+        => f (m (f a))
+        -> m (f a)
+    {-# INLINE lift #-}
+    lift = fmap join . sequence
 
     lift2
-        :: (TermAlgebra m (Sig sig sigs sigl (cL l)), Applicative m)
+        :: (TermMonad m (Sig sig sigs sigl (cL l)), Applicative m)
         => f (m (cL l x))
         -> m (cL l x)
+    default lift2 :: (TermMonad m (Sig sig sigs sigl (cL l)), Monad m, Functor f)
+        => f (m (cL l x))
+        -> m (cL l x)
+    {-# INLINE lift2 #-}
+    lift2 = fmap cl . lift . fmap (fmap unl)
 
 ----
 type family StratApply (strat :: CarrierDerivingStrat) (l :: Type -> Type) (ll :: (Type -> Type) -> Type -> Type) :: Type -> Type where
@@ -240,30 +260,30 @@ class (DerivingStrat strat c ll) => DeriveForward (strat :: CarrierDerivingStrat
 
 class DerivingStrat strat c ll where
     dafwd
-        :: (TermAlgebra m (Sig sig sigs sigl (StratApply strat l ll)))
+        :: (TermMonad m (Sig sig sigs sigl (StratApply strat l ll)))
         => Algebraic sig (c m) (c m a) -> c m a
     dsfwd
-        :: (TermAlgebra m (Sig sig sigs sigl (StratApply strat l ll)), Pointed m, Functor (c m), Applicative m)
+        :: (TermMonad m (Sig sig sigs sigl (StratApply strat l ll)), Pointed m, Functor (c m), Applicative m)
         => Scoped sigs (c m) (c m a) -> c m a
     dlfwd
-        :: (TermAlgebra m (Sig sig sigs sigl (StratApply strat l ll)), Pointed m, Applicative m)
+        :: (TermMonad m (Sig sig sigs sigl (StratApply strat l ll)), Pointed m, Applicative m)
         => Latent sigl l (c m) (c m a) -> c m a
 
 afwd
     :: forall ll strat sig sigs sigl l c m a
-     . (DeriveForward strat c ll, TermAlgebra m (Sig sig sigs sigl (StratApply strat l ll)), Applicative m)
+     . (DeriveForward strat c ll, TermMonad m (Sig sig sigs sigl (StratApply strat l ll)), Applicative m)
     => Algebraic sig (c m) (c m a) -> c m a
 afwd = dafwd @strat @_ @ll @_ @_ @_ @_ @l
 
 sfwd
     :: forall ll strat sig sigs sigl l c m a
-     . (DeriveForward strat c ll, TermAlgebra m (Sig sig sigs sigl (StratApply strat l ll)), Applicative m, Pointed m, Functor (c m))
+     . (DeriveForward strat c ll, TermMonad m (Sig sig sigs sigl (StratApply strat l ll)), Applicative m, Pointed m, Functor (c m))
     => Scoped sigs (c m) (c m a) -> c m a
 sfwd = dsfwd @strat @_ @ll @_ @_ @_ @_ @l
 
 lfwd
     :: forall ll strat sig sigs sigl l c m a
-     . (DeriveForward strat c ll, TermAlgebra m (Sig sig sigs sigl (StratApply strat l ll)), Pointed m, Applicative m)
+     . (DeriveForward strat c ll, TermMonad m (Sig sig sigs sigl (StratApply strat l ll)), Pointed m, Applicative m)
     => Latent sigl l (c m) (c m a) -> c m a
 lfwd = dlfwd @strat @_ @ll @_ @_ @_ @_ @l
 
