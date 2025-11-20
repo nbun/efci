@@ -88,7 +88,7 @@ fcyExpr2ae frees expr =
                     j <- lookupRenaming i
                     return $ lvar j
             ALit _ l -> return $ lit l
-            AComb _ FuncCall (("Prelude", "?"), _) [e1, e2] ->
+            AComb _ FuncCall (("Prelude", "?"), _) [e1, e2] -> 
                 liftM2 (?) (rec e1) (rec e2)
             AComb _ FuncCall (("Prelude", "failed"), _) [] -> return failed
             AComb _ FuncCall (("Prelude", "apply"), _) [fe, ee] ->

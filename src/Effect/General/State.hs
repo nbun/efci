@@ -68,7 +68,6 @@ import Type (Ptr (..))
 
 data StateF (tag :: Type) s a
     = Get (s -> a)
-    | Put !s a
     | Modify (s -> s) a
     deriving (Functor)
 
@@ -84,7 +83,7 @@ put
      . (EffectCons m sig sigs sigl l, Identify tag, StateF tag s :<: sig)
     => s
     -> m ()
-put s = logCallWith (identify @tag) >> injectA (Put @tag s (return ()))
+put = modify @tag . const
 {-# INLINE put #-}
 
 modify
@@ -198,7 +197,6 @@ hStateSmart = unSTC . smartFold point con
 
 instance StateCarrier (STC tag s) s
 instance DeriveForward 'State (STC tag s) (StateL s)
-
 instance LCarrier (StateL s) ((,) s) where
     lift (_, x) = x
 
@@ -206,7 +204,6 @@ instance LCarrier (StateL s) ((,) s) where
 
 algS :: StateF tag s (s -> m a) -> s -> m a
 algS (Get k) s = k s s
-algS (Put s' k) _ = k s'
 algS (Modify f k) s = k (f s)
 
 instance
@@ -295,7 +292,7 @@ logCall
   where
     modifyWithoutLog f = do
         s <- injectA (Get @Trace return)
-        injectA (Put @Trace (f s) (return ()))
+        injectA (Modify @Trace (const $ f s) (return ()))
 {-# INLINE logCall #-}
 
 logCallWith :: (EffectCons m sig sigs sigl l) => String -> m ()
@@ -307,7 +304,7 @@ logCallWith s
   where
     modifyWithoutLog f = do
         s' <- injectA (Get @Trace return)
-        injectA (Put @Trace (f s') (return ()))
+        injectA (Modify @Trace (const $ f s') (return ()))
 {-# INLINE logCallWith #-}
 
 statistics :: [TraceInfo] -> [(TraceInfo, Int)]

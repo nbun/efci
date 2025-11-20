@@ -180,7 +180,15 @@ instance HFunctor (Sig sig sigs sigl l) where
 
 type EffectMonad m sig sigs sigl l = (TermMonad m (Sig sig sigs sigl l), Functor l)
 
-{-# RULES "fmapCoerce/coerce" fmap coerce = unsafeCoerce #-}
+-- {-# RULES "fmapcc/coerce" fmap cc = unsafeCoerce #-}
+-- {-# RULES "fmapunc/coerce" fmap unc = unsafeCoerce #-}
+-- {-# RULES "fmapcc/coerce" fmap ccst = unsafeCoerce #-}
+-- {-# RULES "fmapcc/coerce" fmap uncst = unsafeCoerce #-}
+-- {-# RULES "fmapcc/coerce" fmap ccr = unsafeCoerce #-}
+-- {-# RULES "fmapcc/coerce" fmap uncr = unsafeCoerce #-}
+-- {-# RULES "fmapcc/coerce" fmap cl = unsafeCoerce #-}
+-- {-# RULES "fmapcc/coerce" fmap unl = unsafeCoerce #-}
+{-# RULES "fmapcc/coerce" fmap coerce = unsafeCoerce #-}
 
 class OuterCarrier c f | c -> f where
     cc :: m (f a) -> c m a
