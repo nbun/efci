@@ -40,7 +40,7 @@ import Effect.FlatCurry.Function (
     external,
     fun,
     lambda,
-    partial, unReturn,
+    partial, unlambda,
  )
 import qualified Effect.FlatCurry.Function (CombType (..))
 import Effect.FlatCurry.IO (IOAction)
@@ -69,7 +69,7 @@ type CurryEffects v = Sig AEffects SEffects (LEffects v) Id
 -- normalform = id
 fcyRunner2ae :: (TermMonad m (CurryEffects v)) => ARule TypeExpr -> m v
 fcyRunner2ae (AExternal _ _) = undefined
-fcyRunner2ae (ARule _ _ e) = unReturn $ normalform (join $ fcyExpr2ae [] e) -- normalform
+fcyRunner2ae (ARule _ _ e) = unlambda $ normalform (join $ fcyExpr2ae [] e) -- normalform
 
 fcyExpr2ae
     :: forall m v

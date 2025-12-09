@@ -29,7 +29,7 @@ module Effect.FlatCurry.Function (
     runPartialSmart,
     missingArgs,
     runPartialC,
-    unReturn,
+    unlambda,
 ) where
 
 import Curry.FlatCurry.Type (QName)
@@ -78,7 +78,6 @@ data CombType
 data Partial a
     = PartCall QName CombType [Ptr]
     | FApply a (Closure () -> a)
-    | UnReturn a (Ptr -> a)
     | Abs [Ptr] Ptr
     | Ext String
     deriving (Functor)
@@ -136,8 +135,9 @@ decArgs :: CombType -> CombType
 decArgs (FuncPartCall i) = FuncPartCall (i - 1)
 decArgs (ConsPartCall i) = ConsPartCall (i - 1)
 
-unReturn :: forall m sig sigs sigl a. (EffectCons m sig sigs sigl Id, Functions sig sigs sigl a) => m a -> m a
-unReturn e = logCall >> injectS (UnReturn (fmap return e) (return . force))
+unlambda :: forall m sig sigs sigl a. (EffectCons m sig sigs sigl Id, Functions sig sigs sigl a) => m a -> m a
+unlambda lam = apply lam (Progs [])
+{-# INLINE unlambda #-}
 
 apply :: forall m sig sigs sigl a. (EffectCons m sig sigs sigl Id, Functions sig sigs sigl a) => m a -> Args m a -> m a
 apply lam args =
@@ -258,7 +258,7 @@ returnIO = lambda []
 
 bindIO :: (EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl, Functions sig sigs sigl a) 
           => m a -> m a -> m a
-bindIO px pf = eval2HNF px >> apply pf (single (unReturn px))
+bindIO px pf = eval2HNF px >> apply pf (single (unlambda px))
 {-# INLINE bindIO #-}
 
 runPartial
@@ -296,11 +296,11 @@ algP (FApply p k) = do
     case clsr of
         Other x -> x
         _ -> k (void clsr) >>= lift
-algP (UnReturn e k) = do
-    clsr <- e
-    case clsr of
-        Lambda [] ptr -> k ptr >>= lift
-        _ -> lift clsr
+-- algP (UnReturn e k) = do
+    -- clsr <- e
+    -- case clsr of
+        -- Lambda [] ptr -> k ptr >>= lift
+        -- _ -> lift clsr
 algP (Abs vs ptr) = return $ Lambda vs ptr
 algP (Ext s) = return $ External s
 

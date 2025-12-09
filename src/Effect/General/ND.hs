@@ -36,10 +36,10 @@ data ND a = Fail | Or a a
 
 instance Functor ND where
     fmap _ Fail = Fail
-    fmap f (Or l r) =
+    fmap f (Or l r) = 
         let l' = f l
             r' = f r
-         in pseq (par l' r') (Or l' r')
+         in r' `par` l' `pseq` Or l' r'
     {-# INLINE fmap #-}
 
 (?)
@@ -113,7 +113,7 @@ newtype ListL l a = ListL {unListL :: [l a]}
     deriving (Show, Functor)
 
 
-runND2  :: forall sig sigs sigl m l a. (m ~ Prog (Sig sig sigs sigl (ListL l))) 
+runND2  :: forall sig sigs sigl m l a. (m ~ Prog (Sig sig sigs sigl (ListL l)))
         => Prog (Sig (ND :+: sig) sigs sigl l) a -> m [a]
 runND2 = unNDC . fold point alg
   where
