@@ -60,8 +60,8 @@ data VarKind
     | CaseVar
     deriving (Show)
 
-type AEffects = '[ConsF, Renaming, ConstraintStore, ND, Err, StateF Trace [TraceInfo], IOAction]
-type SEffects = '[Partial, CaseScope]
+type AEffects = '[Term, Renaming, ConstraintStore, ND, Err, StateF Trace [TraceInfo], IOAction]
+type SEffects = '[Partial, Match]
 type LEffects v = DeclF v :+++: (Thunking v :+++: LVoid)
 
 type CurryEffects v = Sig AEffects SEffects (LEffects v) Id

@@ -26,8 +26,8 @@ module Effect.FlatCurry.IO (
 
 import Curry.FlatCurry.Type (Literal (..))
 import Effect.FlatCurry.Constructor (
-    CaseScope (..),
-    ConsF,
+    Match (..),
+    Term,
     Value (..),
     lit,
     str2prog,
@@ -51,9 +51,9 @@ data IOAction a
 
 putCharIO
     :: forall sig sigs sigl l m a
-     . ( ConsF :<: sig
+     . ( Term :<: sig
        , IOAction :<: sig
-       , CaseScope :<: sigs
+       , Match :<: sigs
        , EffectCons m sig sigs sigl l
        )
     => m a
@@ -67,9 +67,9 @@ putCharIO x = logCall >> injectS (Match [fmap return x] (return . f))
 writeFileIO
     , appendFileIO
         :: forall sig sigs sigl l m a
-         . ( ConsF :<: sig
+         . ( Term :<: sig
            , IOAction :<: sig
-           , CaseScope :<: sigs
+           , Match :<: sigs
            , EffectCons m sig sigs sigl l
            )
         => m a
@@ -86,15 +86,15 @@ appendFileIO fp s = logCall >> injectS (Match [fmap return fp, fmap return s] (r
 {-# INLINE writeFileIO #-}
 {-# INLINE appendFileIO #-}
 
-getCharIO :: (IOAction :<: sig, ConsF :<: sig, EffectCons m sig sigs sigl l) => m a
+getCharIO :: (IOAction :<: sig, Term :<: sig, EffectCons m sig sigs sigl l) => m a
 getCharIO = logCall >> injectA (GetChar (lit . Charc))
 {-# INLINE getCharIO #-}
 
 readFileIO
     :: forall sig sigs sigl m a
      . ( IOAction :<: sig
-       , ConsF :<: sig
-       , CaseScope :<: sigs
+       , Term :<: sig
+       , Match :<: sigs
        , Thunking a :<<<<: sigl
        , EffectCons m sig sigs sigl Id
        )

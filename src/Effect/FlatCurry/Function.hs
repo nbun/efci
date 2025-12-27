@@ -35,7 +35,7 @@ module Effect.FlatCurry.Function (
 import Curry.FlatCurry.Type (QName)
 
 import Control.Monad (void)
-import Effect.FlatCurry.Constructor hiding (External)
+import Effect.FlatCurry.Constructor
 import Effect.FlatCurry.Declarations (DeclF, getBody)
 import Effect.FlatCurry.IO
 import Effect.FlatCurry.Let
@@ -48,8 +48,8 @@ import Signature
 import Type
 
 type Functions sig sigs sigl a =
-    ( '[ConsF, Err, IOAction, ConstraintStore, ND] :.: sig
-    , '[Partial, CaseScope] :.: sigs
+    ( '[Term, Err, IOAction, ConstraintStore, ND] :.: sig
+    , '[Partial, Match] :.: sigs
     , Thunking a :<<<<: sigl
     , Renaming :<: sig
     , DeclF a :<<<<: sigl
@@ -336,7 +336,7 @@ newtype ClosureL l a = ClosureL {unClosureL :: Closure (l a)}
 unify
     :: forall sig sigs sigl m a
      . ( EffectCons m sig sigs sigl Id
-       , ConsF :<: sig
+       , Term :<: sig
        , Functions sig sigs sigl a
        , ND :<: sig
        , ConstraintStore :<: sig

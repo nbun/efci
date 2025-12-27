@@ -111,17 +111,3 @@ instance (Pointed m) => Pointed (NDC m) where
 
 newtype ListL l a = ListL {unListL :: [l a]}
     deriving (Show, Functor)
-
-
-runND2  :: forall sig sigs sigl m l a. (m ~ Prog (Sig sig sigs sigl (ListL l)))
-        => Prog (Sig (ND :+: sig) sigs sigl l) a -> m [a]
-runND2 = unNDC . fold point alg
-  where
-    point :: a -> NDC m a
-    point x = NDC (pure [x])
-
-    alg :: Sig (ND :+: sig) sigs sigl l (NDC m) (NDC m x) -> NDC m x
-    alg op = case op of
-        A (Algebraic op') -> (wrap algND # (afwd . Algebraic)) op'
-        S op' -> sfwd op'
-        L op' -> lfwd op'

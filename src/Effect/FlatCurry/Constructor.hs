@@ -12,8 +12,8 @@
 {-# LANGUAGE DeriveTraversable #-}
 
 module Effect.FlatCurry.Constructor (
-    CaseScope (..),
-    ConsF,
+    Match (..),
+    Term,
     Value (..),
     lit,
     str2prog,
@@ -67,22 +67,22 @@ import Type
 import Data.Char (ord, chr)
 import GHC.Num (integerFromInt)
 
-data ConsF a
+data Term a
     = FCons QName [Ptr]
     | FLit Literal
     | FFree Ptr
     deriving (Functor)
 
-data CaseScope a
+data Match a
     = Case a (Value () -> a)
     | Normalize a (Ptr -> a)
     | Match [a] ([Value ()] -> a)
     deriving (Functor)
 
 normalform
-    :: ( ConsF :<: sig
+    :: ( Term :<: sig
        , Thunking a :<<<<: sigl
-       , CaseScope :<: sigs
+       , Match :<: sigs
        , EffectCons m sig sigs sigl Id
        )
     => m a
@@ -91,13 +91,13 @@ normalform p = logCall >> injectS (Normalize (fmap return p) (return . normalfor
 {-# INLINE normalform #-}
 
 ccons
-    :: (EffectCons m sig sigs sigl l, ConsF :<: sig)
+    :: (EffectCons m sig sigs sigl l, Term :<: sig)
     => QName
     -> m a
 ccons qn = logCall >> injectA (FCons qn [])
 
 cons
-    :: (EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl, ConsF :<: sig)
+    :: (EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl, Term :<: sig)
     => QName
     -> Args m a
     -> m a
@@ -107,13 +107,13 @@ cons qn args =
         injectA (FCons qn ptrs)
 {-# INLINE cons #-}
 
-lit :: (EffectCons m sig sigs sigl l, ConsF :<: sig) => Literal -> m a
+lit :: (EffectCons m sig sigs sigl l, Term :<: sig) => Literal -> m a
 lit l = logCall >> injectA (FLit l)
 {-# INLINE lit #-}
 
 case'
     :: forall m sig sigs sigl a
-     . (EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl, Renaming :<: sig, CaseScope :<: sigs, ND :<: sig, ConstraintStore :<: sig, ConsF :<: sig)
+     . (EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl, Renaming :<: sig, Match :<: sigs, ND :<: sig, ConstraintStore :<: sig, Term :<: sig)
     => m a
     -> [(AEPattern, m a)]
     -> m a
@@ -127,7 +127,7 @@ case' cp brs =
         [x] -> x
         xs -> choose xs
 
-match :: (EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl, Renaming :<: sig, CaseScope :<: sigs, ND :<: sig, ConstraintStore :<: sig, ConsF :<: sig) => Value () -> (AEPattern, m a) -> Maybe (m a)
+match :: (EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl, Renaming :<: sig, Match :<: sigs, ND :<: sig, ConstraintStore :<: sig, Term :<: sig) => Value () -> (AEPattern, m a) -> Maybe (m a)
 match (HNF qn args) (AEPattern pqn argPtrs, e)
     | pqn == qn =
         Just $ let' argPtrs (Thunks args) e
@@ -182,14 +182,14 @@ newtype ValueL l a = ValueL {unValueL :: Value (l a)}
 
 runCons
     :: (EffectMonad m sig sigs sigl (ValueL l))
-    => Prog (Sig (ConsF :+: sig) (CaseScope :+: sigs) sigl l) a
+    => Prog (Sig (Term :+: sig) (Match :+: sigs) sigl l) a
     -> m (Value a)
 runCons = unCC . fold point con
 {-# INLINE runCons #-}
 
 runConsSmart
     :: (EffectMonad m sig sigs sigl (ValueL l))
-    => SmartProg (Sig (ConsF :+: sig) (CaseScope :+: sigs) sigl l) a
+    => SmartProg (Sig (Term :+: sig) (Match :+: sigs) sigl l) a
     -> m (Value a)
 runConsSmart = unCC . smartFold point con
 {-# INLINE runConsSmart #-}
@@ -210,12 +210,12 @@ instance LCarrier ValueL Value where
 instance OuterCarrier CC Value
 instance DeriveForward 'Outer CC ValueL
 
-algCa :: Monad m => ConsF (m (Value a)) -> m (Value a)
+algCa :: Monad m => Term (m (Value a)) -> m (Value a)
 algCa (FCons qn args) = return (HNF qn args)
 algCa (FLit l) = return (Lit l)
 algCa (FFree i) = return (Free i)
 
-algCs :: (Monad m, TermAlgebra m (Sig sig sigs sigl (cL l)),  LCarrier cL Value, Pointed m    ) => CaseScope (m (Value (m (Value a)))) -> m (Value a)
+algCs :: (Monad m, TermAlgebra m (Sig sig sigs sigl (cL l)),  LCarrier cL Value, Pointed m    ) => Match (m (Value (m (Value a)))) -> m (Value a)
 algCs (Case ce k) = do
             hnf <- ce
             k (void hnf) >>= lift
@@ -231,7 +231,7 @@ algCs (Match ps k) = do
 
 instance
     (EffectMonad m sig sigs sigl (ValueL l))
-    => TermAlgebra (CC m) (Sig (ConsF :+: sig) (CaseScope :+: sigs) sigl l)
+    => TermAlgebra (CC m) (Sig (Term :+: sig) (Match :+: sigs) sigl l)
     where
     con (A (Algebraic op)) = (wrap algCa # (afwd . Algebraic)) op
     con (S (Enter op)) = ((cc . algCs . fmap (unc . fmap unc)) # (sfwd . Enter)) op
@@ -253,7 +253,7 @@ instance (Pointed m) => Pointed (CC m) where
     point x = CC $ point (ValOther x)
     {-# INLINE point #-}
 
-unit, true, false :: (ConsF :<: sig, EffectCons m sig sigs sigl l) => m a
+unit, true, false :: (Term :<: sig, EffectCons m sig sigs sigl l) => m a
 unit = ccons ("Prelude", "()")
 true = ccons ("Prelude", "True")
 false = ccons ("Prelude", "False")
@@ -262,7 +262,7 @@ externalError :: [Value ()] -> a
 externalError vs = error $ "Malformed arguments to externally defined function: " ++ show vs
 
 arithInt
-    :: (ConsF :<: sig, CaseScope :<: sigs, EffectCons m sig sigs sigl l)
+    :: (Term :<: sig, Match :<: sigs, EffectCons m sig sigs sigl l)
     => (Integer -> Integer -> Integer)
     -> m a
     -> m a
@@ -274,10 +274,10 @@ arithInt op p1 p2 = logCall >> injectS (Match [fmap return p1, fmap return p2] (
 {-# INLINE arithInt #-}
 
 compInt
-    :: ( ConsF :<: sig
+    :: ( Term :<: sig
        , Thunking v :<<<<: sigl
-       , ConsF :<: sig
-       , CaseScope :<: sigs
+       , Term :<: sig
+       , Match :<: sigs
        , EffectCons m sig sigs sigl Id
        )
     => (Integer -> Integer -> Bool)
@@ -293,10 +293,10 @@ compInt op x y = logCall >> injectS (Match [fmap return x, fmap return y] (retur
 {-# INLINE compInt #-}
 
 compChar
-    :: ( ConsF :<: sig
+    :: ( Term :<: sig
        , Thunking v :<<<<: sigl
-       , ConsF :<: sig
-       , CaseScope :<: sigs
+       , Term :<: sig
+       , Match :<: sigs
        , EffectCons m sig sigs sigl Id
        )
     => (Char -> Char -> Bool)
@@ -312,13 +312,13 @@ compChar op x y =
     f vs = externalError vs
 {-# INLINE compChar #-}
 
-ordChar :: (ConsF :<: sig, CaseScope :<: sigs, EffectCons m sig sigs sigl Id) => m a -> m a
+ordChar :: (Term :<: sig, Match :<: sigs, EffectCons m sig sigs sigl Id) => m a -> m a
 ordChar x = logCall >> injectS (Match [fmap return x] (return . f))
   where
     f [Lit (Charc c)] = lit (Intc (integerFromInt $ ord c))
     f vs = externalError vs
 
-chrChar :: (ConsF :<: sig, CaseScope :<: sigs, EffectCons m sig sigs sigl Id) => m a -> m a
+chrChar :: (Term :<: sig, Match :<: sigs, EffectCons m sig sigs sigl Id) => m a -> m a
 chrChar x = logCall >> injectS (Match [fmap return x] (return . f))
   where
     f [Lit (Intc n)] = lit (Charc (chr (fromInteger n)))
@@ -327,7 +327,7 @@ chrChar x = logCall >> injectS (Match [fmap return x] (return . f))
 
 err
     :: forall sig sigs sigl m v
-     . ( CaseScope :<: sigs
+     . ( Match :<: sigs
        , Err :<: sig
        , Thunking v :<<<<: sigl
        , EffectCons m sig sigs sigl Id
@@ -348,13 +348,13 @@ val2str (Cons ("Prelude", ":") [Lit (Charc c), xs]) = c : val2str xs
 val2str hnf = error $ "hnf2str: " ++ show hnf
 
 str2prog
-    :: (Thunking a :<<<<: sigl, ConsF :<: sig, EffectCons m sig sigs sigl Id)
+    :: (Thunking a :<<<<: sigl, Term :<: sig, EffectCons m sig sigs sigl Id)
     => String
     -> m a
 str2prog cs = list2prog (map (lit . Charc) cs)
 
 list2prog
-    :: (Thunking a :<<<<: sigl, ConsF :<: sig, EffectCons m sig sigs sigl Id)
+    :: (Thunking a :<<<<: sigl, Term :<: sig, EffectCons m sig sigs sigl Id)
     => [m a]
     -> m a
 list2prog [] = cons ("Prelude", "[]") (Progs [])
@@ -363,7 +363,7 @@ list2prog (x : xs) = cons ("Prelude", ":") (Progs [x, list2prog xs])
 -- free variables --
 
 fvar
-    :: ( ConsF :<: sig
+    :: ( Term :<: sig
        , Thunking a :<<<<: sigl
        , ConstraintStore :<: sig
        , Renaming :<: sig
@@ -385,10 +385,10 @@ fvar i =
 
 --------
 
-compFloat :: ( ConsF :<: sig
+compFloat :: ( Term :<: sig
        , Thunking v :<<<<: sigl
-       , ConsF :<: sig
-       , CaseScope :<: sigs
+       , Term :<: sig
+       , Match :<: sigs
        , EffectCons m sig sigs sigl Id
        )
     => (Double -> Double -> Bool)
@@ -404,7 +404,7 @@ compFloat op x y = logCall >> injectS (Match [fmap return x, fmap return y] (ret
 {-# INLINE compFloat #-}
 
 arithFloat
-    :: (ConsF :<: sig, CaseScope :<: sigs, EffectCons m sig sigs sigl l)
+    :: (Term :<: sig, Match :<: sigs, EffectCons m sig sigs sigl l)
     => (Double -> Double -> Double)
     -> m a
     -> m a
@@ -416,7 +416,7 @@ arithFloat op x y = logCall >> injectS (Match [fmap return x, fmap return y] (re
 {-# INLINE arithFloat #-}
 
 arithFloat2Float
-    :: (ConsF :<: sig, CaseScope :<: sigs, EffectCons m sig sigs sigl l)
+    :: (Term :<: sig, Match :<: sigs, EffectCons m sig sigs sigl l)
     => (Double -> Double)
     -> m a
     -> m a
@@ -427,7 +427,7 @@ arithFloat2Float op x = logCall >> injectS (Match [fmap return x] (return . f))
 {-# INLINE arithFloat2Float #-}
 
 arithFloat2Int
-    :: (ConsF :<: sig, CaseScope :<: sigs, EffectCons m sig sigs sigl l)
+    :: (Term :<: sig, Match :<: sigs, EffectCons m sig sigs sigl l)
     => (Double -> Integer)
     -> m a
     -> m a
@@ -438,7 +438,7 @@ arithFloat2Int op x = logCall >> injectS (Match [fmap return x] (return . f))
 {-# INLINE arithFloat2Int #-}
 
 arithInt2Float
-    :: (ConsF :<: sig, CaseScope :<: sigs, EffectCons m sig sigs sigl l)
+    :: (Term :<: sig, Match :<: sigs, EffectCons m sig sigs sigl l)
     => (Integer -> Double)
     -> m a
     -> m a
@@ -450,7 +450,7 @@ arithInt2Float op x = logCall >> injectS (Match [fmap return x] (return . f))
 
 
 showCharLiteral
-    :: (ConsF :<: sig, CaseScope :<: sigs, EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl)
+    :: (Term :<: sig, Match :<: sigs, EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl)
     => m a
     -> m a
 showCharLiteral x = logCall >> injectS (Match [fmap return x] (return . f))
@@ -460,7 +460,7 @@ showCharLiteral x = logCall >> injectS (Match [fmap return x] (return . f))
 {-# INLINE showCharLiteral #-}
 
 showIntLiteral
-    :: (ConsF :<: sig, CaseScope :<: sigs, EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl)
+    :: (Term :<: sig, Match :<: sigs, EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl)
     => m a
     -> m a
 showIntLiteral x = logCall >> injectS (Match [fmap return x] (return . f))
@@ -470,7 +470,7 @@ showIntLiteral x = logCall >> injectS (Match [fmap return x] (return . f))
 {-# INLINE showIntLiteral #-}
 
 showFloatLiteral
-    :: (ConsF :<: sig, CaseScope :<: sigs, EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl)
+    :: (Term :<: sig, Match :<: sigs, EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl)
     => m a
     -> m a
 showFloatLiteral x = logCall >> injectS (Match [fmap return x] (return . f))
@@ -480,7 +480,7 @@ showFloatLiteral x = logCall >> injectS (Match [fmap return x] (return . f))
 {-# INLINE showFloatLiteral #-}
 
 readCharLiteral
-    :: (ConsF :<: sig, CaseScope :<: sigs, EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl)
+    :: (Term :<: sig, Match :<: sigs, EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl)
     => m a
     -> m a
 readCharLiteral x = logCall >> injectS (Match [fmap return x] (return . f))
@@ -491,7 +491,7 @@ readCharLiteral x = logCall >> injectS (Match [fmap return x] (return . f))
 {-# INLINE readCharLiteral #-}
 
 readIntLiteral
-    :: (ConsF :<: sig, CaseScope :<: sigs, EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl)
+    :: (Term :<: sig, Match :<: sigs, EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl)
     => m a
     -> m a
 readIntLiteral x = logCall >> injectS (Match [fmap return x] (return . f))
@@ -502,7 +502,7 @@ readIntLiteral x = logCall >> injectS (Match [fmap return x] (return . f))
 {-# INLINE readIntLiteral #-}
 
 readFloatLiteral
-    :: (ConsF :<: sig, CaseScope :<: sigs, EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl)
+    :: (Term :<: sig, Match :<: sigs, EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl)
     => m a
     -> m a
 readFloatLiteral x = logCall >> injectS (Match [fmap return x] (return . f))
@@ -513,7 +513,7 @@ readFloatLiteral x = logCall >> injectS (Match [fmap return x] (return . f))
 {-# INLINE readFloatLiteral #-}
 
 readStringLiteral
-    :: (ConsF :<: sig, CaseScope :<: sigs, EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl)
+    :: (Term :<: sig, Match :<: sigs, EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl)
     => m a
     -> m a
 readStringLiteral x = list2prog [cons ("Prelude", "(,)") (Progs [x, ccons ("Prelude", "[]")])]
