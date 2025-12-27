@@ -77,7 +77,7 @@ data CombType
 
 data Partial a
     = PartCall QName CombType [Ptr]
-    | FApply a (Closure () -> a)
+    | Apply a (Closure () -> a)
     | Abs [Ptr] Ptr
     | Ext String
     deriving (Functor)
@@ -107,10 +107,10 @@ instance Pointed Closure where
     point = Other
     {-# INLINE point #-}
 
-external :: (EffectCons m sig sigs sigl Id, Partial :<: sigs, Thunking a :<<<<: sigl) => String -> m a
+external :: (EffectCons m sig sigs sigl Id, Partial :<: sigs) => String -> m a
 external s = logCall >> injectS (Ext s)
 
-lambda :: (EffectCons m sig sigs sigl Id, Partial :<: sigs, Thunking a :<<<<: sigl, Renaming :<: sig ) => [Ptr] -> m a -> m a
+lambda :: (EffectCons m sig sigs sigl Id, Partial :<: sigs, Thunking a :<<<<: sigl) => [Ptr] -> m a -> m a
 lambda vs e =
     logCall >> do
         ptr <- store "lambda" e
@@ -131,9 +131,9 @@ missingArgs :: CombType -> Int
 missingArgs (FuncPartCall i) = i
 missingArgs (ConsPartCall i) = i
 
-decArgs :: CombType -> CombType
-decArgs (FuncPartCall i) = FuncPartCall (i - 1)
-decArgs (ConsPartCall i) = ConsPartCall (i - 1)
+decArgs :: CombType -> Int -> CombType
+decArgs (FuncPartCall i) n = FuncPartCall (i - n)
+decArgs (ConsPartCall i) n = ConsPartCall (i - n)
 
 unlambda :: forall m sig sigs sigl a. (EffectCons m sig sigs sigl Id, Functions sig sigs sigl a) => m a -> m a
 unlambda lam = apply lam (Progs [])
@@ -142,7 +142,7 @@ unlambda lam = apply lam (Progs [])
 apply :: forall m sig sigs sigl a. (EffectCons m sig sigs sigl Id, Functions sig sigs sigl a) => m a -> Args m a -> m a
 apply lam args =
     logCall >> do
-        injectS $ FApply (fmap return lam) (return . k)
+        injectS $ Apply (fmap return lam) (return . k)
   where
     k :: Closure () -> m a
     k (Lambda vs ptr) = let' vs args (retrieve ptr)
@@ -152,11 +152,12 @@ apply lam args =
             Progs ps -> mapM (store (fst qn ++ "." ++ snd qn ++ ".closure")) ps
             Thunks ptrs' -> return ptrs'
         let ptrs' = ptrs ++ new
+            n = length new
          in case combtype of
-                FuncPartCall 1 -> do
+                FuncPartCall missing | missing == n -> do
                     fun qn (Thunks ptrs')
-                ConsPartCall 1 -> cons qn (Thunks ptrs')
-                _ -> injectS $ PartCall qn (decArgs combtype) ptrs'
+                ConsPartCall missing | missing == n -> cons qn (Thunks ptrs')
+                _ -> injectS $ PartCall qn (decArgs combtype n) ptrs'
     k (Other _) = error "apply: Other encountered"
 
 callExternal
@@ -170,80 +171,78 @@ callExternal f args =
         let args' = case args of
                 Progs ps -> ps
                 Thunks ptrs -> map force ptrs
-        case (f, args') of
-            ("Prelude.plusInt", [px, py]) -> arithInt (+) px py
-            ("Prelude.minusInt", [px, py]) -> arithInt (-) px py
-            ("Prelude.timesInt", [px, py]) -> arithInt (*) px py
-            ("Prelude.divInt", [px, py]) -> arithInt div px py
-            ("Prelude.modInt", [px, py]) -> arithInt mod px py
-            ("Prelude.remInt", [px, py]) -> arithInt rem px py
+        case (drop 8 f, args') of -- drop 'Prelude.' prefix
+            ("plusInt", [px, py]) -> arithInt (+) px py
+            ("minusInt", [px, py]) -> arithInt (-) px py
+            ("timesInt", [px, py]) -> arithInt (*) px py
+            ("divInt", [px, py]) -> arithInt div px py
+            ("modInt", [px, py]) -> arithInt mod px py
+            ("remInt", [px, py]) -> arithInt rem px py
 
-            ("Prelude.eqInt", [px, py]) -> compInt (==) px py
-            ("Prelude.ltEqInt", [px, py]) -> compInt (<=) px py
+            ("eqInt", [px, py]) -> compInt (==) px py
+            ("ltEqInt", [px, py]) -> compInt (<=) px py
+            ("eqFloat", [px, py]) -> compFloat (==) px py
+            ("ltEqFloat", [px, py]) -> compFloat (<=) px py
 
-            ("Prelude.eqFloat", [px, py]) -> compFloat (==) px py
-            ("Prelude.ltEqFloat", [px, py]) -> compFloat (<=) px py
+            ("plusFloat", [px, py]) -> arithFloat (+) px py
+            ("minusFloat", [px, py]) -> arithFloat (-) px py
+            ("timesFloat", [px, py]) -> arithFloat (*) px py
+            ("divFloat", [px, py]) -> arithFloat (/) px py
 
-            ("Prelude.plusFloat", [px, py]) -> arithFloat (+) px py
-            ("Prelude.minusFloat", [px, py]) -> arithFloat (-) px py
-            ("Prelude.timesFloat", [px, py]) -> arithFloat (*) px py
-            ("Prelude.divFloat", [px, py]) -> arithFloat (/) px py
+            ("negateFloat", [px]) -> arithFloat2Float negate px
+            ("logFloat", [px]) -> arithFloat2Float log px
+            ("expFloat", [px]) -> arithFloat2Float exp px
+            ("sqrtFloat", [px]) -> arithFloat2Float sqrt px
+            ("sinFloat", [px]) -> arithFloat2Float sin px
+            ("cosFloat", [px]) -> arithFloat2Float cos px
+            ("tanFloat", [px]) -> arithFloat2Float tan px
+            ("asinFloat", [px]) -> arithFloat2Float asin px
+            ("acosFloat", [px]) -> arithFloat2Float acos px
+            ("atanFloat", [px]) -> arithFloat2Float atan px
+            ("sinhFloat", [px]) -> arithFloat2Float sinh px
+            ("coshFloat", [px]) -> arithFloat2Float cosh px
+            ("tanhFloat", [px]) -> arithFloat2Float tanh px
+            ("asinhFloat", [px]) -> arithFloat2Float asinh px
+            ("acoshFloat", [px]) -> arithFloat2Float acosh px
+            ("atanhFloat", [px]) -> arithFloat2Float atanh px
+            ("truncateFloat", [px]) -> arithFloat2Int truncate px
+            ("roundFloat", [px]) -> arithFloat2Int round px
 
-            ("Prelude.negateFloat", [px]) -> arithFloat2Float negate px
-            ("Prelude.logFloat", [px]) -> arithFloat2Float log px
-            ("Prelude.expFloat", [px]) -> arithFloat2Float exp px
-            ("Prelude.sqrtFloat", [px]) -> arithFloat2Float sqrt px
-            ("Prelude.sinFloat", [px]) -> arithFloat2Float sin px
-            ("Prelude.cosFloat", [px]) -> arithFloat2Float cos px
-            ("Prelude.tanFloat", [px]) -> arithFloat2Float tan px
-            ("Prelude.asinFloat", [px]) -> arithFloat2Float asin px
-            ("Prelude.acosFloat", [px]) -> arithFloat2Float acos px
-            ("Prelude.atanFloat", [px]) -> arithFloat2Float atan px
-            ("Prelude.sinhFloat", [px]) -> arithFloat2Float sinh px
-            ("Prelude.coshFloat", [px]) -> arithFloat2Float cosh px
-            ("Prelude.tanhFloat", [px]) -> arithFloat2Float tanh px
-            ("Prelude.asinhFloat", [px]) -> arithFloat2Float asinh px
-            ("Prelude.acoshFloat", [px]) -> arithFloat2Float acosh px
-            ("Prelude.atanhFloat", [px]) -> arithFloat2Float atanh px
+            ("intToFloat", [px]) -> arithInt2Float fromInteger px
 
-            ("Prelude.truncateFloat", [px]) -> arithFloat2Int truncate px
-            ("Prelude.roundFloat", [px]) -> arithFloat2Int round px
-
-            ("Prelude.intToFloat", [px]) -> arithInt2Float fromInteger px
-
-            ("Prelude.eqChar", [px, py]) -> compChar (==) px py
-            ("Prelude.ltEqChar", [px, py]) -> compChar (<=) px py
-            ("Prelude.ord", [px]) -> ordChar px
-            ("Prelude.chr", [px]) -> chrChar px
+            ("eqChar", [px, py]) -> compChar (==) px py
+            ("ltEqChar", [px, py]) -> compChar (<=) px py
+            ("ord", [px]) -> ordChar px
+            ("chr", [px]) -> chrChar px
 
             
-            ("Prelude.returnIO", [px]) -> returnIO px
-            ( "Prelude.bindIO"
+            ("returnIO", [px]) -> returnIO px
+            ("bindIO"
                 , [px, pf]
                 ) -> bindIO px pf
-            ("Prelude.getChar", []) -> getCharIO
-            ("Prelude.prim_putChar", [pc]) -> putCharIO pc
-            ("Prelude.prim_writeFile", [pfp, ps]) -> writeFileIO pfp (normalform ps)
-            ("Prelude.prim_appendFile", [pfp, ps]) -> appendFileIO pfp (normalform ps)
-            ("Prelude.prim_readFile", [pfp]) -> readFileIO pfp
+            ("getChar", []) -> getCharIO
+            ("prim_putChar", [pc]) -> putCharIO pc
+            ("prim_writeFile", [pfp, ps]) -> writeFileIO pfp (normalform ps)
+            ("prim_appendFile", [pfp, ps]) -> appendFileIO pfp (normalform ps)
+            ("prim_readFile", [pfp]) -> readFileIO pfp
             
-            ("Prelude.ensureNotFree", [p]) -> eval2HNF p >> p
-            ("Prelude.$!", [pf, px]) -> eval2HNF px >> apply pf (single px)
-            ("Prelude.$##", [pf, px]) -> apply pf (single $ normalform px)
-            ("Prelude.prim_error", [p]) -> err p
-            ("Prelude.=:=", [_, px, py]) -> unify px py
+            ("ensureNotFree", [p]) -> eval2HNF p >> p
+            ("$!", [pf, px]) -> eval2HNF px >> apply pf (single px)
+            ("$##", [pf, px]) -> apply pf (single $ normalform px)
+            ("prim_error", [p]) -> err p
+            ("=:=", [_, px, py]) -> unify px py
 
-            ("Prelude.prim_showStringLiteral", [ps]) -> ps
-            ("Prelude.prim_showCharLiteral", [pc]) -> showCharLiteral pc
-            ("Prelude.prim_showIntLiteral", [p]) -> showIntLiteral p
-            ("Prelude.prim_showFloatLiteral", [pf]) -> showFloatLiteral pf
+            ("prim_showStringLiteral", [ps]) -> ps
+            ("prim_showCharLiteral", [pc]) -> showCharLiteral pc
+            ("prim_showIntLiteral", [p]) -> showIntLiteral p
+            ("prim_showFloatLiteral", [pf]) -> showFloatLiteral pf
 
-            ("Prelude.prim_readCharLiteral", [ps]) -> readCharLiteral ps
-            ("Prelude.prim_readIntLiteral", [ps]) -> readIntLiteral ps
-            ("Prelude.prim_readFloatLiteral", [ps]) -> readFloatLiteral ps
-            ("Prelude.prim_readStringLiteral", [ps]) -> readStringLiteral ps
+            ("prim_readCharLiteral", [ps]) -> readCharLiteral ps
+            ("prim_readIntLiteral", [ps]) -> readIntLiteral ps
+            ("prim_readFloatLiteral", [ps]) -> readFloatLiteral ps
+            ("prim_readStringLiteral", [ps]) -> readStringLiteral ps
 
-            ("Prelude.dumpMemory", [p]) -> dumpMemory @a >> p
+            ("dumpMemory", [p]) -> dumpMemory @a >> p
             _ ->
                 error $
                     "Missing definition for "
@@ -291,16 +290,11 @@ instance DeriveForward 'Outer PC ClosureL
 
 algP :: (Monad m, LCarrier cL Closure, TermAlgebra m (Sig sig sigs sigl (cL l)), Pointed m  ) => Partial (m (Closure (m (Closure a)))) -> m (Closure a)
 algP (PartCall qn combtype args) = return $ Closure qn combtype args
-algP (FApply p k) = do
+algP (Apply p k) = do
     clsr <- p
     case clsr of
         Other x -> x
         _ -> k (void clsr) >>= lift
--- algP (UnReturn e k) = do
-    -- clsr <- e
-    -- case clsr of
-        -- Lambda [] ptr -> k ptr >>= lift
-        -- _ -> lift clsr
 algP (Abs vs ptr) = return $ Lambda vs ptr
 algP (Ext s) = return $ External s
 
