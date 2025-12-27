@@ -68,9 +68,9 @@ import Data.Char (ord, chr)
 import GHC.Num (integerFromInt)
 
 data Term a
-    = FCons QName [Ptr]
-    | FLit Literal
-    | FFree Ptr
+    = TCons QName [Ptr]
+    | TLit Literal
+    | TFree Ptr
     deriving (Functor)
 
 data Match a
@@ -94,7 +94,7 @@ ccons
     :: (EffectCons m sig sigs sigl l, Term :<: sig)
     => QName
     -> m a
-ccons qn = logCall >> injectA (FCons qn [])
+ccons qn = logCall >> injectA (TCons qn [])
 
 cons
     :: (EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl, Term :<: sig)
@@ -104,11 +104,11 @@ cons
 cons qn args =
     logCall >> do
         ptrs <- foldArgs (mapM (store (fst qn ++ "." ++ snd qn ++ ".cons"))) return args
-        injectA (FCons qn ptrs)
+        injectA (TCons qn ptrs)
 {-# INLINE cons #-}
 
 lit :: (EffectCons m sig sigs sigl l, Term :<: sig) => Literal -> m a
-lit l = logCall >> injectA (FLit l)
+lit l = logCall >> injectA (TLit l)
 {-# INLINE lit #-}
 
 case'
@@ -211,9 +211,9 @@ instance OuterCarrier CC Value
 instance DeriveForward 'Outer CC ValueL
 
 algCa :: Monad m => Term (m (Value a)) -> m (Value a)
-algCa (FCons qn args) = return (HNF qn args)
-algCa (FLit l) = return (Lit l)
-algCa (FFree i) = return (Free i)
+algCa (TCons qn args) = return (HNF qn args)
+algCa (TLit l) = return (Lit l)
+algCa (TFree i) = return (Free i)
 
 algCs :: (Monad m, TermAlgebra m (Sig sig sigs sigl (cL l)),  LCarrier cL Value, Pointed m    ) => Match (m (Value (m (Value a)))) -> m (Value a)
 algCs (Case ce k) = do
@@ -324,7 +324,6 @@ chrChar x = logCall >> injectS (Match [fmap return x] (return . f))
     f [Lit (Intc n)] = lit (Charc (chr (fromInteger n)))
     f vs = externalError vs
 
-
 err
     :: forall sig sigs sigl m v
      . ( Match :<: sigs
@@ -381,7 +380,7 @@ fvar i =
             cons qn (Progs $ map (applyC cstore) vs)
         Just (VarC j) -> applyC cstore j
         Just (LitC l) -> lit l
-        _ -> injectA $ FFree n
+        _ -> injectA $ TFree n
 
 --------
 
