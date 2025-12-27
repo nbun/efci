@@ -76,8 +76,7 @@ data ConsF a
 data CaseScope a
     = Case a (Value () -> a)
     | Normalize a (Ptr -> a)
-    | External [a] ([Value ()] -> a)
-    | Unify a a ((Value (), Value ()) -> a)
+    | Match [a] ([Value ()] -> a)
     deriving (Functor)
 
 normalform
@@ -88,7 +87,7 @@ normalform
        )
     => m a
     -> m a
-normalform p = logCall >> injectS (Normalize (fmap return p) (fmap return . normalform . force))
+normalform p = logCall >> injectS (Normalize (fmap return p) (return . normalform . force))
 {-# INLINE normalform #-}
 
 ccons
@@ -225,14 +224,9 @@ algCs (Normalize ce normalize) = do
     case hnf of
         HNF qn args -> mapM (normalize >=> lift) args <&> Cons qn
         _ -> lift hnf
-algCs (External ps k) = do
+algCs (Match ps k) = do
     hnfs <- sequence ps
     hnf <- k (map void hnfs)
-    lift hnf
-algCs (Unify e1 e2 k) = do
-    hnf1 <- e1
-    hnf2 <- e2
-    hnf <- k (void hnf1, void hnf2)
     lift hnf
 
 instance
@@ -273,7 +267,7 @@ arithInt
     -> m a
     -> m a
     -> m a
-arithInt op p1 p2 = logCall >> injectS (External [fmap return p1, fmap return p2] (return . f))
+arithInt op p1 p2 = logCall >> injectS (Match [fmap return p1, fmap return p2] (return . f))
   where
     f [Lit (Intc x), Lit (Intc y)] = lit (Intc (x `op` y))
     f vs = externalError vs
@@ -290,7 +284,7 @@ compInt
     -> m v
     -> m v
     -> m v
-compInt op x y = logCall >> injectS (External [fmap return x, fmap return y] (return . f))
+compInt op x y = logCall >> injectS (Match [fmap return x, fmap return y] (return . f))
   where
     f [Lit (Intc x1), Lit (Intc y1)]
         | x1 `op` y1 = true
@@ -310,7 +304,7 @@ compChar
     -> m v
     -> m v
 compChar op x y =
-    logCall >> injectS (External [fmap return x, fmap return y] (return . f))
+    logCall >> injectS (Match [fmap return x, fmap return y] (return . f))
   where
     f [Lit (Charc x1), Lit (Charc y1)]
         | x1 `op` y1 = true
@@ -319,13 +313,13 @@ compChar op x y =
 {-# INLINE compChar #-}
 
 ordChar :: (ConsF :<: sig, CaseScope :<: sigs, EffectCons m sig sigs sigl Id) => m a -> m a
-ordChar x = logCall >> injectS (External [fmap return x] (return . f))
+ordChar x = logCall >> injectS (Match [fmap return x] (return . f))
   where
     f [Lit (Charc c)] = lit (Intc (integerFromInt $ ord c))
     f vs = externalError vs
 
 chrChar :: (ConsF :<: sig, CaseScope :<: sigs, EffectCons m sig sigs sigl Id) => m a -> m a
-chrChar x = logCall >> injectS (External [fmap return x] (return . f))
+chrChar x = logCall >> injectS (Match [fmap return x] (return . f))
   where
     f [Lit (Intc n)] = lit (Charc (chr (fromInteger n)))
     f vs = externalError vs
@@ -341,7 +335,7 @@ err
     => m v
     -> m v
 err p =
-    logCall >> injectS (External [fmap return p] (return . f))
+    logCall >> injectS (Match [fmap return p] (return . f))
   where
     f :: [Value ()] -> m v
     f [hnf] = injectA (Err (val2str hnf))
@@ -401,7 +395,7 @@ compFloat :: ( ConsF :<: sig
     -> m v
     -> m v
     -> m v
-compFloat op x y = logCall >> injectS (External [fmap return x, fmap return y] (return . f))
+compFloat op x y = logCall >> injectS (Match [fmap return x, fmap return y] (return . f))
   where
     f [Lit (Floatc x1), Lit (Floatc y1)]
         | x1 `op` y1 = true
@@ -415,7 +409,7 @@ arithFloat
     -> m a
     -> m a
     -> m a
-arithFloat op x y = logCall >> injectS (External [fmap return x, fmap return y] (return . f))
+arithFloat op x y = logCall >> injectS (Match [fmap return x, fmap return y] (return . f))
   where
     f [Lit (Floatc x1), Lit (Floatc y1)] = lit (Floatc (x1 `op` y1))
     f vs = externalError vs
@@ -426,7 +420,7 @@ arithFloat2Float
     => (Double -> Double)
     -> m a
     -> m a
-arithFloat2Float op x = logCall >> injectS (External [fmap return x] (return . f))
+arithFloat2Float op x = logCall >> injectS (Match [fmap return x] (return . f))
   where
     f [Lit (Floatc x1)] = lit (Floatc (op x1))
     f vs = externalError vs
@@ -437,7 +431,7 @@ arithFloat2Int
     => (Double -> Integer)
     -> m a
     -> m a
-arithFloat2Int op x = logCall >> injectS (External [fmap return x] (return . f))
+arithFloat2Int op x = logCall >> injectS (Match [fmap return x] (return . f))
   where
     f [Lit (Floatc x1)] = lit (Intc (op x1))
     f vs = externalError vs
@@ -448,7 +442,7 @@ arithInt2Float
     => (Integer -> Double)
     -> m a
     -> m a
-arithInt2Float op x = logCall >> injectS (External [fmap return x] (return . f))
+arithInt2Float op x = logCall >> injectS (Match [fmap return x] (return . f))
   where
     f [Lit (Intc x1)] = lit (Floatc (op x1))
     f vs = externalError vs
@@ -459,7 +453,7 @@ showCharLiteral
     :: (ConsF :<: sig, CaseScope :<: sigs, EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl)
     => m a
     -> m a
-showCharLiteral x = logCall >> injectS (External [fmap return x] (return . f))
+showCharLiteral x = logCall >> injectS (Match [fmap return x] (return . f))
   where
     f [Lit (Charc c)] = str2prog (show c)
     f vs = externalError vs
@@ -469,7 +463,7 @@ showIntLiteral
     :: (ConsF :<: sig, CaseScope :<: sigs, EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl)
     => m a
     -> m a
-showIntLiteral x = logCall >> injectS (External [fmap return x] (return . f))
+showIntLiteral x = logCall >> injectS (Match [fmap return x] (return . f))
   where
     f [Lit (Intc n)] = str2prog (show n)
     f vs = externalError vs
@@ -479,7 +473,7 @@ showFloatLiteral
     :: (ConsF :<: sig, CaseScope :<: sigs, EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl)
     => m a
     -> m a
-showFloatLiteral x = logCall >> injectS (External [fmap return x] (return . f))
+showFloatLiteral x = logCall >> injectS (Match [fmap return x] (return . f))
   where
     f [Lit (Floatc n)] = str2prog (show n)
     f vs = externalError vs
@@ -489,7 +483,7 @@ readCharLiteral
     :: (ConsF :<: sig, CaseScope :<: sigs, EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl)
     => m a
     -> m a
-readCharLiteral x = logCall >> injectS (External [fmap return x] (return . f))
+readCharLiteral x = logCall >> injectS (Match [fmap return x] (return . f))
   where
     f [r] = let res = read (val2str r)
             in list2prog $ map (\(c, rest) -> cons ("Prelude", "(,)") (Progs [lit (Charc c), str2prog rest])) res
@@ -500,7 +494,7 @@ readIntLiteral
     :: (ConsF :<: sig, CaseScope :<: sigs, EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl)
     => m a
     -> m a
-readIntLiteral x = logCall >> injectS (External [fmap return x] (return . f))
+readIntLiteral x = logCall >> injectS (Match [fmap return x] (return . f))
   where
     f [r] = let res = read (val2str r)
             in list2prog $ map (\(i, rest) -> cons ("Prelude", "(,)") (Progs [lit (Intc i), str2prog rest])) res
@@ -511,7 +505,7 @@ readFloatLiteral
     :: (ConsF :<: sig, CaseScope :<: sigs, EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl)
     => m a
     -> m a
-readFloatLiteral x = logCall >> injectS (External [fmap return x] (return . f))
+readFloatLiteral x = logCall >> injectS (Match [fmap return x] (return . f))
   where
     f [r] = let res = read (val2str r)
             in list2prog $ map (\(fl, rest) -> cons ("Prelude", "(,)") (Progs [lit (Floatc fl), str2prog rest])) res

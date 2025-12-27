@@ -346,30 +346,30 @@ unify
     -> m a
 unify e1 e2 =
     logCall
-        >> injectS (Unify (fmap return e1) (fmap return e2) (return . cnt))
+        >> injectS (Match (map (fmap return) [e1,e2]) (return . cnt))
   where
-    cnt :: (Value (), Value ()) -> m a
-    cnt (HNF qn1 args1, HNF qn2 args2)
+    cnt :: [Value ()] -> m a
+    cnt [HNF qn1 args1, HNF qn2 args2]
         | qn1 == qn2 = do
             let args1' = map force args1
             let args2' = map force args2
             ands $ zipWith unify args1' args2'
-    cnt (Free i, Free j) = do
+    cnt [Free i, Free j] = do
         modify @CStore (addC i (VarC j))
         true
-    cnt (Free i, HNF qn args) = do
+    cnt [Free i, HNF qn args] = do
         let args' = map force args
         vs <- freshNames (length args)
         let fvs = map fvar vs
         modify @CStore (addC i (ConsC qn vs))
         ands $ zipWith unify fvs args'
-    cnt (HNF qn args, Free i) = cnt (Free i, HNF qn args)
-    cnt (Lit l1, Lit l2)
+    cnt [HNF qn args, Free i] = cnt [Free i, HNF qn args]
+    cnt [Lit l1, Lit l2]
         | l1 == l2 = true
-    cnt (Free i, Lit l) = do
+    cnt [Free i, Lit l] = do
         modify @CStore (addC i (LitC l))
         true
-    cnt (Lit l, Free i) = cnt (Free i, Lit l)
+    cnt [Lit l, Free i] = cnt [Free i, Lit l]
     cnt _ = failed
 
 ands

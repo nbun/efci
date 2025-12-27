@@ -58,7 +58,7 @@ putCharIO
        )
     => m a
     -> m a
-putCharIO x = logCall >> injectS (External [fmap return x] (return . f))
+putCharIO x = logCall >> injectS (Match [fmap return x] (return . f))
   where
     f :: [Value ()] -> m a
     f [Lit (Charc c)] = injectA (PutChar c unit)
@@ -75,11 +75,11 @@ writeFileIO
         => m a
         -> m a
         -> m a
-writeFileIO fp s = logCall >> injectS (External [fmap return fp, fmap return s] (return . f))
+writeFileIO fp s = logCall >> injectS (Match [fmap return fp, fmap return s] (return . f))
   where
     f :: [Value ()] -> m a
     f [fpv, sv] = injectA (WriteFile (val2str fpv) (val2str sv) unit)
-appendFileIO fp s = logCall >> injectS (External [fmap return fp, fmap return s] (return . f))
+appendFileIO fp s = logCall >> injectS (Match [fmap return fp, fmap return s] (return . f))
   where
     f :: [Value ()] -> m a
     f [fpv, sv] = injectA (AppendFile (val2str fpv) (val2str sv) unit)
@@ -100,7 +100,7 @@ readFileIO
        )
     => m a
     -> m a
-readFileIO fp = logCall >> injectS (External [fmap return fp] (return . f))
+readFileIO fp = logCall >> injectS (Match [fmap return fp] (return . f))
   where
     f :: [Value ()] -> m a
     f [fpv] = injectA (ReadFile (val2str fpv) str2prog)
