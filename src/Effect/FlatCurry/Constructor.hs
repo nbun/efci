@@ -51,7 +51,7 @@ module Effect.FlatCurry.Constructor (
     chrChar,
 ) where
 
-import Control.Monad (void)
+import Control.Monad (void, (>=>))
 import Curry.FlatCurry.Annotated.Type (Literal (..))
 import Curry.FlatCurry.Type (QName)
 import Data.Functor ((<&>))
@@ -69,14 +69,13 @@ import GHC.Num (integerFromInt)
 
 data ConsF a
     = FCons QName [Ptr]
-    | FStrictCons QName [a]
     | FLit Literal
     | FFree Ptr
     deriving (Functor)
 
 data CaseScope a
     = Case a (Value () -> a)
-    | Normalize a ((QName, [Ptr]) -> a)
+    | Normalize a (Ptr -> a)
     | External [a] ([Value ()] -> a)
     | Unify a a ((Value (), Value ()) -> a)
     deriving (Functor)
@@ -89,11 +88,7 @@ normalform
        )
     => m a
     -> m a
-normalform p = logCall >> injectS (Normalize (fmap return p) (fmap return . f))
-  where
-    f (qn, ptrs) = do
-        let args = map (normalform . force) ptrs
-        injectA (FStrictCons qn args)
+normalform p = logCall >> injectS (Normalize (fmap return p) (fmap return . normalform . force))
 {-# INLINE normalform #-}
 
 ccons
@@ -218,7 +213,6 @@ instance DeriveForward 'Outer CC ValueL
 
 algCa :: Monad m => ConsF (m (Value a)) -> m (Value a)
 algCa (FCons qn args) = return (HNF qn args)
-algCa (FStrictCons qn args) = sequence args <&> Cons qn
 algCa (FLit l) = return (Lit l)
 algCa (FFree i) = return (Free i)
 
@@ -226,21 +220,11 @@ algCs :: (Monad m, TermAlgebra m (Sig sig sigs sigl (cL l)),  LCarrier cL Value,
 algCs (Case ce k) = do
             hnf <- ce
             k (void hnf) >>= lift
-algCs (Normalize ce k) = do
+algCs (Normalize ce normalize) = do
     hnf <- ce
     case hnf of
-        HNF qn args -> do
-            hnf' <- k (qn, args)
-            case hnf' of
-                Cons qn' args' -> mapM lift args' <&> Cons qn'
-                Lit l -> return $ Lit l
-                Free i -> return $ Free i
-                ValOther x -> x
-                HNF _ _ -> error "Normalize: unexpected HNF"
-        Lit l -> return $ Lit l
-        Free i -> return $ Free i
-        Cons qn args -> mapM lift args <&> Cons qn
-        ValOther x -> x
+        HNF qn args -> mapM (normalize >=> lift) args <&> Cons qn
+        _ -> lift hnf
 algCs (External ps k) = do
     hnfs <- sequence ps
     hnf <- k (map void hnfs)
