@@ -74,9 +74,8 @@ data Term a
     deriving (Functor)
 
 data Match a
-    = Case a (Value () -> a)
+    = Match [a] ([Value ()] -> a)
     | Normalize a (Ptr -> a)
-    | Match [a] ([Value ()] -> a)
     deriving (Functor)
 
 normalform
@@ -119,19 +118,24 @@ case'
     -> m a
 case' cp brs =
     logCall
-        >> injectS (Case (fmap return cp) (return . cnt))
+        >> injectS (Match [fmap return cp] (return . cnt))
   where
-    cnt :: Value () -> m a
-    cnt val = case mapMaybe (match val) brs of
+    cnt :: [Value ()] -> m a
+    cnt [val] = case mapMaybe (match val) brs of
         [] -> failed
         [x] -> x
-        xs -> choose xs
+        xs -> choose xs -- needed for free variables
+    cnt vs = error $ "case: unexpected values: " ++ show vs
 
 match :: (EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl, Renaming :<: sig, Match :<: sigs, ND :<: sig, ConstraintStore :<: sig, Term :<: sig) => Value () -> (AEPattern, m a) -> Maybe (m a)
 match (HNF qn args) (AEPattern pqn argPtrs, e)
     | pqn == qn =
         Just $ let' argPtrs (Thunks args) e
     | otherwise = Nothing
+-- match (Cons qn args) (AEPattern pqn argPtrs, e)
+    -- | pqn == qn =
+        -- Just $ let' argPtrs (Progs $ map return args) e
+    -- | otherwise = Nothing
 match (Lit l) (AELPattern lp, e)
     | l == lp = Just e
     | otherwise = Nothing
@@ -145,7 +149,6 @@ match (Free i) pat = Just $ do
         (AELPattern lp, e) -> do
             modify @CStore (addC i (LitC lp))
             e
-match (ValOther ()) (AEPattern ("Prelude", "()") [], e) = Just e
 match v ps =
     error $
         "Pattern match not implemented for " ++ show v ++ show (fst ps)
@@ -215,19 +218,16 @@ algCa (TCons qn args) = return (HNF qn args)
 algCa (TLit l) = return (Lit l)
 algCa (TFree i) = return (Free i)
 
-algCs :: (Monad m, TermAlgebra m (Sig sig sigs sigl (cL l)),  LCarrier cL Value, Pointed m    ) => Match (m (Value (m (Value a)))) -> m (Value a)
-algCs (Case ce k) = do
-            hnf <- ce
-            k (void hnf) >>= lift
+algCs :: (TermMonad m (Sig sig sigs sigl (cL l)), LCarrier cL Value) => Match (m (Value (m (Value a)))) -> m (Value a)
+algCs (Match ps k) = do
+    hnfs <- sequence ps
+    hnf <- k (map void hnfs)
+    lift hnf
 algCs (Normalize ce normalize) = do
     hnf <- ce
     case hnf of
         HNF qn args -> mapM (normalize >=> lift) args <&> Cons qn
         _ -> lift hnf
-algCs (Match ps k) = do
-    hnfs <- sequence ps
-    hnf <- k (map void hnfs)
-    lift hnf
 
 instance
     (EffectMonad m sig sigs sigl (ValueL l))
