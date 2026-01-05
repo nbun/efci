@@ -132,10 +132,10 @@ match (HNF qn args) (AEPattern pqn argPtrs, e)
     | pqn == qn =
         Just $ let' argPtrs (Thunks args) e
     | otherwise = Nothing
--- match (Cons qn args) (AEPattern pqn argPtrs, e)
-    -- | pqn == qn =
-        -- Just $ let' argPtrs (Progs $ map return args) e
-    -- | otherwise = Nothing
+match (NF qn args) (AEPattern pqn argPtrs, e)
+    | pqn == qn =
+        Just $ let' argPtrs (Progs $ map val2prog args) e
+    | otherwise = Nothing
 match (Lit l) (AELPattern lp, e)
     | l == lp = Just e
     | otherwise = Nothing
@@ -153,8 +153,15 @@ match v ps =
     error $
         "Pattern match not implemented for " ++ show v ++ show (fst ps)
 
+val2prog :: (EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl, Term :<: sig, ConstraintStore :<: sig, Renaming :<: sig) => Value () -> m a
+val2prog (NF qn args) = cons qn (Progs $ map val2prog args)
+val2prog (HNF qn ptrs)  = cons qn (Thunks ptrs)
+val2prog (Lit l)        = lit l
+val2prog (Free i)       = fvar i
+val2prog (ValOther ())   = error "val2prog: ValOther () encountered"
+
 data Value a
-    = Cons QName [Value a]
+    = NF QName [Value a]
     | HNF QName [Ptr]
     | Lit Literal
     | Free Ptr
@@ -163,14 +170,14 @@ data Value a
 
 instance Applicative Value where
     pure = ValOther
-    Cons qn args <*> v = Cons qn (map (<*> v) args)
+    NF qn args <*> v = NF qn (map (<*> v) args)
     HNF qn ptrs <*> _ = HNF qn ptrs
     Lit l <*> _ = Lit l
     Free i <*> _ = Free i
     ValOther f <*> x = fmap f x
 
 instance Monad Value where
-    Cons qn args >>= f = Cons qn (map (>>= f) args)
+    NF qn args >>= f = NF qn (map (>>= f) args)
     HNF qn ptrs >>= _ = HNF qn ptrs
     Lit l >>= _ = Lit l
     Free i >>= _ = Free i
@@ -198,13 +205,13 @@ runConsSmart = unCC . smartFold point con
 {-# INLINE runConsSmart #-}
 
 instance LCarrier ValueL Value where
-    lift (Cons qn args) = traverse lift args <&> Cons qn
+    lift (NF qn args) = traverse lift args <&> NF qn
     lift (HNF qn ptrs) = pure $ HNF qn ptrs
     lift (Lit l) = pure $ Lit l
     lift (Free i) = pure $ Free i
     lift (ValOther x) = x
 
-    lift2 (Cons qn args) = traverse lift2 args <&> ValueL . Cons qn . map unValueL
+    lift2 (NF qn args) = traverse lift2 args <&> ValueL . NF qn . map unValueL
     lift2 (HNF qn ptrs) = pure $ ValueL $ HNF qn ptrs
     lift2 (Lit l) = pure $ ValueL $ Lit l
     lift2 (Free i) = pure $ ValueL $ Free i
@@ -226,7 +233,7 @@ algCs (Match ps k) = do
 algCs (Normalize ce normalize) = do
     hnf <- ce
     case hnf of
-        HNF qn args -> mapM (normalize >=> lift) args <&> Cons qn
+        HNF qn args -> NF qn <$> mapM (normalize >=> lift) args
         _ -> lift hnf
 
 instance
@@ -342,8 +349,8 @@ err p =
 {-# INLINE err #-}
 
 val2str :: (Show a) => Value a -> [Char]
-val2str (Cons ("Prelude", "[]") []) = ""
-val2str (Cons ("Prelude", ":") [Lit (Charc c), xs]) = c : val2str xs
+val2str (NF ("Prelude", "[]") []) = ""
+val2str (NF ("Prelude", ":") [Lit (Charc c), xs]) = c : val2str xs
 val2str hnf = error $ "hnf2str: " ++ show hnf
 
 str2prog

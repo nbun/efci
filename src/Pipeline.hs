@@ -86,7 +86,7 @@ declutter (ti, EOther xs) = (ti, map addBindings xs)
         | otherwise = RBindings bs (declutterHNF v)
 
 declutterHNF :: (Show a) => Value (Closure a) -> Result
-declutterHNF (Cons qn args) = RCons qn (map declutterHNF args)
+declutterHNF (NF qn args) = RCons qn (map declutterHNF args)
 declutterHNF (HNF qn ptrs) = RCons qn (replicate (length ptrs) Unevaluated)
 declutterHNF (Lit l) = RLit l
 declutterHNF (Free i) = RFree i

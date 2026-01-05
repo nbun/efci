@@ -165,7 +165,7 @@ fromLValueM funs (LCons qn ptrs) = do
     args <- forM ptrs $ \p -> do
         v <- lwhnf funs p
         fromLValueM funs v
-    return (Effect.FlatCurry.Constructor.Cons qn args)
+    return (Effect.FlatCurry.Constructor.NF qn args)
 fromLValueM _ (LClosure qn ptrs) = return (ValOther (Closure qn (FCF.FuncPartCall (length ptrs)) []))
 
 toNode :: LValue -> Node
