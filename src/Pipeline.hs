@@ -33,12 +33,12 @@ import GHC.Plugins (splitUniqSupply)
 import GHC.Types.Unique.Supply (mkSplitUniqSupply)
 import Signature (Id)
 import Transformation.FCY2AE
-import Type (AEProg, Ptr (..))
+import Type (Module, Ptr (..))
 import Data.Char (chr)
 
 runCurryEffects
     :: (Show a)
-    => [AEProg (Prog (CurryEffects a) a)]
+    => [Module (Prog (CurryEffects a) a)]
     -> Prog (CurryEffects a) a
     -> IO ([TraceInfo], Error [(Constraints, Value (Closure a))])
 runCurryEffects ps e = do
@@ -58,7 +58,7 @@ runCurryEffects ps e = do
     pipeline (initDecls ps >> e)
 
 runSmartCurryEffects
-    :: [AEProg (SmartProg (CurryEffects ()) ())]
+    :: [Module (SmartProg (CurryEffects ()) ())]
     -> SmartProg (CurryEffects ()) ()
     -> IO ([TraceInfo], Error [(Constraints, Value (Closure ()))])
 runSmartCurryEffects ps e = do
@@ -257,7 +257,7 @@ type M a =
 runCurryEffectsC
     :: forall a
      . (Show a)
-    => [AEProg ((M a) a)]
+    => [Module ((M a) a)]
     -> (M a) a
     -> IO ([TraceInfo], Error [(Constraints, Value (Closure a))])
 runCurryEffectsC ps e = do

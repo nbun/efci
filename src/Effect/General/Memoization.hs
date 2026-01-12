@@ -89,7 +89,7 @@ store
     -> m Ptr
 store loc t =
     logCall
-        >> let res = injectL (Store loc :: Thunking v Ptr (OneSub v)) (Id ()) (\One _ -> fmap Id t) (return . unId)
+        >> let res = injectL (Store loc) (Id ()) (\One _ -> fmap Id t) (return . unId :: _)
             in case peek t of
                 Nothing -> res
                 Just sig -> case sig of
@@ -108,7 +108,7 @@ thunk
     -> m ()
 thunk ptr t =
     logCall
-        >> let res = injectL (Thunk ptr :: Thunking v () (OneSub v)) (Id ()) (\One _ -> fmap Id t) (return . unId)
+        >> let res = injectL (Thunk ptr) (Id ()) (\One _ -> fmap Id t) ((return . unId) :: Id () -> m ())
             in case peek t of
                 Nothing -> res
                 Just sig -> case sig of

@@ -13,7 +13,7 @@ module Type (
     Ptr (..),
     analyzeVarIndex,
     AEFuncDecl (..),
-    AEProg (..),
+    Module (..),
     fdclBody,
     Args (..),
     AEPattern (..),
@@ -24,6 +24,7 @@ module Type (
     withoutTDecls,
     freshPtr,
     ptrKey,
+    fdclName,
 ) where
 
 import Curry.FlatCurry.Annotated.Type
@@ -98,8 +99,8 @@ fdclBdy (AFunc _ _ _ _ (AExternal _ _)) = error "fdclBdy: external function has 
 withoutTDecls :: AProg a -> AProg a
 withoutTDecls (AProg name imp _ fds ops) = AProg name imp [] fds ops
 
-data AEProg a
-    = AEProg
+data Module a
+    = Module
         String
         [String]
         (Map QName TypeDecl)
@@ -121,8 +122,8 @@ data AEPattern
 fdclBody :: AEFuncDecl a -> a
 fdclBody (AEFunc _ _ _ _ a) = a
 
--- fdclVars :: AEFuncDecl a -> [VarIndex]
--- fdclVars (AEFunc _ _ _ _ (AERule vs _)) = vs
+fdclName :: AEFuncDecl a -> QName
+fdclName (AEFunc qn _ _ _ _) = qn
 
 analyzeVarIndex :: String -> VarIndex -> String
 analyzeVarIndex loc i = unsafePerformIO $ do

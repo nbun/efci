@@ -51,7 +51,7 @@ import Effect.General.ND (ND, failed, (?))
 import Effect.General.State hiding (get, put)
 import Free
 import Signature
-import Type (AEFuncDecl (..), AEPattern (..), AEProg (..), Args (..), single)
+import Type (AEFuncDecl (..), AEPattern (..), Module (..), Args (..), single)
 
 data VarKind
     = CombVar
@@ -139,14 +139,14 @@ patVars :: APattern ann -> [(VarIndex, ann)]
 patVars (ALPattern _ _) = []
 patVars (APattern _ _ bs) = bs
 
-fcyProg2ae :: (TermMonad m (CurryEffects v)) => AProg TypeExpr -> AEProg (m v)
+fcyProg2ae :: (TermMonad m (CurryEffects v)) => AProg TypeExpr -> Module (m v)
 fcyProg2ae (AProg name imports tdecls fdecls opdecls) =
     let fdecls' = map fcyFDecl2ae fdecls
         fdeclmap =
             Map.fromList
                 (map (\fdecl@(AEFunc qn _ _ _ _) -> (qn, fdecl)) fdecls')
         tdeclmap = Map.fromList (map (\tdecl -> (typeName tdecl, tdecl)) tdecls)
-     in AEProg name imports tdeclmap fdeclmap opdecls
+     in Module name imports tdeclmap fdeclmap opdecls
 
 fcyFDecl2ae
     :: (TermMonad m (CurryEffects v)) => AFuncDecl TypeExpr -> AEFuncDecl (m v)

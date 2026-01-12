@@ -33,17 +33,17 @@ import qualified Data.Map as Map
 import Effect.General.State (EffectCons, logCall)
 import Free
 import Signature
-import Type (AEFuncDecl (AEFunc), AEProg (..), fdclBody)
+import Type (AEFuncDecl (AEFunc), Module (..), fdclBody, fdclName)
 import Data.Kind (Type)
 
 data DeclF v :: Type -> (Type -> Type) -> Type where
     DeclBody :: QName -> DeclF v v NoSub
-    Init :: [AEProg ()] -> DeclF v () (ManySub v)
+    Init :: [Module ()] -> DeclF v () (ManySub v)
 
 data ManySub v :: Type -> Type where
     Many :: QName -> ManySub v v
 
-newtype Progs (l :: Type -> Type) (v :: Type) (m :: Type -> Type) = Progs {unProgs :: [AEProg (l () -> H (Progs l v m) m (l v))]}
+newtype Progs (l :: Type -> Type) (v :: Type) (m :: Type -> Type) = Progs {unProgs :: [Module (l () -> H (Progs l v m) m (l v))]}
 
 newtype H r m a = H {unH :: r -> m a}
 
@@ -75,8 +75,10 @@ hDeclSmart
 hDeclSmart = unH . smartFold point con
 {-# INLINE hDeclSmart #-}
 
-addBody :: (ManySub v v -> l () -> H (Progs l v m) m (l v)) -> AEFuncDecl a -> AEFuncDecl (l () -> H (Progs l v m) m (l v))
-addBody get (AEFunc qn ar vis ty _) = AEFunc qn ar vis ty (get (Many qn))
+mergeModule :: (ManySub v v -> l () -> H (Progs l v m) m (l v)) 
+        -> Module () -> Module (l () -> H (Progs l v m) m (l v))
+mergeModule get (Module name imps tds fds opds) = Module name imps tds fds' opds
+    where fds' = Map.map (\fdecl -> get (Many (fdclName fdecl)) <$ fdecl) fds
 
 instance ReaderCarrier (H (Progs l v m)) (Progs l v m)
 instance DeriveForward 'Reader (H (Progs l v m)) VoidL
@@ -89,11 +91,9 @@ algDecl (Node op l st' k') = H $ \th ->
     let k = unH . k'
      in case op of
             DeclBody qn -> do
-                lv <- (unH . fdclBody (findModule (unProgs th) qn)) l th
+                lv <- (unH . fdclBody (moduleLookup (unProgs th) qn)) l th
                 k lv th
-            Init ps ->
-                let th' = Progs $ map (\(AEProg m imp tdecls fdecls opdecls) -> AEProg m imp tdecls (Map.map (addBody st') fdecls) opdecls) ps
-                 in k l th'
+            Init ms -> k l (Progs $ map (mergeModule st') ms)
 
 instance (EffectMonad m sig sigs sigl l) => TermAlgebra (H (Progs l v m) m) (Sig sig sigs (DeclF v :+++: sigl) l) where
     con (A op) = afwd @VoidL op
@@ -124,25 +124,14 @@ getBody qn = logCall >> injectL (DeclBody qn :: DeclF a a NoSub) (Id ()) (\x -> 
 initDecls
     :: forall sig sigs sigl m v
      . (DeclF v :<<<<: sigl, EffectCons m sig sigs sigl Id)
-    => [AEProg (m v)] -> m ()
-initDecls ps = logCall >> injectL (Init (map void ps) :: DeclF v () (ManySub v :: Type -> Type)) (Id ()) (\(Many qn) _ -> fmap Id (fdclBody $ findModule ps qn)) (const (return ()))
+    => [Module (m v)] -> m ()
+initDecls ps = logCall >> injectL (Init (map void ps) :: DeclF v () (ManySub v :: Type -> Type)) (Id ()) (\(Many qn) _ -> fmap Id (fdclBody $ moduleLookup ps qn)) (const (return ()))
 {-# INLINE initDecls #-}
 
-findModule :: [AEProg a] -> QName -> AEFuncDecl a
-findModule ps qn@(moduleName, _) = case res of
-    Just fdecl -> fdecl
-    Nothing -> error $ "Function declaration " ++ show qn ++ " not found"
-  where
-    res =
-        foldr
-            ( \(AEProg name _ _ fdecls _) acc ->
-                if name == moduleName
-                    then findFuncDecl fdecls qn
-                    else acc
-            )
-            Nothing
-            ps
-
-findFuncDecl :: Map.Map QName (AEFuncDecl a) -> QName -> Maybe (AEFuncDecl a)
-findFuncDecl m qn = Map.lookup qn m
-{-# INLINE findFuncDecl #-}
+moduleLookup :: [Module a] -> QName -> AEFuncDecl a
+moduleLookup [] qn = error $ "Function declaration not found: " ++ show qn
+moduleLookup (Module name _ _ fdecls _ : ms) qn@(moduleName, _)
+  | name == moduleName = case Map.lookup qn fdecls of
+    Just fdcl -> fdcl
+    Nothing -> error $ "Function " ++ show qn ++ "missing from module " ++ show moduleName
+  | otherwise = moduleLookup ms qn
