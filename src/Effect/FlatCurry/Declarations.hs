@@ -19,7 +19,7 @@
 module Effect.FlatCurry.Declarations (
     DeclF (..),
     getBody,
-    H,
+    DC,
     runDecl,
     initDecls,
     runDeclSmart,
@@ -43,12 +43,12 @@ data DeclF v :: Type -> (Type -> Type) -> Type where
 data ManySub v :: Type -> Type where
     Many :: QName -> ManySub v v
 
-newtype Progs (l :: Type -> Type) (v :: Type) (m :: Type -> Type) = Progs {unProgs :: [Module (l () -> H (Progs l v m) m (l v))]}
+newtype Progs (l :: Type -> Type) (v :: Type) (m :: Type -> Type) = Progs {unProgs :: [Module (l () -> DC (Progs l v m) m (l v))]}
 
-newtype H r m a = H {unH :: r -> m a}
+newtype DC r m a = DC {unDC :: r -> m a}
 
-instance (Functor m) => Functor (H (Progs l v m) m) where
-    fmap f (H x) = H $ \th -> fmap f (x th)
+instance (Functor m) => Functor (DC (Progs l v m) m) where
+    fmap f (DC x) = DC $ \th -> fmap f (x th)
     {-# INLINE fmap #-}
 
 runDecl :: (EffectMonad m sig sigs sigl l) => Progs l v m -> Prog (Sig sig sigs (DeclF v :+++: sigl) l) a -> m a
@@ -60,7 +60,7 @@ hDecl
     => Prog (Sig sig sigs (DeclF v :+++: sigl) l) a
     -> Progs l v m
     -> m a
-hDecl = unH . fold point con
+hDecl = unDC . fold point con
 {-# INLINE hDecl #-}
 
 runDeclSmart :: (EffectMonad m sig sigs sigl l) => Progs l v m -> SmartProg (Sig sig sigs (DeclF v :+++: sigl) l) a -> m a
@@ -72,45 +72,45 @@ hDeclSmart
     => SmartProg (Sig sig sigs (DeclF v :+++: sigl) l) a
     -> Progs l v m
     -> m a
-hDeclSmart = unH . smartFold point con
+hDeclSmart = unDC . smartFold point con
 {-# INLINE hDeclSmart #-}
 
-mergeModule :: (ManySub v v -> l () -> H (Progs l v m) m (l v)) 
-        -> Module () -> Module (l () -> H (Progs l v m) m (l v))
-mergeModule get (Module name imps tds fds opds) = Module name imps tds fds' opds
+mergeModule :: (ManySub v v -> l () -> DC (Progs l v m) m (l v))
+        -> Module () -> Module (l () -> DC (Progs l v m) m (l v))
+mergeModule get m@(Module name imps tds fds opds) = Module name imps tds fds' opds
     where fds' = Map.map (\fdecl -> get (Many (fdclName fdecl)) <$ fdecl) fds
 
-instance ReaderCarrier (H (Progs l v m)) (Progs l v m)
-instance DeriveForward 'Reader (H (Progs l v m)) VoidL
+instance ReaderCarrier (DC (Progs l v m)) (Progs l v m)
+instance DeriveForward 'Reader (DC (Progs l v m)) VoidL
 
 algDecl
     :: (Monad m)
-    => Latent (DeclF v) l (H (Progs l v m) m) (H (Progs l v m) m a)
-    -> H (Progs l v m) m a
-algDecl (Node op l st' k') = H $ \th ->
-    let k = unH . k'
+    => Latent (DeclF v) l (DC (Progs l v m) m) (DC (Progs l v m) m a)
+    -> DC (Progs l v m) m a
+algDecl (Node op l st' k') = DC $ \th ->
+    let k = unDC . k'
      in case op of
             DeclBody qn -> do
-                lv <- (unH . fdclBody (moduleLookup (unProgs th) qn)) l th
+                lv <- (unDC . fdclBody (moduleLookup (unProgs th) qn)) l th
                 k lv th
             Init ms -> k l (Progs $ map (mergeModule st') ms)
 
-instance (EffectMonad m sig sigs sigl l) => TermAlgebra (H (Progs l v m) m) (Sig sig sigs (DeclF v :+++: sigl) l) where
+instance (EffectMonad m sig sigs sigl l) => TermAlgebra (DC (Progs l v m) m) (Sig sig sigs (DeclF v :+++: sigl) l) where
     con (A op) = afwd @VoidL op
     con (S op) = sfwd @VoidL op
     con (L (Node op l st k)) = case op of
         (Inl3 op') -> algDecl (Node op' l st k)
         (Inr3 op') -> lfwd @VoidL @'Reader (Node op' l st k)
     {-# INLINE con #-}
-    var = H . (\x _ -> return x)
+    var = DC . (\x _ -> return x)
     {-# INLINE var #-}
 
-runDeclC :: (EffectMonad m sig sigs sigl l) => Progs l v m -> Cod (H (Progs l v m) m) a -> m a
-runDeclC th p = unH (runCod var p) th
+runDeclC :: (EffectMonad m sig sigs sigl l) => Progs l v m -> Cod (DC (Progs l v m) m) a -> m a
+runDeclC th p = unDC (runCod var p) th
 {-# INLINE runDeclC #-}
 
-instance (Pointed m) => Pointed (H (Progs l v m) m) where
-    point x = H $ \_ -> point x
+instance (Pointed m) => Pointed (DC (Progs l v m) m) where
+    point x = DC $ \_ -> point x
     {-# INLINE point #-}
 
 getBody

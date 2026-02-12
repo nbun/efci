@@ -64,7 +64,7 @@ import GHC.Stack (callStack, getCallStack)
 import GHC.Types.Unique
 import GHC.Types.Unique.Supply
 import Signature
-import Type (Ptr (..))
+import Type (Ptr (..), mkPtr)
 
 data StateF (tag :: Type) s a
     = Get (s -> a)
@@ -159,7 +159,7 @@ renameFromSupply mqn (v:vs) sup =
         loc = case mqn of
                 Just (mdl, fn) -> mdl ++ "." ++ fn ++ " " ++ show v
                 Nothing -> show v
-     in (Ptr i loc : is, sup'')
+     in (mkPtr i loc : is, sup'')
 
 runState
     :: forall tag m sig sigs sigl l s a

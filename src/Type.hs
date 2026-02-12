@@ -25,6 +25,7 @@ module Type (
     freshPtr,
     ptrKey,
     fdclName,
+    mkPtr,
 ) where
 
 import Curry.FlatCurry.Annotated.Type
@@ -152,3 +153,7 @@ freshPtr sup loc =
 ptrKey :: Ptr -> VarIndex
 ptrKey (Ptr i _) = i
 {-# INLINE ptrKey #-}
+
+mkPtr :: Int -> String -> Ptr
+mkPtr = Ptr
+{-# INLINE mkPtr #-}

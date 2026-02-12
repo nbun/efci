@@ -1,3 +1,4 @@
+{-# OPTIONS_FRONTEND -ddump-flat -Wnone #-}
 last :: Data a => [a] -> a
 last xs | xs =:= ys ++ [x] = x where ys, x free
 
@@ -19,3 +20,15 @@ intMerge (x:xs) (y:ys) zs =
   
 firsthalf  xs = take (length xs `div` 2) xs
 secondhalf xs = drop (length xs `div` 2) xs
+
+gen :: Data a => a
+gen = aValue
+
+gen2 :: Data a => Maybe a
+gen2 = aValue
+
+gen21 :: (Data a, Data b) => Either a b
+gen21 = aValue
+
+gen3 :: Data a => Maybe [a]
+gen3 = aValue

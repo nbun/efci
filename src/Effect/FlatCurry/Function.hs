@@ -48,12 +48,10 @@ import Signature
 import Type
 
 type Functions sig sigs sigl a =
-    ( '[Term, Err, IOAction, ConstraintStore, ND] :.: sig
+    ( '[Term, Err, IOAction, ConstraintStore, Renaming, ND] :.: sig
     , '[Partial, Match] :.: sigs
     , Thunking a :<<<<: sigl
-    , Renaming :<: sig
     , DeclF a :<<<<: sigl
-    , Let sig sigl a
     )
 
 fun

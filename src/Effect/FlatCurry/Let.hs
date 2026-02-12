@@ -9,18 +9,15 @@
 {-# LANGUAGE TypeOperators #-}
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 
-module Effect.FlatCurry.Let (let', Let, lvar) where
+module Effect.FlatCurry.Let (let', lvar) where
 
 import Effect.General.Memoization
 import Effect.General.State
 import Signature
 import Type
 
-type Let sig sigl a =
-    (Renaming :<: sig, Thunking a :<<<<: sigl)
-
 lvar
-    :: (Let sig sigl a, EffectCons m sig sigs sigl Id)
+    :: (EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl)
     => Ptr
     -> m a
 lvar ptr = do
@@ -29,7 +26,7 @@ lvar ptr = do
 
 let'
     :: forall m sig sigs sigl a
-     . (EffectCons m sig sigs sigl Id, Let sig sigl a)
+     . (EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl)
     => [Ptr]
     -> Args m a
     -> m a

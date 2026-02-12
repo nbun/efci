@@ -125,7 +125,7 @@ instance Pretty Result where
     pretty (RLit (Intc i)) = show i
     pretty (RLit (Charc c)) = show c
     pretty (RLit (Floatc f)) = show f
-    pretty (RFree i) = "_" ++ show i
+    pretty (RFree (Ptr _ s)) = "f" ++ s
     pretty Unevaluated = "Unevaluated"
     pretty (RClosure qn ct argc) =
         snd qn ++ " " ++ unwords (replicate argc "_") ++ (if argc == 0 then "" else " ") ++ unwords (replicate (missingArgs ct) "?")
@@ -176,7 +176,7 @@ type L a =
 
 type M a =
     Cod
-        ( H (Progs Id a (Cod
+        ( DC (Progs Id a (Cod
                          (PC
                             (Cod
                               (CC

@@ -76,10 +76,6 @@ type (:+:) e r = (e ': r)
 
 infixr 0 :+:
 
-data ((sig1 :: Type -> (Type -> Type) -> Type) :+++: sig2) p c
-    = Inl3 (sig1 p c)
-    | Inr3 (sig2 p c)
-
 type family (:.:) effs sig :: Constraint where
     '[] :.: sig = ()
     (x ': xs) :.: sig = (x :<: sig, xs :.: sig)
@@ -129,6 +125,10 @@ data OneSub v :: Type -> Type where
 class (sub :: Type -> (Type -> Type) -> Type) :<<<<: sup where
     inj3 :: sub p c -> sup p c
     prj3 :: sup p c -> Maybe (sub p c)
+
+data ((sig1 :: Type -> (Type -> Type) -> Type) :+++: sig2) p c
+    = Inl3 (sig1 p c)
+    | Inr3 (sig2 p c)
 
 instance {-# OVERLAPPING #-} sig1 :<<<<: (sig1 :+++: sig2) where
     inj3 = Inl3
