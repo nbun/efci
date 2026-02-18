@@ -30,7 +30,7 @@ module Effect.FlatCurry.Declarations (
 import Control.Monad (void)
 import Curry.FlatCurry.Annotated.Type (QName)
 import qualified Data.Map as Map
-import Effect.General.State (EffectCons, logCall)
+import Effect.General.State (EffectCons, logPrimCall)
 import Free
 import Signature
 import Type (AEFuncDecl (AEFunc), Module (..), fdclBody, fdclName)
@@ -118,14 +118,14 @@ getBody
      . (EffectCons m sig sigs sigl Id)
     => (DeclF a :<<<<: sigl)
     => QName -> m a
-getBody qn = logCall >> injectL (DeclBody qn :: DeclF a a NoSub) (Id ()) (\x -> case x of {}) (return . unId)
+getBody qn = logPrimCall >> injectL (DeclBody qn :: DeclF a a NoSub) (Id ()) (\x -> case x of {}) (return . unId)
 {-# INLINE getBody #-}
 
 initDecls
     :: forall sig sigs sigl m v
      . (DeclF v :<<<<: sigl, EffectCons m sig sigs sigl Id)
     => [Module (m v)] -> m ()
-initDecls ps = logCall >> injectL (Init (map void ps) :: DeclF v () (ManySub v :: Type -> Type)) (Id ()) (\(Many qn) _ -> fmap Id (fdclBody $ moduleLookup ps qn)) (const (return ()))
+initDecls ps = logPrimCall >> injectL (Init (map void ps) :: DeclF v () (ManySub v :: Type -> Type)) (Id ()) (\(Many qn) _ -> fmap Id (fdclBody $ moduleLookup ps qn)) (const (return ()))
 {-# INLINE initDecls #-}
 
 moduleLookup :: [Module a] -> QName -> AEFuncDecl a

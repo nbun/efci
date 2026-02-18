@@ -48,7 +48,7 @@ import Data.Kind (Type)
 import Data.List (sortBy)
 import Debug (ctrace, strace)
 import Debug.HTrace (htrace)
-import Effect.General.State (EffectCons, StateL (..), logCall)
+import Effect.General.State (EffectCons, StateL (..), logPrimCall)
 import GHC.Types.Unique.Supply
 import GHC.Weak
 import Signature
@@ -69,7 +69,7 @@ dumpMemory
     :: forall v m sig sigs sigl
      . (EffectCons m sig sigs sigl Id, Thunking v :<<<<: sigl)
     => m ()
-dumpMemory = logCall >> injectL (DumpMemory :: Thunking v () NoSub) (Id ()) absurdNoSub (return . unId)
+dumpMemory = logPrimCall >> injectL (DumpMemory :: Thunking v () NoSub) (Id ()) absurdNoSub (return . unId)
 
 eval2HNF
     :: forall m sig sigs sigl v
@@ -77,7 +77,7 @@ eval2HNF
     => m v
     -> m ()
 eval2HNF t =
-    logCall
+    logPrimCall
         >> injectL (Eval :: Thunking v () (OneSub v)) (Id ()) (\One _ -> fmap Id t) (return . unId)
 {-# INLINE eval2HNF #-}
 
@@ -88,16 +88,8 @@ store
     -> m v
     -> m Ptr
 store loc t =
-    logCall
-        >> let res = injectL (Store loc) (Id ()) (\One _ -> fmap Id t) (return . unId :: _)
-            in case peek t of
-                Nothing -> res
-                Just sig -> case sig of
-                    A (Algebraic _) -> res
-                    S (Enter _) -> res
-                    L (Node op _ _ _) -> case prj3 op of
-                        Just (Force _ ptr' :: Thunking v p c) -> return ptr'
-                        _ -> res
+  let res = logPrimCall >> injectL (Store loc) (Id ()) (\One _ -> fmap Id t) (return . unId :: _)
+  in inspect t res return
 {-# INLINE store #-}
 
 thunk
@@ -107,28 +99,33 @@ thunk
     -> m v
     -> m ()
 thunk ptr t =
-    logCall
-        >> let res = injectL (Thunk ptr) (Id ()) (\One _ -> fmap Id t) ((return . unId) :: Id () -> m ())
-            in case peek t of
-                Nothing -> res
-                Just sig -> case sig of
-                    A (Algebraic _) -> res
-                    S (Enter _) -> res
-                    L (Node op _ _ _) -> case prj3 op of
-                        Just (Force _ ptr' :: Thunking v p c) -> redirect @v (ptr, ptr')
-                        _ -> res
+  let res = logPrimCall >> injectL (Thunk ptr) (Id ()) (\One _ -> fmap Id t) ((return . unId) :: Id () -> m ())
+  in inspect t res (\ptr' -> redirect @v (ptr, ptr'))
 {-# INLINE thunk #-}
 
+inspect :: forall m sig sigs sigl v a
+     . (EffectCons m sig sigs sigl Id, Thunking v :<<<<: sigl)
+    => m v -> m a -> (Ptr -> m a) -> m a
+inspect p new recycle = case peek p of
+                Nothing -> new
+                Just sig -> case sig of
+                    A (Algebraic _)   -> new
+                    S (Enter _)       -> new
+                    L (Node op _ _ _) -> case prj3 op of
+                        Just (Force _ ptr' :: Thunking v p c) -> recycle ptr'
+                        _ -> new
+{-# INLINE inspect #-}
+
 force :: (EffectCons m sig sigs sigl Id, Thunking v :<<<<: sigl) => Ptr -> m v
-force e = logCall >> injectL (Force False e) (Id ()) absurdNoSub (return . unId)
+force e = logPrimCall >> injectL (Force False e) (Id ()) absurdNoSub (return . unId)
 {-# INLINE force #-}
 
 retrieve :: (EffectCons m sig sigs sigl Id, Thunking v :<<<<: sigl) => Ptr -> m v
-retrieve e = logCall >> injectL (Force True e) (Id ()) absurdNoSub (return . unId)
+retrieve e = logPrimCall >> injectL (Force True e) (Id ()) absurdNoSub (return . unId)
 {-# INLINE retrieve #-}
 
 redirect :: forall v m sig sigs sigl. (EffectCons m sig sigs sigl Id, Thunking v :<<<<: sigl) => (Ptr, Ptr) -> m ()
-redirect p = logCall >> injectL (Redirect p :: Thunking v () NoSub) (Id ()) absurdNoSub (return . unId)
+redirect p = logPrimCall >> injectL (Redirect p :: Thunking v () NoSub) (Id ()) absurdNoSub (return . unId)
 {-# INLINE redirect #-}
 
 runLazy :: (Functor l, Show (l v), Show (l ()), EffectCons m sig sigs sigl (StateL (ThunkStore l v) l)) => UniqSupply -> Prog (Sig sig sigs (Thunking v :+++: sigl) l) b -> m b

@@ -59,7 +59,7 @@ import System.Timeout (timeout)
 import Transformation.FCY2AE (fcyProg2ae, fcyRunner2ae)
 import Curry.Frontend.Transformations (qual)
 import Type (fdclBdy, reqFuncs, withoutTDecls)
-import Effect.General.State (statistics)
+import Effect.General.State (statistics, prettyTI)
 import Debug (tracingActive)
 -- import Monolith (runMonolithic)
 import System.Clock (getTime, Clock (..), TimeSpec (sec, nsec))
@@ -216,10 +216,21 @@ run topts progs fcyrunner = do
       s <- getRTSStats
       putStrLn $ show (max_mem_in_use_bytes s `div` 1000000) ++ "MB allocated"
   let (ti, values) = declutter res
-      stats = statistics ti
-      totalSum = foldr (\(_, n) !acc -> n + acc) 0 stats
-  -- when tracingActive (print ti)
-  when tracingActive (mapM_ print stats >> putStrLn ("Total: " ++ show totalSum))
+      (primStats, combStats) = statistics ti
+      totalPrimSum = foldr (\(_, n) !acc -> n + acc) 0 primStats
+      totalCombSum = foldr (\(_, n) !acc -> n + acc) 0 combStats
+  -- when tracingActive (print $ prettyTI $ reverse ti)
+  when tracingActive $ do
+    let printStat (tinfo, cnt) = putStrLn $ prettyTI tinfo ++ ": " ++ show cnt
+    putStrLn "Primitive operations:"
+    mapM_ printStat primStats
+    putStrLn ""
+    putStrLn "Combined operations:"
+    mapM_  printStat combStats
+    putStrLn ""
+    putStrLn ("Total (primitive): " ++ show totalPrimSum)
+    putStrLn ("Total (combined): " ++ show totalCombSum)
+    putStrLn ("Total (all): " ++ show (totalCombSum + totalPrimSum))
   return values
 
 printTime :: TimeSpec -> TimeSpec -> IO ()

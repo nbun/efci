@@ -61,7 +61,7 @@ fun
     -> Args m a
     -> m a
 fun qn args = 
-    logCallWith (show qn) >> do
+    logCallWith (fst qn ++ "." ++ snd qn) False >> do
         newRenamingScope qn
         apply (getBody qn) args
 {-# INLINE fun #-}
@@ -106,11 +106,11 @@ instance Pointed Closure where
     {-# INLINE point #-}
 
 external :: (EffectCons m sig sigs sigl Id, Partial :<: sigs) => String -> m a
-external s = logCall >> injectS (Ext s)
+external s = logPrimCall >> injectS (Ext s)
 
 lambda :: (EffectCons m sig sigs sigl Id, Partial :<: sigs, Thunking a :<<<<: sigl) => [Ptr] -> m a -> m a
 lambda vs e =
-    logCall >> do
+    logPrimCall >> do
         ptr <- store "lambda" e
         injectS (Abs vs ptr)
 
@@ -121,7 +121,7 @@ partial
     -> [m a]
     -> m a
 partial qn combtype args =
-    logCall >> do
+    logPrimCall >> do
         ptrs <- mapM (store (fst qn ++ "." ++ snd qn ++ ".partial")) args
         injectS $ PartCall qn combtype ptrs
 
@@ -139,7 +139,7 @@ unlambda lam = apply lam (Progs [])
 
 apply :: forall m sig sigs sigl a. (EffectCons m sig sigs sigl Id, Functions sig sigs sigl a) => m a -> Args m a -> m a
 apply lam args =
-    logCall >> do
+    logPrimCall >> do
         injectS $ Apply (fmap return lam) (return . k)
   where
     k :: Closure () -> m a
@@ -343,7 +343,7 @@ unify
     -> m a
     -> m a
 unify e1 e2 =
-    logCall
+    logPrimCall
         >> injectS (Match (map (fmap return) [e1,e2]) (return . cnt))
   where
     cnt :: [Value ()] -> m a

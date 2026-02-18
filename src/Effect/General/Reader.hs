@@ -15,7 +15,7 @@
 
 module Effect.General.Reader (ask, runReaderC) where
 
-import Effect.General.State (EffectCons, logCall)
+import Effect.General.State (EffectCons, logPrimCall)
 import Free
 import Signature
 
@@ -26,7 +26,7 @@ ask
     :: forall tag r sig sigs sigl l m
      . (ReaderF tag r :<: sig, EffectCons m sig sigs sigl l)
     => m r
-ask = logCall >> injectA (Ask @tag return)
+ask = logPrimCall >> injectA (Ask @tag return)
 {-# INLINE ask #-}
 
 -- runReader

@@ -52,11 +52,13 @@ module Effect.General.State (
     lookupRenaming,
     rename,
     getCurrentQName,
+    prettyTI,
+    logPrimCall,
 ) where
 
 import Curry.FlatCurry.Annotated.Type (Literal, QName, VarIndex)
 import Data.Kind (Type)
-import Data.List (sortBy)
+import Data.List (sortBy, partition)
 import qualified Data.Map as Map
 import Debug (tracingActive)
 import Free
@@ -75,7 +77,7 @@ get
     :: forall tag s m l sig sigs sigl
      . (EffectCons m sig sigs sigl l, Identify tag, StateF tag s :<: sig)
     => m s
-get = logCallWith (identify @tag) >> injectA (Get @tag return)
+get = logCallWith (identify @tag) True >> injectA (Get @tag return)
 {-# INLINE get #-}
 
 put
@@ -83,7 +85,7 @@ put
      . (EffectCons m sig sigs sigl l, Identify tag, StateF tag s :<: sig)
     => s
     -> m ()
-put = modify @tag . const
+put s = logCallWith (identify @tag) False >> modify @tag (const s)
 {-# INLINE put #-}
 
 modify
@@ -92,7 +94,7 @@ modify
     => (s -> s)
     -> m ()
 modify f =
-    logCallWith (identify @tag) >> injectA (Modify @tag f (return ()))
+    logCallWith (identify @tag) True >> injectA (Modify @tag f (return ()))
 {-# INLINE modify #-}
 
 class Identify a where
@@ -114,7 +116,7 @@ freshNames
     :: (EffectCons m sig sigs sigl l, Renaming :<: sig)
     => Int
     -> m [Ptr]
-freshNames 0 = logCall >> return []
+freshNames 0 = return []
 freshNames n =
     logCall >> do
         r <- get @Rename
@@ -271,8 +273,12 @@ instance Identify CStore where
 type ConstraintStore = StateF CStore Constraints
 
 -- Tracing
+data TraceInfo = TI {opName :: String, details :: String, primOp :: Bool}
+  deriving (Eq, Show)
 
-type TraceInfo = (String, String)
+prettyTI :: TraceInfo -> String
+prettyTI (TI op dtls _) | dtls == "" = op
+                        | otherwise = op ++ " (" ++ dtls ++ ")"
 
 data Trace
 
@@ -283,34 +289,42 @@ type Tracing = StateF Trace [TraceInfo]
 
 type EffectCons m sig sigs sigl l = (TermMonad m (Sig sig sigs sigl l), Tracing :<: sig, HasCallStack)
 
+logPrimCall :: (EffectCons m sig sigs sigl l) => m ()
+logPrimCall
+    | tracingActive = case getCallStack callStack of
+                        (_ : (name, _) : _)  -> modifyWithoutLog (TI name "" True :)
+                        _ -> return ()
+    | otherwise = return ()
+  where
+    modifyWithoutLog f = injectA (Modify @Trace f (return ()))
+{-# INLINE logPrimCall #-}
+
 logCall :: (EffectCons m sig sigs sigl l) => m ()
 logCall
     | tracingActive = case getCallStack callStack of
-                        (_ : (name, _) : _)  -> modifyWithoutLog ((name, "") :)
+                        (_ : (name, _) : _)  -> modifyWithoutLog (TI name "" False :)
                         _ -> return ()
     | otherwise = return ()
   where
-    modifyWithoutLog f = do
-        s <- injectA (Get @Trace return)
-        injectA (Modify @Trace (const $ f s) (return ()))
+    modifyWithoutLog f = injectA (Modify @Trace f (return ()))
 {-# INLINE logCall #-}
 
-logCallWith :: (EffectCons m sig sigs sigl l) => String -> m ()
-logCallWith s
+logCallWith :: (EffectCons m sig sigs sigl l) => String -> Bool -> m ()
+logCallWith s prim
     | tracingActive = case getCallStack callStack of
-                        (_ : (name, _) : _)  -> modifyWithoutLog ((name, s) :)
+                        (_ : (name, _) : _)  -> modifyWithoutLog (TI name s prim :)
                         _ -> return ()
     | otherwise = return ()
   where
-    modifyWithoutLog f = do
-        s' <- injectA (Get @Trace return)
-        injectA (Modify @Trace (const $ f s') (return ()))
+    modifyWithoutLog f = injectA (Modify @Trace f (return ()))
 {-# INLINE logCallWith #-}
 
-statistics :: [TraceInfo] -> [(TraceInfo, Int)]
-statistics ti = sortBy (\(_, n) (_, m) -> compare n m) (foldr f [] ti)
+statistics :: [TraceInfo] -> ([(TraceInfo, Int)], [(TraceInfo, Int)])
+statistics ti = (sortedCount prims, sortedCount comb)
   where
-    f name acc =
+    (prims, comb) = partition primOp ti
+    sortedCount = sortBy (\(_, n) (_, m) -> compare n m) . foldr count []
+    count name acc =
         case lookup name acc of
             Just n -> (name, n + 1) : filter ((/= name) . fst) acc
             Nothing -> (name, 1) : acc

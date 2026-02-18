@@ -27,7 +27,7 @@ module Effect.General.ND (
     NDC,
 ) where
 
-import Effect.General.State (EffectCons, logCall)
+import Effect.General.State (EffectCons, logPrimCall)
 import Free
 import GHC.Conc
 import Signature
@@ -47,12 +47,12 @@ instance Functor ND where
     => m a
     -> m a
     -> m a
-(?) p1 p2 = logCall >> injectA (Or p1 p2)
+(?) p1 p2 = logPrimCall >> injectA (Or p1 p2)
 {-# INLINE (?) #-}
 
 failed
     :: (ND :<: sig, EffectCons m sig sigs sigl l) => m a
-failed = logCall >> injectA Fail
+failed = logPrimCall >> injectA Fail
 {-# INLINE failed #-}
 
 choose
