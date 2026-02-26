@@ -30,7 +30,7 @@ module Type (
 
 import Curry.FlatCurry.Annotated.Type
 import qualified Curry.FlatCurry.Type as CFT (OpDecl (..))
-import Data.List (nub)
+import qualified Data.Set as Set
 import Data.Map (Map)
 import GHC.StableName
 import GHC.Types.Unique (getKey)
@@ -77,18 +77,21 @@ declFuncs (AFunc _ _ _ _ e) = ruleFuncs e
     ruleFuncs (ARule _ _ re) = exprFuncs re
     ruleFuncs (AExternal _ _) = []
 
-reqFuncs :: (Show a) => [AProg a] -> AExpr a -> [AProg a]
-reqFuncs ps e = reqFuncs' ps (nub $ exprFuncs e)
+reqFuncs :: forall a. [AProg a] -> AExpr a -> [AProg a]
+reqFuncs ps e = reqFuncs' initial initial
   where
-    reqFuncs' ps' acc
-        | done = map (filterFuncs acc) ps'
-        | otherwise = reqFuncs' ps' acc'
+    initial = Set.fromList $ exprFuncs e
+    
+    reqFuncs' :: Set.Set QName -> Set.Set QName -> [AProg a]
+    reqFuncs' acc new
+        | Set.null new' = map (filterFuncs acc) ps
+        | otherwise     = reqFuncs' acc' new'
       where
-        qns = concatMap (declFuncs . findFDcl ps') acc
-        acc' = nub $ acc ++ qns
-        done = length acc == length acc'
+        fset = Set.fromList $ concatMap (declFuncs . findFDcl ps) new
+        new' = fset `Set.difference` acc
+        acc' = acc `Set.union` fset
 
-filterFuncs :: [QName] -> AProg a -> AProg a
+filterFuncs :: Set.Set QName -> AProg a -> AProg a
 filterFuncs acc (AProg name imp tds fds ops) = AProg name imp tds fds' ops
   where
     fds' = filter (\(AFunc qn _ _ _ _) -> qn `elem` acc) fds
