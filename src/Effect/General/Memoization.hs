@@ -56,6 +56,7 @@ import System.IO.Unsafe (unsafePerformIO)
 import System.Mem (performGC)
 import Type
 import Unsafe.Coerce (unsafeCoerce)
+import Data.Maybe (isJust, fromJust)
 
 data Thunking v :: Type -> (Type -> Type) -> Type where
     Thunk :: Ptr -> Thunking v () (OneSub v)
@@ -271,8 +272,10 @@ instance (Functor m) => Functor (MC l v m) where
 
 showTS :: (Show (l v)) => ThunkStore l v -> String
 showTS (TS _ im) =
-    let m = IntMap.mapMaybe (\(s, w) -> (s,) <$> (unsafePerformIO . deRefWeak) w) (majorPurge im)
-        xs = IntMap.toList m
+    let m = IntMap.map deRefPair im
+        deRefPair (s, w) = (s,) <$> (unsafePerformIO . deRefWeak) w
+        (alive, dead) = IntMap.partition isJust m
+        xs = IntMap.toList (IntMap.map fromJust alive)
         evls = filter (isEvaluated . snd . snd) xs
         thnks = filter (isThunked . snd . snd) xs
         rdrs = filter (isRedirected . snd . snd) xs
@@ -281,10 +284,10 @@ showTS (TS _ im) =
                 cmp
                 (map prettyVal xs)
             )
-            ++ "unpurged: "
-            ++ show (IntMap.size im)
-            ++ " purged: "
-            ++ show (IntMap.size m)
+            ++ "alive: "
+            ++ show (IntMap.size alive)
+            ++ " dead: "
+            ++ show (IntMap.size dead)
             ++ "\n"
             ++ "evaluated: "
             ++ show (length evls)

@@ -58,7 +58,7 @@ module Effect.General.State (
 
 import Curry.FlatCurry.Annotated.Type (Literal, QName, VarIndex)
 import Data.Kind (Type)
-import Data.List (sortBy, partition)
+import Data.List (sortBy, partition, groupBy)
 import qualified Data.Map as Map
 import Debug (tracingActive)
 import Free
@@ -111,6 +111,9 @@ initRenaming sup = RState [] sup Nothing
 type Renaming = StateF Rename RState
 
 data RState = RState {renaming :: [(VarIndex, Ptr)], supply :: !UniqSupply, currentQName :: Maybe QName}
+
+instance Show RState where
+    show _ = "RState"
 
 freshNames
     :: (EffectCons m sig sigs sigl l, Renaming :<: sig)
@@ -274,7 +277,7 @@ type ConstraintStore = StateF CStore Constraints
 
 -- Tracing
 data TraceInfo = TI {opName :: String, details :: String, primOp :: Bool}
-  deriving (Eq, Show)
+  deriving (Eq, Ord, Show)
 
 prettyTI :: TraceInfo -> String
 prettyTI (TI op dtls _) | dtls == "" = op
@@ -323,9 +326,6 @@ statistics :: [TraceInfo] -> ([(TraceInfo, Int)], [(TraceInfo, Int)])
 statistics ti = (sortedCount prims, sortedCount comb)
   where
     (prims, comb) = partition primOp ti
-    sortedCount = sortBy (\(_, n) (_, m) -> compare n m) . foldr count []
-    count name acc =
-        case lookup name acc of
-            Just n -> (name, n + 1) : filter ((/= name) . fst) acc
-            Nothing -> (name, 1) : acc
+    sortedCount = sortBy (\(_, n) (_, m) -> compare n m) . count
+    count = Map.toList . Map.fromListWith (+) . map (,1)
 {-# INLINE statistics #-}

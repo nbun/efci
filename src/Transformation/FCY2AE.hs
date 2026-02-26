@@ -13,6 +13,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 {-# OPTIONS_GHC -Wno-unused-do-bind #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Transformation.FCY2AE (CurryEffects, fcyProg2ae, fcyRunner2ae) where
 
@@ -93,6 +94,11 @@ fcyExpr2ae frees expr =
             AComb _ FuncCall (("Prelude", "failed"), _) [] -> return failed
             AComb _ FuncCall (("Prelude", "apply"), _) [fe, ee] ->
                 liftM2 apply (rec fe) (fmap single (rec ee))
+            AComb _ FuncCall (("Prelude", "dumpMemory"), _) [e] -> 
+                dumpMemory @v >> rec e
+            AComb _ FuncCall (("Prelude", "$!"), _) [fe,ee] ->
+              let pe = rec ee
+              in fmap eval2HNF pe >> liftM2 apply (rec fe) (fmap single pe)
             AComb _ callType (qn, _) args -> do
                 args' <- mapM rec args
                 case callType of

@@ -225,7 +225,6 @@ callExternal f args =
             ("prim_readFile", [pfp]) -> readFileIO pfp
             
             ("ensureNotFree", [p]) -> eval2HNF p >> p
-            ("$!", [pf, px]) -> eval2HNF px >> apply pf (single px)
             ("$##", [pf, px]) -> apply pf (single $ normalform px)
             ("prim_error", [p]) -> err p
             ("=:=", [_, px, py]) -> unify px py
@@ -240,7 +239,6 @@ callExternal f args =
             ("prim_readFloatLiteral", [ps]) -> readFloatLiteral ps
             ("prim_readStringLiteral", [ps]) -> readStringLiteral ps
 
-            ("dumpMemory", [p]) -> dumpMemory @a >> p
             _ ->
                 error $
                     "Missing definition for "
