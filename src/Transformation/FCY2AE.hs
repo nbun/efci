@@ -81,20 +81,17 @@ fcyExpr2ae
 fcyExpr2ae frees expr =
     let rec = fcyExpr2ae frees
      in case expr of
-            AVar _ i
-                | i `elem` frees -> do
-                    j <- lookupRenaming i
-                    return $ fvar j
-                | otherwise -> do
-                    j <- lookupRenaming i
-                    return $ lvar j
+            AVar _ i -> do
+              ptr <- lookupRenaming i
+              let f = if i `elem` frees then fvar else lvar
+              return (f ptr)
             ALit _ l -> return $ lit l
-            AComb _ FuncCall (("Prelude", "?"), _) [e1, e2] -> 
+            AComb _ FuncCall (("Prelude", "?"), _) [e1, e2] ->
                 liftM2 (?) (rec e1) (rec e2)
             AComb _ FuncCall (("Prelude", "failed"), _) [] -> return failed
             AComb _ FuncCall (("Prelude", "apply"), _) [fe, ee] ->
                 liftM2 apply (rec fe) (fmap single (rec ee))
-            AComb _ FuncCall (("Prelude", "dumpMemory"), _) [e] -> 
+            AComb _ FuncCall (("Prelude", "dumpMemory"), _) [e] ->
                 dumpMemory @v >> rec e
             AComb _ FuncCall (("Prelude", "$!"), _) [fe,ee] ->
               let pe = rec ee
@@ -121,11 +118,11 @@ fcyExpr2ae frees expr =
             AFree _ bs e -> do
                 let vs = map fst bs
                 rename vs
-                fcyExpr2ae (map fst bs ++ frees) e
+                fcyExpr2ae (vs ++ frees) e
             AOr _ e1 e2 -> do
                 liftM2 (?) (rec e1) (rec e2)
             ACase _ _ e brs -> do
-                let vs = map fst $ concatMap (patVars . (\(ABranch pat _) -> pat)) brs
+                let vs = map fst $ concatMap brVars brs
                 vs' <- rename vs
                 let r = zip vs vs'
                 e' <- rec e
@@ -141,9 +138,10 @@ fcyExpr2ae frees expr =
                 newPat _ (ALPattern _ l) = AELPattern l
             ATyped _ e _ -> rec e -- type annotations not required
 
-patVars :: APattern ann -> [(VarIndex, ann)]
-patVars (ALPattern _ _) = []
-patVars (APattern _ _ bs) = bs
+brVars :: ABranchExpr a -> [(VarIndex, a)]
+brVars (ABranch pat _) = case pat of
+   ALPattern _ _  -> []
+   APattern _ _ bs -> bs
 
 fcyProg2ae :: (TermMonad m (CurryEffects v)) => AProg TypeExpr -> Module (m v)
 fcyProg2ae (AProg name imports tdecls fdecls opdecls) =
