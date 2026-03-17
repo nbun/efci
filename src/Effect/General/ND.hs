@@ -97,8 +97,8 @@ instance (EffectMonad m sig sigs sigl (ListL l)) => TermAlgebra (NDC m) (Sig (ND
 newtype NDC m a = NDC {unNDC :: m [a]} deriving (Functor)
 
 instance LCarrier ListL [] where
-    lift = foldr (liftA2 (++)) (pure [])
-    lift2 =
+    concatM = foldr (liftA2 (++)) (pure [])
+    concatML =
         foldr
             (liftA2 (\xs ys -> cl $ unl xs ++ unl ys))
             (pure (cl []))

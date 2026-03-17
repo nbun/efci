@@ -205,17 +205,17 @@ runConsSmart = unCC . smartFold point con
 {-# INLINE runConsSmart #-}
 
 instance LCarrier ValueL Value where
-    lift (NF qn args) = traverse lift args <&> NF qn
-    lift (HNF qn ptrs) = pure $ HNF qn ptrs
-    lift (Lit l) = pure $ Lit l
-    lift (Free i) = pure $ Free i
-    lift (ValOther x) = x
+    concatM (NF qn args) = traverse concatM args <&> NF qn
+    concatM (HNF qn ptrs) = pure $ HNF qn ptrs
+    concatM (Lit l) = pure $ Lit l
+    concatM (Free i) = pure $ Free i
+    concatM (ValOther x) = x
 
-    lift2 (NF qn args) = traverse lift2 args <&> ValueL . NF qn . map unValueL
-    lift2 (HNF qn ptrs) = pure $ ValueL $ HNF qn ptrs
-    lift2 (Lit l) = pure $ ValueL $ Lit l
-    lift2 (Free i) = pure $ ValueL $ Free i
-    lift2 (ValOther x) = x
+    concatML (NF qn args) = traverse concatML args <&> ValueL . NF qn . map unValueL
+    concatML (HNF qn ptrs) = pure $ ValueL $ HNF qn ptrs
+    concatML (Lit l) = pure $ ValueL $ Lit l
+    concatML (Free i) = pure $ ValueL $ Free i
+    concatML (ValOther x) = x
 
 instance OuterCarrier CC Value
 instance DeriveForward 'Outer CC ValueL
@@ -229,12 +229,12 @@ algCs :: (TermMonad m (Sig sig sigs sigl (cL l)), LCarrier cL Value) => Match (m
 algCs (Match ps k) = do
     hnfs <- sequence ps
     hnf <- k (map void hnfs)
-    lift hnf
+    concatM hnf
 algCs (Normalize ce normalize) = do
     hnf <- ce
     case hnf of
-        HNF qn args -> NF qn <$> mapM (normalize >=> lift) args
-        _ -> lift hnf
+        HNF qn args -> NF qn <$> mapM (normalize >=> concatM) args
+        _ -> concatM hnf
 
 instance
     (EffectMonad m sig sigs sigl (ValueL l))

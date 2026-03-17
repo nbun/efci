@@ -203,9 +203,9 @@ hStateSmart = unSTC . smartFold point con
 instance StateCarrier (STC tag s) s
 instance DeriveForward 'State (STC tag s) (StateL s)
 instance LCarrier (StateL s) ((,) s) where
-    lift (_, x) = x
+    concatM (_, x) = x
 
-    lift2 (_, x) = x
+    concatML (_, x) = x
 
 algS :: StateF tag s (s -> m a) -> s -> m a
 algS (Get k) s = k s s

@@ -189,6 +189,8 @@ type EffectMonad m sig sigs sigl l = (TermMonad m (Sig sig sigs sigl l), Functor
 -- {-# RULES "fmapcc/coerce" fmap cl = unsafeCoerce #-}
 -- {-# RULES "fmapcc/coerce" fmap unl = unsafeCoerce #-}
 {-# RULES "fmapcc/coerce" fmap coerce = unsafeCoerce #-}
+{-# RULES "fmapfmapcc/coerce" fmap (fmap coerce) = unsafeCoerce #-}
+{-# RULES "doublecoerce" coerce . coerce = coerce #-}
 
 class OuterCarrier c f | c -> f where
     cc :: m (f a) -> c m a
@@ -236,25 +238,25 @@ class LCarrier cL f | cL -> f where
     {-# INLINE unl #-}
     unl = coerce
 
-    lift
+    concatM
         :: (TermMonad m (Sig sig sigs sigl (cL l)))
         => f (m (f a))
         -> m (f a)
-    default lift :: (TermMonad m (Sig sig sigs sigl (cL l)), Traversable f, Monad f)
+    default concatM :: (TermMonad m (Sig sig sigs sigl (cL l)), Traversable f, Monad f)
         => f (m (f a))
         -> m (f a)
-    {-# INLINE lift #-}
-    lift = fmap join . sequence
+    {-# INLINE concatM #-}
+    concatM = fmap join . sequence
 
-    lift2
-        :: (TermMonad m (Sig sig sigs sigl (cL l)), Applicative m)
+    concatML
+        :: (TermMonad m (Sig sig sigs sigl (cL l)))
         => f (m (cL l x))
         -> m (cL l x)
-    default lift2 :: (TermMonad m (Sig sig sigs sigl (cL l)), Monad m, Functor f)
+    default concatML :: (TermMonad m (Sig sig sigs sigl (cL l)), Functor f)
         => f (m (cL l x))
         -> m (cL l x)
-    {-# INLINE lift2 #-}
-    lift2 = fmap cl . lift . fmap (fmap unl)
+    {-# INLINE concatML #-}
+    concatML = fmap cl . concatM . fmap (fmap unl)
 
 ----
 type family StratApply (strat :: CarrierDerivingStrat) (l :: Type -> Type) (ll :: (Type -> Type) -> Type -> Type) :: Type -> Type where
@@ -297,11 +299,11 @@ lfwd = dlfwd @strat @_ @ll @_ @_ @_ @_ @l
 
 instance (OuterCarrier c f, LCarrier ll f, Pointed f) => DerivingStrat 'Outer c ll where
     dafwd (Algebraic op) = cc . con . A . Algebraic . fmap unc $ op
-    dsfwd (Enter op) = cc . con . S . Enter . fmap (fmap (lift @ll) . unc . fmap unc) $ op
+    dsfwd (Enter op) = cc . con . S . Enter . fmap (fmap (concatM @ll) . unc . fmap unc) $ op
     dlfwd (Node op l st k) = cc $ con $ L $ Node op (cl $ point l) (st' st) k'
       where
-        st' st2 c l' = lift2 (fmap (\x -> cl <$> unc (st2 c x)) (unl l'))
-        k' = lift . fmap (unc . k) . unl
+        st' st2 c l' = concatML (fmap (\x -> cl <$> unc (st2 c x)) (unl l'))
+        k' = concatM . fmap (unc . k) . unl
 
 instance (StateCarrier c s, LCarrier ll ((,) s)) => DerivingStrat 'State c ll where
     dafwd (Algebraic op) = ccst $ \s -> con $ A $ Algebraic $ fmap (`uncst` s) op

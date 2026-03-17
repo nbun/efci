@@ -271,15 +271,15 @@ runPartialSmart = unPC . smartFold point con
 {-# INLINE runPartialSmart #-}
 
 instance LCarrier ClosureL Closure where
-    lift (Closure qn ct ptrs) = pure $ Closure qn ct ptrs
-    lift (Lambda vs ptr) = pure $ Lambda vs ptr
-    lift (External s) = pure $ External s
-    lift (Other x) = x
+    concatM (Closure qn ct ptrs) = pure $ Closure qn ct ptrs
+    concatM (Lambda vs ptr) = pure $ Lambda vs ptr
+    concatM (External s) = pure $ External s
+    concatM (Other x) = x
 
-    lift2 (Closure qn ct ptrs) = pure $ ClosureL $ Closure qn ct ptrs
-    lift2 (Lambda vs ptr) = pure $ ClosureL $ Lambda vs ptr
-    lift2 (External s) = pure $ ClosureL $ External s
-    lift2 (Other x) = x
+    concatML (Closure qn ct ptrs) = pure $ ClosureL $ Closure qn ct ptrs
+    concatML (Lambda vs ptr) = pure $ ClosureL $ Lambda vs ptr
+    concatML (External s) = pure $ ClosureL $ External s
+    concatML (Other x) = x
 
 instance OuterCarrier PC Closure
 instance DeriveForward 'Outer PC ClosureL
@@ -290,7 +290,7 @@ algP (Apply p k) = do
     clsr <- p
     case clsr of
         Other x -> x
-        _ -> k (void clsr) >>= lift
+        _ -> k (void clsr) >>= concatM
 algP (Abs vs ptr) = return $ Lambda vs ptr
 algP (Ext s) = return $ External s
 
