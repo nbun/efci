@@ -68,6 +68,7 @@ import GHC.Stats
 import GHC.Utils.Misc (capitalise)
 import Monolith (runMonolithic)
 import Effect.General.Error (Error(..))
+import InterpFL (runInterpFL)
 
 data Mode = Tree | Codensity | Monolithic | Smart deriving Show
 
@@ -80,7 +81,7 @@ rotateMode Smart = Tree
 data ToolOpts = ToolOpts { showFlatCurryExpr :: Bool, mode :: Mode, time :: Bool} deriving Show
 
 defaultToolOpts :: ToolOpts
-defaultToolOpts = ToolOpts { showFlatCurryExpr = False, mode = Smart, time = True}
+defaultToolOpts = ToolOpts { showFlatCurryExpr = False, mode = Monolithic, time = True}
 
 main :: IO ()
 main = do
@@ -119,7 +120,7 @@ loop topts file = do
 execute
   :: ToolOpts -> Either (FilePath, String) ([AProg TypeExpr], AFuncDecl TypeExpr) -> IO [Result]
 execute topts preloaded = do
-  safeRes <- try $ timeout 10000000000 $ case preloaded of
+  safeRes <- try $ timeout 20000000 $ case preloaded of
                                          Left (file, query) -> do
                                           e <- loadProg topts file query
                                           case e of
@@ -203,7 +204,7 @@ run topts progs fcyrunner = do
              let aprogs' = map fcyProg2ae progs
                  runner = fcyRunner2ae (fdclRule fcyrunner)
              runCurryEffects @() aprogs' runner
-           Monolithic -> fmap (\x -> ([], EOther $ fmap (\r -> (Data.Map.empty, r)) x)) (runMonolithic progs fcyrunner)
+           Monolithic -> fmap (\x -> ([], EOther $ fmap (\r -> (Data.Map.empty, r)) x)) (runInterpFL progs fcyrunner)
            Smart -> do
               let aprogs' = map fcyProg2ae progs
                   runner = fcyRunner2ae (fdclRule fcyrunner)

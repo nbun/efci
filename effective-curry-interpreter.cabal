@@ -27,6 +27,7 @@ library
                    , Data.Union
                    , Signature
                    , Monolith
+                   , InterpFL
                    
     exposed-modules: App, Pipeline
     build-depends:    
