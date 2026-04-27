@@ -46,7 +46,7 @@ runReaderC r p = unRC (runCod var p) r
 -- hReader = unRC . fold point con
 
 instance ReaderCarrier (RC tag r) r
-instance DeriveForward 'Reader (RC tag r) VoidL
+instance Forward 'Reader (RC tag r) VoidL
 
 algR :: ReaderF tag r (r -> m a) -> r -> m a
 algR (Ask k) r = k r r

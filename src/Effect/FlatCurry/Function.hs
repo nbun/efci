@@ -276,13 +276,8 @@ instance LCarrier ClosureL Closure where
     concatM (External s) = pure $ External s
     concatM (Other x) = x
 
-    concatML (Closure qn ct ptrs) = pure $ ClosureL $ Closure qn ct ptrs
-    concatML (Lambda vs ptr) = pure $ ClosureL $ Lambda vs ptr
-    concatML (External s) = pure $ ClosureL $ External s
-    concatML (Other x) = x
-
-instance OuterCarrier PC Closure
-instance DeriveForward 'Outer PC ClosureL
+instance Carrier PC Closure
+instance Forward 'Outer PC ClosureL
 
 algP :: (Monad m, LCarrier cL Closure, TermAlgebra m (Sig sig sigs sigl (cL l)), Pointed m  ) => Partial (m (Closure (m (Closure a)))) -> m (Closure a)
 algP (PartCall qn combtype args) = return $ Closure qn combtype args

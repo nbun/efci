@@ -211,14 +211,8 @@ instance LCarrier ValueL Value where
     concatM (Free i) = pure $ Free i
     concatM (ValOther x) = x
 
-    concatML (NF qn args) = traverse concatML args <&> ValueL . NF qn . map unValueL
-    concatML (HNF qn ptrs) = pure $ ValueL $ HNF qn ptrs
-    concatML (Lit l) = pure $ ValueL $ Lit l
-    concatML (Free i) = pure $ ValueL $ Free i
-    concatML (ValOther x) = x
-
-instance OuterCarrier CC Value
-instance DeriveForward 'Outer CC ValueL
+instance Carrier CC Value
+instance Forward 'Outer CC ValueL
 
 algCa :: Monad m => Term (m (Value a)) -> m (Value a)
 algCa (TCons qn args) = return (HNF qn args)

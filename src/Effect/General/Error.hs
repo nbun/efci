@@ -59,16 +59,12 @@ runErrorSmart
 runErrorSmart = unEC . smartFold point con
 {-# INLINE runErrorSmart #-}
 
-instance OuterCarrier EC Error
-instance DeriveForward 'Outer EC ErrorL
+instance Carrier EC Error
+instance Forward 'Outer EC ErrorL
 instance LCarrier ErrorL Error where
     concatM (Error s) = pure (Error s)
     concatM (EOther x) = x
     {-# INLINE concatM #-}
-
-    concatML (Error s) = pure (ErrorL $ Error s)
-    concatML (EOther x) = x
-    {-# INLINE concatML #-}
 
 algE :: (Pointed m) => Err (m (Error a)) -> m (Error a)
 algE (Err s) = point (Error s)

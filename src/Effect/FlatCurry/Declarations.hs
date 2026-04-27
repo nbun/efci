@@ -81,7 +81,7 @@ mergeModule get m@(Module name imps tds fds opds) = Module name imps tds fds' op
     where fds' = Map.map (\fdecl -> get (Many (fdclName fdecl)) <$ fdecl) fds
 
 instance ReaderCarrier (DC (Progs l v m)) (Progs l v m)
-instance DeriveForward 'Reader (DC (Progs l v m)) VoidL
+instance Forward 'Reader (DC (Progs l v m)) VoidL
 
 algDecl
     :: (Monad m)

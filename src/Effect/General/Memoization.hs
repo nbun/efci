@@ -156,7 +156,7 @@ hLazySmart = unMC . smartFold point con
 {-# INLINE hLazySmart #-}
 
 instance StateCarrier (MC l v) (ThunkStore l v)
-instance DeriveForward 'State (MC l v) (StateL (ThunkStore l v))
+instance Forward 'State (MC l v) (StateL (ThunkStore l v))
 
 algLazy
     :: (Monad m, Functor l, Show (l v))

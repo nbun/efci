@@ -20,10 +20,10 @@ type Effects = [Type -> Type]
 
 data Union (effs :: Effects) a where
   Union :: Functor f => !(Index f effs) -> f a -> Union effs a
-
 deriving instance Functor (Union effs)
 
 newtype Index (e :: k) (effs :: [k]) = Index Int
+  deriving Show
 
 (#) :: (f a -> b) -> (Union effs a -> b) -> Union (f : effs) a -> b
 (#) alg fwd (Union !p x) = case p of
@@ -51,6 +51,10 @@ inj = Union elemAt
 {-# INLINE inj #-}
 
 prj :: forall f r a. Elem f r => Union r a -> Maybe (f a)
-prj (Union _ x) = case elemAt @f @r of
-  Index n -> if n == 0 then Just (unsafeCoerce x) else Nothing
+prj (Union (Index n) x) = case elemAt @f @r of
+  Index m | n == m    -> Just (unsafeCoerce x) 
+          | otherwise -> Nothing
 {-# INLINE prj #-}
+
+-- >>> elemAt :: Index Maybe '[Maybe, []]
+-- Index 0

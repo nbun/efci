@@ -47,7 +47,7 @@ module Signature (
     (:.:),
     prj3,
     HasCallStack,
-    OuterCarrier (..),
+    Carrier (..),
     StateCarrier (..),
     ReaderCarrier (..),
     LCarrier (..),
@@ -55,8 +55,8 @@ module Signature (
     afwd,
     sfwd,
     lfwd,
-    DeriveForward,
-    CarrierDerivingStrat (..),
+    Forward,
+    Strat (..),
     VoidL,
     absurdNoSub,
 ) where
@@ -192,7 +192,7 @@ type EffectMonad m sig sigs sigl l = (TermMonad m (Sig sig sigs sigl l), Functor
 {-# RULES "fmapfmapcc/coerce" fmap (fmap coerce) = unsafeCoerce #-}
 {-# RULES "doublecoerce" coerce . coerce = coerce #-}
 
-class OuterCarrier c f | c -> f where
+class Carrier c f | c -> f where
     cc :: m (f a) -> c m a
     default cc :: (Coercible (c m a) (m (f a))) => m (f a) -> c m a
     {-# INLINE cc #-}
@@ -248,27 +248,18 @@ class LCarrier cL f | cL -> f where
     {-# INLINE concatM #-}
     concatM = fmap join . sequence
 
-    concatML
-        :: (TermMonad m (Sig sig sigs sigl (cL l)))
-        => f (m (cL l x))
-        -> m (cL l x)
-    default concatML :: (TermMonad m (Sig sig sigs sigl (cL l)), Functor f)
-        => f (m (cL l x))
-        -> m (cL l x)
-    {-# INLINE concatML #-}
-    concatML = fmap cl . concatM . fmap (fmap unl)
-
 ----
-type family StratApply (strat :: CarrierDerivingStrat) (l :: Type -> Type) (ll :: (Type -> Type) -> Type -> Type) :: Type -> Type where
+type family StratApply (strat :: Strat) (l :: Type -> Type) (ll :: (Type -> Type) -> Type -> Type) :: Type -> Type where
     StratApply 'Outer l ll = ll l
     StratApply 'Reader l ll = l
     StratApply 'State l ll = ll l
 
-data CarrierDerivingStrat = Outer | Reader | State
+data Strat = Outer | Reader | State
 
-class (DerivingStrat strat c ll) => DeriveForward (strat :: CarrierDerivingStrat) c ll | c -> strat
+class (DerivingStrat strat c ll) => Forward (strat :: Strat) c ll | c -> strat ll
 
 class DerivingStrat strat c ll where
+    
     dafwd
         :: (TermMonad m (Sig sig sigs sigl (StratApply strat l ll)))
         => Algebraic sig (c m) (c m a) -> c m a
@@ -281,28 +272,28 @@ class DerivingStrat strat c ll where
 
 afwd
     :: forall ll strat sig sigs sigl l c m a
-     . (DeriveForward strat c ll, TermMonad m (Sig sig sigs sigl (StratApply strat l ll)), Applicative m)
+     . (Forward strat c ll, TermMonad m (Sig sig sigs sigl (StratApply strat l ll)), Applicative m)
     => Algebraic sig (c m) (c m a) -> c m a
 afwd = dafwd @strat @_ @ll @_ @_ @_ @_ @l
 
 sfwd
     :: forall ll strat sig sigs sigl l c m a
-     . (DeriveForward strat c ll, TermMonad m (Sig sig sigs sigl (StratApply strat l ll)), Applicative m, Pointed m, Functor (c m))
+     . (Forward strat c ll, TermMonad m (Sig sig sigs sigl (StratApply strat l ll)), Applicative m, Pointed m, Functor (c m))
     => Scoped sigs (c m) (c m a) -> c m a
 sfwd = dsfwd @strat @_ @ll @_ @_ @_ @_ @l
 
 lfwd
     :: forall ll strat sig sigs sigl l c m a
-     . (DeriveForward strat c ll, TermMonad m (Sig sig sigs sigl (StratApply strat l ll)), Pointed m, Applicative m)
+     . (Forward strat c ll, TermMonad m (Sig sig sigs sigl (StratApply strat l ll)), Pointed m, Applicative m)
     => Latent sigl l (c m) (c m a) -> c m a
 lfwd = dlfwd @strat @_ @ll @_ @_ @_ @_ @l
 
-instance (OuterCarrier c f, LCarrier ll f, Pointed f) => DerivingStrat 'Outer c ll where
+instance (Carrier c f, LCarrier ll f, Pointed f) => DerivingStrat 'Outer c ll where
     dafwd (Algebraic op) = cc . con . A . Algebraic . fmap unc $ op
     dsfwd (Enter op) = cc . con . S . Enter . fmap (fmap (concatM @ll) . unc . fmap unc) $ op
     dlfwd (Node op l st k) = cc $ con $ L $ Node op (cl $ point l) (st' st) k'
       where
-        st' st2 c l' = concatML (fmap (\x -> cl <$> unc (st2 c x)) (unl l'))
+        st' st2 c l' = cl <$> concatM (fmap (unc . st2 c) (unl (l' :: _ ())))
         k' = concatM . fmap (unc . k) . unl
 
 instance (StateCarrier c s, LCarrier ll ((,) s)) => DerivingStrat 'State c ll where
