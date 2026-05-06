@@ -81,7 +81,7 @@ rotateMode Smart = Tree
 data ToolOpts = ToolOpts { showFlatCurryExpr :: Bool, mode :: Mode, time :: Bool} deriving Show
 
 defaultToolOpts :: ToolOpts
-defaultToolOpts = ToolOpts { showFlatCurryExpr = False, mode = Monolithic, time = True}
+defaultToolOpts = ToolOpts { showFlatCurryExpr = False, mode = Smart, time = True}
 
 main :: IO ()
 main = do
@@ -204,7 +204,10 @@ run topts progs fcyrunner = do
              let aprogs' = map fcyProg2ae progs
                  runner = fcyRunner2ae (fdclRule fcyrunner)
              runCurryEffects @() aprogs' runner
-           Monolithic -> fmap (\x -> ([], EOther $ fmap (\r -> (Data.Map.empty, r)) x)) (runInterpFL progs fcyrunner)
+           Monolithic -> do
+            results <- runInterpFL progs fcyrunner
+            print $ length results
+            return ([], EOther $ fmap (\r -> (Data.Map.empty, r)) results)
            Smart -> do
               let aprogs' = map fcyProg2ae progs
                   runner = fcyRunner2ae (fdclRule fcyrunner)

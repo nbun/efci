@@ -9,34 +9,49 @@ import Debug.Trace (traceShowId)
 import System.Process (callCommand)
 import Control.Concurrent (setNumCapabilities)
 
+binPAKCS, binKICS :: String
+-- binPAKCS = "/home/nbu/.local/pakcs-3.10.0/bin/pakcs"
+binPAKCS  = "/home/nbu/.local/pakcs-3.7.0/bin/pakcs"
+binKICS  = "/home/nbu/.local/kics2-3.5.0-x86_64-linux/bin/kics2"
+
 main :: IO ()
 main = do
   setNumCapabilities 16
   setCurrentDirectory "benchmarks"
   progs <- mapM (prepare defaultToolOpts) benchmarks
   -- mapM_ preparePakcs benchmarks
+  -- mapM_ prepareKics benchmarks
   defaultMainWith (defaultConfig  { timeLimit = 1, csvFile = Just "result/bench.csv", reportFile = Just "result/report.html" })
-    [ --bgroup "Mono" (map (\(mod, ps, expr) -> bench mod $ whnfIO (execute (setMode Monolithic) (Right (ps, expr)))) progs)
-    --  bgroup "Cod" (map (\(mod, ps, expr) -> bench mod $ whnfIO (execute (setMode Codensity) (Right (ps, expr)))) progs)
-      bgroup "Smart" (map (\(mod, ps, expr) -> bench mod $ whnfIO (execute (setMode Smart) (Right (ps, expr)))) progs)
-    -- , bgroup "Prog" (map (\(mod, ps, expr) -> bench mod $ whnfIO (execute (setMode Tree) (Right (ps, expr)))) progs)
-    -- , bgroup "pakcs" (map (\(mod, expr) -> bench mod $ whnfIO (callCommand $ "./" ++ mod )) benchmarks)
-    -- , bgroup "pakcs-eval" (map (\(mod, expr) -> bench mod $ whnfIO (runPakcs (mod, expr))) benchmarks)
+    [ 
+      -- bgroup "Mono" (map (\(mod, ps, expr) -> bench mod $ whnfIO (execute (setMode Monolithic) (Right (ps, expr)))) progs)
+      -- bgroup "Cod" (map (\(mod, ps, expr) -> bench mod $ whnfIO (execute (setMode Codensity) (Right (ps, expr)))) progs),
+       bgroup "Smart" (map (\(mod, ps, expr) -> bench mod $ whnfIO (execute (setMode Smart) (Right (ps, expr)))) progs)
+      -- bgroup "Prog" (map (\(mod, ps, expr) -> bench mod $ whnfIO (execute (setMode Tree) (Right (ps, expr)))) progs)
+      --  bgroup "pakcs" (map (\(mod, expr) -> bench mod $ whnfIO (callCommand $ "./" ++ mod ++ "-pakcs" )) benchmarks)
+      -- , bgroup "kics" (map (\(mod, expr) -> bench mod $ whnfIO (callCommand $ "./" ++ mod ++ "-kics" )) benchmarks)
+    -- bgroup "pakcs-eval" (map (\(mod, expr) -> bench mod $ whnfIO (runPakcs (mod, expr))) benchmarks)
    ]
-  -- mapM_ deletePakcs benchmarks
+  -- mapM_ deleteBinary benchmarks
 
 escapePar :: String -> String
 escapePar = concatMap (\c -> if c == '(' then "\\(" else if c == ')' then "\\)" else [c])
 
 preparePakcs :: (String, String) -> IO ()
-preparePakcs (mod, expr) = callCommand $ "/home/nbu/.local/pakcs-3.7.1/bin/pakcs --nocypm :l " ++ mod ++ ".curry :save " ++ escapePar expr ++ " :q"
+preparePakcs (mod, expr) = do
+  callCommand $ binPAKCS ++ " --nocypm :l " ++ mod ++ ".curry :save " ++ escapePar expr ++ " :q"
+  callCommand $ "mv " ++ mod ++ " " ++ mod ++ "-pakcs"
 
 runPakcs :: (String, String) -> IO ()
-runPakcs (mod, expr) = callCommand $ "/home/nbu/.local/pakcs-3.7.1/bin/pakcs --nocypm :l " ++ mod ++ ".curry :eval " ++ escapePar expr ++ " :q"
+runPakcs (mod, expr) = callCommand $ binPAKCS ++ " --nocypm :l " ++ mod ++ ".curry :eval " ++ escapePar expr ++ " :q"
 
+prepareKics :: (String, String) -> IO ()
+prepareKics (mod, expr) = do
+  callCommand $ binKICS ++ " --nocypm :l " ++ mod ++ ".curry :save " ++ escapePar expr ++ " :q"
+  callCommand $ "mv " ++ mod ++ " " ++ mod ++ "-kics"
+  
 
-deletePakcs :: (String, String) -> IO ()
-deletePakcs (mod, expr) = callCommand $ "rm " ++ mod
+deleteBinary :: (String, String) -> IO ()
+deleteBinary (mod, expr) = callCommand ("rm " ++ mod ++ "-pakcs") >> callCommand ("rm " ++ mod ++ "-kics")
 
 benchmarks :: [(String, String)]
 benchmarks = [

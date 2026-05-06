@@ -28,8 +28,9 @@ i2p n = case n of
   m -> S (i2p (m - 1))
 
 p2i :: Peano -> Int
-p2i O     = 0
-p2i (S n) = 1 + p2i n
+p2i p = case p of
+          O -> 0
+          (S q) -> 1 + p2i q
 
 pointless :: Peano -> ()
 pointless n = case n of

@@ -16,3 +16,10 @@ perm (x:xs) = insert x (perm xs)
 insert :: a -> [a] -> [a]
 insert x [] = [x]
 insert x (y:ys) = x:y:ys ? y : (insert x ys)
+
+--perm :: [a] -> [a]
+--perm []     = []
+--perm (x:xs) = insert (perm xs)
+-- where
+--  insert ys     = x : ys
+--  insert (y:ys) = y : insert ys

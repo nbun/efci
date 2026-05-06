@@ -5,22 +5,22 @@
 
 module InterpFL where
 
-import Data.Maybe
 import Data.List
 import Control.Monad
-import Debug.Trace
 import Control.Applicative (Alternative (..))
 import Curry.FlatCurry.Annotated.Type
 import qualified Effect.FlatCurry.Constructor as FC
 import Effect.FlatCurry.Function (Closure(..))
 import qualified Effect.FlatCurry.Function as FCF
 import qualified Data.Map as Map
-import Curry.FlatCurry.Goodies (funcName)
+import qualified Data.IntMap as M
 
-type Var = String
+type Var = Int
 type Constr = QName
 type Prim = QName
-type Pattern = (Constr,[Var])
+
+data Pattern = CPat Constr [Var] | LPat Int
+  deriving (Show, Eq)
 
 data Exp = Var Var
      | Int Int
@@ -37,34 +37,34 @@ data Exp = Var Var
 type HPtr = Int
 
 -- Values
-data Value = 
+data Value =
    VCapp Constr [HPtr]
  | VInt Int
  | VAbs Env Var Exp
  | VLogic HPtr
  deriving (Show,Eq)
 
-data HEntry = 
+data HEntry =
    HValue Value
  | HThunk Env Exp
  | HBlackhole
  deriving Show
 
-type Env = Map Var HPtr
+type Env = M.IntMap HPtr
 
 
 -- Heap: Free location supply plus bindings
-data Heap = Heap {free :: [HPtr], bindings :: Map HPtr HEntry}
+data Heap = Heap {free :: [HPtr], bindings :: M.IntMap HEntry}
 instance Show Heap where
   show (Heap free bindings) = show bindings
 hfresh :: Heap -> (HPtr,Heap)
 hfresh (Heap (v:vs) bindings) = (v,Heap vs bindings)
-hempty :: Heap 
-hempty = Heap {free = [0..], bindings = emptyMap}
+hempty :: Heap
+hempty = Heap {free = [0..], bindings = M.empty}
 hget :: Heap -> HPtr -> HEntry
-hget (Heap free bindings) v = mget bindings v
-hset :: Heap  -> (HPtr,HEntry) -> Heap 
-hset (Heap free bindings) (v,e) = Heap free (mset bindings (v,e))
+hget (Heap free bindings) v = bindings M.! v
+hset :: Heap  -> (HPtr,HEntry) -> Heap
+hset (Heap free bindings) (v,e) = Heap free (M.insert v e bindings)
 
 {- Model answers as lists; inherits standard monad defns for lists.
 type A a = [a]  
@@ -79,7 +79,7 @@ dfsols :: A a -> [a]
 dfsols = dfs
 bfsols :: A a -> [a]
 bfsols = bfs
-sols = bfsols  -- can change to whatever you want
+sols = dfsols  -- can change to whatever you want
 
 -- Monad carries heap, and returns an answer structure
 newtype M a = M (Heap -> A (a,Heap))
@@ -111,7 +111,7 @@ store :: HPtr -> HEntry -> M ()
 store p e = M (\ h -> return ((),hset h (p,e)))
 fetch :: HPtr -> M HEntry
 fetch p = M (\ h -> return (hget h p,h))
-run :: M a -> A (a,Heap) 
+run :: M a -> A (a,Heap)
 run (M m) = m hempty
 lift :: M a -> M a
 lift (M m) = M (\ h -> alift (m h))
@@ -120,10 +120,10 @@ lift (M m) = M (\ h -> alift (m h))
 eval :: Env -> Exp -> M Value
 eval env (Var x) =
      lift $
-     do let p = mget env x
+     do let p = env M.! x
         h <- fetch p
         case h of
-          HThunk env' e' -> 
+          HThunk env' e' ->
            do store p HBlackhole
               v' <- eval env' e'
               store p (HValue v')
@@ -132,55 +132,55 @@ eval env (Var x) =
           HBlackhole -> mzero
 eval env (Int i) = return (VInt i)
 eval env (Abs x b) = return (VAbs env x b)
-eval env (App e0 e1) = 
+eval env (App e0 e1) =
      do VAbs env' x b <- eval env e0
         p1 <- fresh
         store p1 (HThunk env e1)
-        let env'' = mset env' (x,p1)
+        let env'' = M.insert x p1 env'
         eval env'' b
-eval env (Capp c es) = 
+eval env (Capp c es) =
      do ps <- mapM (const fresh) es
         zipWithM_ store ps (map (HThunk env) es)
         return (VCapp c ps)
-eval env (Primapp p e1 e2) = 
+eval env (Primapp p e1 e2) =
      do v1 <- eval env e1
         v2 <- eval env e2
         checkGround v1
         checkGround v2
         return (doPrimapp p v1 v2)
-eval env (Case e pes) = 
+eval env (Case e pes) =
      do v <- eval env e
         case v of
          VCapp c0 ps ->
                do let plookup [] = mzero
-                      plookup (((c,xs),b):pes) | c == c0   = return (xs,b)
+                      plookup ((CPat c xs,b):pes) | c == c0   = return (xs,b)
                                                | otherwise = plookup pes
                   (xs,b) <- plookup pes
-                  let env' = foldl mset env (zip xs ps)
+                  let env' = M.union (M.fromList (zip xs ps)) env
                   eval env' b
          VLogic p0 -> msum (map f pes)
            where
-             f ((c,xs),e') =
+             f (CPat c xs,e') =
                do ps <- mapM (const allocLogic) xs
-                  store p0 (HValue (VCapp c ps))                       
-                  let env' = foldl mset env (zip xs ps)
+                  store p0 (HValue (VCapp c ps))
+                  let env' = M.union (M.fromList (zip xs ps)) env
                   eval env' e'
-         VInt i -> 
+         VInt i ->
               do let plookup [] = mzero
-                     plookup (((("Literal", j),_),b):pes) | show i == j   = return b
+                     plookup (((LPat j),b):pes) | i == j   = return b
                                                           | otherwise = plookup pes
                  b <- plookup pes
                  eval env b
          _ -> error $ "unexpected value: " ++ show v
-eval env (Letrec xes e) = 
+eval env (Letrec xes e) =
      do let (xs,es) = unzip xes
         ps <- mapM (const fresh) xes
-        let env' = foldl mset env (zip xs ps)
+        let env' = M.union (M.fromList (zip xs ps)) env
         zipWithM_ store ps (map (HThunk env') es)
         eval env' e
-eval env (Logic x e) = 
-     do p <- allocLogic 
-        let env' = mset env (x,p)
+eval env (Logic x e) =
+     do p <- allocLogic
+        let env' = M.insert x p env
         eval env' e
 
 allocLogic :: M HPtr
@@ -206,8 +206,8 @@ doPrimapp ("Prelude","and") (VCapp ("Prelude",s1) []) (VCapp ("Prelude",s2) []) 
   _ -> VCapp ("Prelude","False") []
 doPrimapp qn _ _ = error ("Unknown primitive: " ++ show qn)
 
-interp :: Exp -> A (Value,Heap) 
-interp e = run (eval emptyMap e)
+interp :: Exp -> A (Value,Heap)
+interp e = run (eval M.empty e)
 
 interp' :: Exp -> [(Value,Heap)]
 interp'=  sols . interp
@@ -215,42 +215,42 @@ interp'=  sols . interp
 interp'' :: Exp -> [Value]
 interp'' = nub . map fst . interp'
 
-success = Capp ("Prelude","Success") []
+-- success = Capp ("Prelude","Success") []
 
-true = Capp ("Prelude","True") []
-false = Capp ("Prelude","False") []
+-- true = Capp ("Prelude","True") []
+-- false = Capp ("Prelude","False") []
 
-ifthenelse c t f = Case  c [((("Prelude","True"),[]), t),
-                                 ((("Prelude","False"),[]), f)] 
+-- ifthenelse c t f = Case  c [((("Prelude","True"),[]), t),
+--                                  ((("Prelude","False"),[]), f)] 
 
-eq0 e = Primapp ("Prelude","eq") e (Int 0)
+-- eq0 e = Primapp ("Prelude","eq") e (Int 0)
 
-amb a b = Logic "dummy" (Case (Var "dummy") [((("Prelude","Ldummy"),[]),a),
-                                             ((("Prelude","Rdummy"),[]),b)])
+-- amb a b = Logic "dummy" (Case (Var "dummy") [((("Prelude","Ldummy"),[]),a),
+--                                              ((("Prelude","Rdummy"),[]),b)])
 
-c = Letrec [("undef", Var "undef")]
-           (amb (Var "undef") (Int 1))
+-- c = Letrec [("undef", Var "undef")]
+--            (amb (Var "undef") (Int 1))
 
-coin = amb (Int 0) (Int 1)
+-- coin = amb (Int 0) (Int 1)
 
-coin1 = Letrec [("x",coin)] (Primapp ("Prelude","add") (Var "x") (Var "x"))
+-- coin1 = Letrec [("x",coin)] (Primapp ("Prelude","add") (Var "x") (Var "x"))
 
-coin2 = Letrec [("x",coin),("y",coin)] (Primapp ("Prelude","add") (Var "x") (Var "y"))
+-- coin2 = Letrec [("x",coin),("y",coin)] (Primapp ("Prelude","add") (Var "x") (Var "y"))
 
-coinf1 = Letrec [("coinf", Abs "dummy" coin),
-                 ("x", (App (Var "coinf") (Int 0)))]
-               (Primapp ("Prelude","add") (Var "x") (Var "x"))
-coinf2 = Letrec [("coinf", Abs "dummy" coin)]
-               (Primapp ("Prelude","add") (App (Var "coinf") (Int 0)) (App (Var "coinf") (Int 1)))
+-- coinf1 = Letrec [("coinf", Abs "dummy" coin),
+--                  ("x", (App (Var "coinf") (Int 0)))]
+--                (Primapp ("Prelude","add") (Var "x") (Var "x"))
+-- coinf2 = Letrec [("coinf", Abs "dummy" coin)]
+--                (Primapp ("Prelude","add") (App (Var "coinf") (Int 0)) (App (Var "coinf") (Int 1)))
 
-testExamples :: IO ()
-testExamples = do
-  putStrLn $ "c      -> " ++ show (interp'' c)
-  putStrLn $ "coin   -> " ++ show (interp'' coin)
-  putStrLn $ "coin1  -> " ++ show (interp'' coin1)
-  putStrLn $ "coin2  -> " ++ show (interp'' coin2)
-  putStrLn $ "coinf1 -> " ++ show (interp'' coinf1)
-  putStrLn $ "coinf2 -> " ++ show (interp'' coinf2)
+-- testExamples :: IO ()
+-- testExamples = do
+--   putStrLn $ "c      -> " ++ show (interp'' c)
+--   putStrLn $ "coin   -> " ++ show (interp'' coin)
+--   putStrLn $ "coin1  -> " ++ show (interp'' coin1)
+--   putStrLn $ "coin2  -> " ++ show (interp'' coin2)
+--   putStrLn $ "coinf1 -> " ++ show (interp'' coinf1)
+--   putStrLn $ "coinf2 -> " ++ show (interp'' coinf2)
 
 --------- Forest ------
 
@@ -308,27 +308,11 @@ bfs (Forest ts) = concat (bfs' ts)
 
        combine :: [[[a]]] -> [[a]]
        combine = foldr merge []
- 
+
        merge :: [[a]] -> [[a]] -> [[a]]
        merge (x:xs) (y:ys) = (x ++ y):(merge xs ys)
        merge xs [] = xs
        merge [] ys = ys
-
--- Map --
-
-data Map a b = Map [(a,b)] 
- deriving (Show,Eq)
-
-emptyMap :: Map a b 
-emptyMap = Map []
-
-{- In case of duplicates, returns most recently added entry. -}
-mget:: (Eq a) => Map a b -> a -> b
-mget (Map l) k = fromJust (lookup k l)
-
-{- May hide existing entries. -}
-mset :: Map a b -> (a,b) -> Map a b
-mset (Map l) (k,d) = Map ((k,d):l)
 
 -- Translation
 
@@ -345,18 +329,18 @@ type FDeclMap = Map.Map QName (AFuncDecl TypeExpr)
 
 transDef :: FDeclMap -> QName -> Exp
 transDef funMap qn = case Map.lookup qn funMap of
-    Just (AFunc _ _ _ _ (ARule _ params body)) -> 
-        foldr (\(v,_) acc -> Abs (show v) acc) (translateExpr funMap body) params
+    Just (AFunc _ _ _ _ (ARule _ params body)) ->
+        foldr (\(v,_) acc -> Abs v acc) (translateExpr funMap body) params
     _ -> error ("Function not found: " ++ show qn)
 
 translateExpr :: FDeclMap -> AExpr TypeExpr -> Exp
 translateExpr funs e = case e of
-  AVar _ v -> Var (show v)
+  AVar _ v -> Var v
   ALit _ l -> case l of
     Intc i -> Int (fromInteger i)
-    _      -> error "unsupported literal type"  
+    _      -> error "unsupported literal type"
   AComb _ _ (("Prelude", "apply"),_) [a1, a2] -> App (translateExpr funs a1) (translateExpr funs a2)
-  AComb _ _ (("Prelude", "failed"),_) [] -> Logic "dummy" (Case (Var "dummy") [])
+  AComb _ _ (("Prelude", "failed"),_) [] -> Logic (-42) (Case (Var (-42)) [])
   AComb _ ctype (qn, _) args -> case ctype of
     FuncCall -> if isPrimitive qn
                 then case args of
@@ -365,10 +349,12 @@ translateExpr funs e = case e of
                 else foldl App (transDef funs qn) (map (translateExpr funs) args)
     ConsCall -> Capp qn (map (translateExpr funs) args)
     FuncPartCall _ -> foldl App (transDef funs qn) (map (translateExpr funs) args)
-    ConsPartCall _ -> Capp qn (map (translateExpr funs) args)
-  ALet _ bs e' -> Letrec (map (\((v, _), expr) -> (show v, translateExpr funs expr)) bs) (translateExpr funs e')
-  AFree _ vs e' -> foldr (\(v, _) acc -> Logic (show v) acc) (translateExpr funs e') vs
-  AOr _ e1 e2 -> Logic "dummy" (Case (Var "dummy") [((("Prelude","Ldummy"),[]), translateExpr funs e1), ((("Prelude","Rdummy"),[]), translateExpr funs e2)])
+    ConsPartCall missing ->
+      let vars = [1..missing]
+      in foldr Abs (Capp qn (map (translateExpr funs) args ++ map Var vars)) vars
+  ALet _ bs e' -> Letrec (map (\((v, _), expr) -> (v, translateExpr funs expr)) bs) (translateExpr funs e')
+  AFree _ vs e' -> foldr (\(v, _) acc -> Logic v acc) (translateExpr funs e') vs
+  AOr _ e1 e2 -> Logic (-42) (Case (Var (-42)) [(CPat ("Prelude","Ldummy") [], translateExpr funs e1), (CPat ("Prelude","Rdummy") [], translateExpr funs e2)])
   ACase _ _ e' brs -> Case (translateExpr funs e') (map (translateBranch funs) brs)
   ATyped _ e' _ -> translateExpr funs e'
 
@@ -376,8 +362,8 @@ translateBranch :: FDeclMap -> ABranchExpr TypeExpr -> (Pattern, Exp)
 translateBranch funs (ABranch pat body) = (translatePat pat, translateExpr funs body)
 
 translatePat :: APattern TypeExpr -> Pattern
-translatePat (APattern _ (qn, _) vars) = (qn, map (show . fst) vars)
-translatePat (ALPattern _ (Intc i)) = (("Literal", show i), [])
+translatePat (APattern _ (qn, _) vars) = CPat qn (map fst vars)
+translatePat (ALPattern _ (Intc i)) = LPat (fromInteger i)
 translatePat _ = error $ "unsupported pattern type"
 
 isPrimitive :: QName -> Bool
@@ -391,7 +377,7 @@ runInterpFL progs fdecl = do
   let expr = translate progs fdecl
 --   trace (show expr) (return ())
   let M action = do
-        v <- eval emptyMap expr
+        v <- eval M.empty expr
         -- trace (show v) (return ())
         nf v
   let results = sols (action hempty)
