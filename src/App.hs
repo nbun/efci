@@ -120,7 +120,7 @@ loop topts file = do
 execute
   :: ToolOpts -> Either (FilePath, String) ([AProg TypeExpr], AFuncDecl TypeExpr) -> IO [Result]
 execute topts preloaded = do
-  safeRes <- try $ timeout 20000000 $ case preloaded of
+  safeRes <- try $ timeout 60000000 $ case preloaded of
                                          Left (file, query) -> do
                                           e <- loadProg topts file query
                                           case e of
@@ -218,7 +218,7 @@ run topts progs fcyrunner = do
   enabled <- getRTSStatsEnabled
   when enabled $ do
       s <- getRTSStats
-      putStrLn $ show (max_mem_in_use_bytes s `div` 1000000) ++ "MB allocated"
+      putStrLn $ show (max_live_bytes s `div` 1000000) ++ "MB allocated"
   let (ti, values) = declutter res
   -- when tracingActive (print $ prettyTI $ reverse ti)
   when tracingActive $ printStatistics ti

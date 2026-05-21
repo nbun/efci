@@ -35,19 +35,23 @@ data Prog k a where
     Call :: k (Prog k) (Prog k a) -> Prog k a
 
 deriving instance (Show (k (Prog k) (Prog k a)), Show a) => Show (Prog k a)
-deriving instance (HFunctor k) => Functor (Prog k)
+-- deriving instance Functor (k (Prog k)) => Functor (Prog k)
+
+instance (forall f. (Functor f) => Functor (k f)) => Functor (Prog k) where
+    fmap f (Return x) = Return (f x)
+    fmap f (Call op) = Call (fmap (fmap f) op)
 
 type f --> g = forall a. f a -> g a
 
 class (forall f. (Functor f) => Functor (k f)) => HFunctor k where
     hmap :: (Functor f, Functor f') => f --> f' -> k f --> k f'
 
-instance (HFunctor k) => Applicative (Prog k) where
+instance (forall f. (Functor f) => Functor (k f)) => Applicative (Prog k) where
     pure = Return
     Return f <*> p = fmap f p
     Call op <*> p = Call (fmap (<*> p) op)
 
-instance (HFunctor k) => Monad (Prog k) where
+instance (forall f. (Functor f) => Functor (k f)) => Monad (Prog k) where
     Return x >>= f = f x
     Call op >>= f = Call (fmap (>>= f) op)
 

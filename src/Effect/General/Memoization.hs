@@ -166,17 +166,17 @@ algLazy (Node op l st' k') = MC $ \ts@(TS sup th) ->
     let k = unMC . k'
         st c' l' = unMC $ st' c' l'
      in case op of
-            Thunk ptr -> k l (TS sup (addEntry ptr (Thunked (unsafeCoerce $ st One)) th))
+            Thunk ptr -> k l (TS sup (addEntry ptr (Thunked (MC . st One)) th))
             Store loc ->
                 let (!fresh, sup') = freshPtr sup loc
                     th' = if ptrKey fresh `mod` 20000 == 0 then purge th else th
-                 in k (fresh <$ l) (TS sup' (addEntry fresh (Thunked (unsafeCoerce $ st One)) th'))
+                 in k (fresh <$ l) (TS sup' (addEntry fresh (Thunked (MC . st One)) th'))
             Eval -> st One l ts >> k l ts
             Force delete p -> fetch p
               where
                 fetch ptr = case lookupEntry ptr th of
                     Thunked t -> do
-                        (TS sup' th', lv) <- unMC (unsafeCoerce $ t l) (if delete then TS sup (removeEntry ptr th) else ts)
+                        (TS sup' th', lv) <- unMC (t l) (if delete then TS sup (removeEntry ptr th) else ts)
                         let th'' = if delete then removeEntry ptr th' else addEntry ptr (Evaluated lv) th'
                         k lv (TS sup' th'')
                     Evaluated lv -> let th' = if delete then removeEntry ptr th else th
@@ -221,7 +221,7 @@ isRedirected _ = False
 data ThunkStore l v = forall m. TS !UniqSupply !(TSM m l v) -- (IntMap.IntMap (Entry m l v))
 type TSM m l v = IntMap.IntMap (String, Weak (Entry m l v))
 
-addEntry :: Ptr -> Entry m l v -> TSM m l v -> TSM m l v
+addEntry :: Ptr -> Entry m' l v -> TSM m l v -> TSM m l v
 addEntry (Ptr !i loc) p th = unsafePerformIO $ do
     w <- mkWeak i (unsafeCoerce p) Nothing
     return (IntMap.insert i (loc, w) th)
@@ -231,7 +231,7 @@ removeEntry :: Ptr -> TSM m l v -> TSM m l v
 removeEntry (Ptr !i _) = IntMap.delete i
 {-# INLINE removeEntry #-}
 
-lookupEntry :: Ptr -> TSM m l v -> Entry m l v
+lookupEntry :: Ptr -> TSM m l v -> Entry m' l v
 lookupEntry (Ptr !i _) th = unsafePerformIO $ keepAlive i $ do
     case IntMap.lookup i th of
         Just (_, w) -> do

@@ -243,15 +243,6 @@ interp'' = nub . map fst . interp'
 -- coinf2 = Letrec [("coinf", Abs "dummy" coin)]
 --                (Primapp ("Prelude","add") (App (Var "coinf") (Int 0)) (App (Var "coinf") (Int 1)))
 
--- testExamples :: IO ()
--- testExamples = do
---   putStrLn $ "c      -> " ++ show (interp'' c)
---   putStrLn $ "coin   -> " ++ show (interp'' coin)
---   putStrLn $ "coin1  -> " ++ show (interp'' coin1)
---   putStrLn $ "coin2  -> " ++ show (interp'' coin2)
---   putStrLn $ "coinf1 -> " ++ show (interp'' coinf1)
---   putStrLn $ "coinf2 -> " ++ show (interp'' coinf2)
-
 --------- Forest ------
 
 newtype Forest a = Forest [Tree a]
