@@ -1,4 +1,9 @@
 {-# LANGUAGE DeriveFunctor #-}
+{-# OPTIONS_GHC -Wno-name-shadowing #-}
+{-# OPTIONS_GHC -Wno-incomplete-patterns #-}
+{-# OPTIONS_GHC -Wno-unused-matches #-}
+{-# OPTIONS_GHC -Wno-missing-signatures #-}
+{-# OPTIONS_GHC -Wno-noncanonical-monad-instances #-}
 {- A call-by-need interpreter using a heap to express sharing and support recursive bindings,
    and an environment to avoid substitution.  Extended to support free variables, narrowing,
    and non-determinism.  -}
@@ -215,34 +220,6 @@ interp'=  sols . interp
 interp'' :: Exp -> [Value]
 interp'' = nub . map fst . interp'
 
--- success = Capp ("Prelude","Success") []
-
--- true = Capp ("Prelude","True") []
--- false = Capp ("Prelude","False") []
-
--- ifthenelse c t f = Case  c [((("Prelude","True"),[]), t),
---                                  ((("Prelude","False"),[]), f)] 
-
--- eq0 e = Primapp ("Prelude","eq") e (Int 0)
-
--- amb a b = Logic "dummy" (Case (Var "dummy") [((("Prelude","Ldummy"),[]),a),
---                                              ((("Prelude","Rdummy"),[]),b)])
-
--- c = Letrec [("undef", Var "undef")]
---            (amb (Var "undef") (Int 1))
-
--- coin = amb (Int 0) (Int 1)
-
--- coin1 = Letrec [("x",coin)] (Primapp ("Prelude","add") (Var "x") (Var "x"))
-
--- coin2 = Letrec [("x",coin),("y",coin)] (Primapp ("Prelude","add") (Var "x") (Var "y"))
-
--- coinf1 = Letrec [("coinf", Abs "dummy" coin),
---                  ("x", (App (Var "coinf") (Int 0)))]
---                (Primapp ("Prelude","add") (Var "x") (Var "x"))
--- coinf2 = Letrec [("coinf", Abs "dummy" coin)]
---                (Primapp ("Prelude","add") (App (Var "coinf") (Int 0)) (App (Var "coinf") (Int 1)))
-
 --------- Forest ------
 
 newtype Forest a = Forest [Tree a]
@@ -305,7 +282,7 @@ bfs (Forest ts) = concat (bfs' ts)
        merge xs [] = xs
        merge [] ys = ys
 
--- Translation
+-- Translation to FlatCurry
 
 translate :: [AProg TypeExpr] -> AFuncDecl TypeExpr -> Exp
 translate progs fdecl =

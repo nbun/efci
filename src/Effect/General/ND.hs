@@ -88,9 +88,6 @@ algND (Or l r) = (++) <$> l <*> r
 instance (EffectMonad m sig sigs sigl (ListL l)) => TermAlgebra (NDC m) (Sig (ND :+: sig) sigs sigl l) where
     con op = case op of
         A (Algebraic op') -> (wrap algND # (afwd . Algebraic)) op'
-          where     
-            afwd :: Algebraic sig Maybe (NDC m a) -> NDC m a
-            afwd (Algebraic op) = (NDC . con . A . Algebraic . fmap unNDC) op
         S op' -> sfwd op'
         L op' -> lfwd op'
     {-# INLINE con #-}
@@ -100,7 +97,9 @@ instance (EffectMonad m sig sigs sigl (ListL l)) => TermAlgebra (NDC m) (Sig (ND
 newtype NDC m a = NDC {unNDC :: m [a]} deriving (Functor)
 
 instance LCarrier ListL [] where
-    concatM = foldr (liftA2 (++)) (pure [])
+    concatM [] = pure []
+    concatM [x] = x
+    concatM (x:xs) = liftA2 (++) x (concatM xs)
 
 instance Carrier NDC []
 instance Forward 'Outer NDC ListL

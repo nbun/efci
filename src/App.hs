@@ -66,7 +66,6 @@ import System.Clock (getTime, Clock (..), TimeSpec (sec, nsec))
 import Control.Concurrent (setNumCapabilities)
 import GHC.Stats
 import GHC.Utils.Misc (capitalise)
-import Monolith (runMonolithic)
 import Effect.General.Error (Error(..))
 import InterpFL (runInterpFL)
 

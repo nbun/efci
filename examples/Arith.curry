@@ -13,3 +13,11 @@ pointless n = case n of
 
 loop :: Int
 loop = loop
+
+sum :: [Int] -> Int -> Int
+sum xs acc = case xs of
+  []     -> acc
+  (y:ys) -> dumpMemory (sum ys $! (acc + y))
+
+main = sum [1, 2] 0
+

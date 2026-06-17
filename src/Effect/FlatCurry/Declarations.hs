@@ -33,7 +33,7 @@ import qualified Data.Map as Map
 import Effect.General.State (EffectCons, logPrimCall)
 import Free
 import Signature
-import Type (AEFuncDecl (AEFunc), Module (..), fdclBody, fdclName)
+import Type (AEFuncDecl, Module (..), fdclBody, fdclName)
 import Data.Kind (Type)
 
 data DeclF v :: Type -> (Type -> Type) -> Type where
@@ -77,7 +77,7 @@ hDeclSmart = unDC . smartFold point con
 
 mergeModule :: (ManySub v v -> l () -> DC (Progs l v m) m (l v))
         -> Module () -> Module (l () -> DC (Progs l v m) m (l v))
-mergeModule get m@(Module name imps tds fds opds) = Module name imps tds fds' opds
+mergeModule get (Module name imps tds fds opds) = Module name imps tds fds' opds
     where fds' = Map.map (\fdecl -> get (Many (fdclName fdecl)) <$ fdecl) fds
 
 instance ReaderCarrier (DC (Progs l v m)) (Progs l v m)

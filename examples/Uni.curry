@@ -1,4 +1,4 @@
-{-# OPTIONS_FRONTEND -ddump-flat -Wnone #-}
+-- {-# OPTIONS_FRONTEND -ddump-flat -Wnone #-}
 last :: Data a => [a] -> a
 last xs | xs =:= ys ++ [x] = x where ys, x free
 

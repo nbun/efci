@@ -23,6 +23,7 @@ module Effect.FlatCurry.Constructor (
     compInt,
     compChar,
     normalform,
+    seq',
     err,
     fvar,
     ValueL,
@@ -73,10 +74,24 @@ data Term a
     | TFree Ptr
     deriving (Functor)
 
+data Mode = Seq | NormalForm
+
 data Match a
     = Match [a] ([Value ()] -> a)
-    | Normalize a (Ptr -> a)
+    | Normalize Mode a (Ptr -> a)
     deriving (Functor)
+
+seq'
+    :: ( Term :<: sig
+       , Thunking a :<<<<: sigl
+       , Match :<: sigs
+       , EffectCons m sig sigs sigl Id
+       )
+    => m a
+    -> m a
+    -> m a
+seq' p q = logPrimCall >> injectS (Normalize Seq (fmap return p) (const $ return q))
+{-# INLINE seq' #-}
 
 normalform
     :: ( Term :<: sig
@@ -86,7 +101,7 @@ normalform
        )
     => m a
     -> m a
-normalform p = logPrimCall >> injectS (Normalize (fmap return p) (return . normalform . force))
+normalform p = logPrimCall >> injectS (Normalize NormalForm (fmap return p) (return . normalform . force))
 {-# INLINE normalform #-}
 
 ccons
@@ -224,12 +239,12 @@ algCs (Match ps k) = do
     hnfs <- sequence ps
     hnf <- k (map void hnfs)
     concatM hnf
-algCs (Normalize ce normalize) = do
+algCs (Normalize mode ce k) = do
     hnf <- ce
-    case hnf of
-        HNF qn args -> NF qn <$> mapM (normalize >=> concatM) args
+    case (mode, hnf) of
+        (NormalForm, HNF qn args) -> NF qn <$> mapM (k >=> concatM) args
+        (Seq, _) -> k (error "") >>= concatM
         _ -> concatM hnf
-
 instance
     (EffectMonad m sig sigs sigl (ValueL l))
     => TermAlgebra (CC m) (Sig (Term :+: sig) (Match :+: sigs) sigl l)

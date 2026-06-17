@@ -47,13 +47,11 @@ import qualified Data.IntMap.Strict as IntMap
 import Data.Kind (Type)
 import Data.List (sortBy)
 import Debug (ctrace, strace)
-import Debug.HTrace (htrace)
 import Effect.General.State (EffectCons, StateL (..), logPrimCall)
 import GHC.Types.Unique.Supply
 import GHC.Weak
 import Signature
 import System.IO.Unsafe (unsafePerformIO)
-import System.Mem (performGC)
 import Type
 import Unsafe.Coerce (unsafeCoerce)
 import Data.Maybe (isJust, fromJust)
@@ -89,7 +87,7 @@ store
     -> m v
     -> m Ptr
 store loc t =
-  let res = logPrimCall >> injectL (Store loc) (Id ()) (\One _ -> fmap Id t) (return . unId :: _)
+  let res = logPrimCall >> injectL (Store loc) (Id ()) (\One _ -> fmap Id t) (return . unId)
   in inspect t res return
 {-# INLINE store #-}
 
@@ -187,7 +185,9 @@ algLazy (Node op l st' k') = MC $ \ts@(TS sup th) ->
                         Redirected ptr' -> skipRedirects th' ptr'
                         _ -> ptr
                 k l (TS sup (addEntry p (Redirected (skipRedirects th p')) th))
-            DumpMemory -> htrace (showTS ts) $ k l ts
+            -- DumpMemory -> htrace (showTS ts) $ k l ts
+            DumpMemory ->  unsafePerformIO (putStrLn (showTS ts)) `seq` k l ts
+
 
 instance (Functor l, EffectMonad m sig sigs sigl (StateL (ThunkStore l v) l), Show (l v)) => TermAlgebra (MC l v m) (Sig sig sigs (Thunking v :+++: sigl) l) where
     con (A op) = afwd op
@@ -201,7 +201,6 @@ instance (Functor l, EffectMonad m sig sigs sigl (StateL (ThunkStore l v) l), Sh
 
 runLazyC :: (EffectMonad m sig sigs sigl (StateL (ThunkStore l v) l), Functor l, Show (l v)) => UniqSupply -> Cod (MC l v m) a -> m a
 runLazyC sup p = (\(s, r) -> ctrace (showTS s) r) <$> unMC (runCod var p) (TS sup IntMap.empty)
--- runLazyC th p = snd <$> unMC (runCod var p) th
 {-# INLINE runLazyC #-}
 
 instance (Pointed m) => Pointed (MC l v m) where
@@ -245,8 +244,6 @@ lookupEntry (Ptr !i _) th = unsafePerformIO $ keepAlive i $ do
 purge :: TSM m l v -> TSM m l v
 purge m = strace stats m'
   where
-    -- purge m = strace stats m'
-
     m' = IntMap.filter isAlive m
     old = IntMap.size m
     new = IntMap.size m'
@@ -255,14 +252,6 @@ purge m = strace stats m'
         Just _ -> True
         Nothing -> False
 {-# NOINLINE purge #-}
-
-majorPurge :: (Show (l v)) => TSM m l v -> TSM m l v
-majorPurge m
-    | IntMap.size m == IntMap.size m' = m'
-    | otherwise = majorPurge m'
-  where
-    m' = unsafePerformIO $ performGC >> return (purge m)
-{-# NOINLINE majorPurge #-}
 
 newtype MC l v m a = MC {unMC :: ThunkStore l v -> m (ThunkStore l v, a)}
 

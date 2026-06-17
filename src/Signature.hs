@@ -22,6 +22,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 module Signature (
     (:+:),
@@ -180,17 +181,7 @@ instance HFunctor (Sig sig sigs sigl l) where
 
 type EffectMonad m sig sigs sigl l = (TermMonad m (Sig sig sigs sigl l), Functor l)
 
--- {-# RULES "fmapcc/coerce" fmap cc = unsafeCoerce #-}
--- {-# RULES "fmapunc/coerce" fmap unc = unsafeCoerce #-}
--- {-# RULES "fmapcc/coerce" fmap ccst = unsafeCoerce #-}
--- {-# RULES "fmapcc/coerce" fmap uncst = unsafeCoerce #-}
--- {-# RULES "fmapcc/coerce" fmap ccr = unsafeCoerce #-}
--- {-# RULES "fmapcc/coerce" fmap uncr = unsafeCoerce #-}
--- {-# RULES "fmapcc/coerce" fmap cl = unsafeCoerce #-}
--- {-# RULES "fmapcc/coerce" fmap unl = unsafeCoerce #-}
 {-# RULES "fmapcc/coerce" fmap coerce = unsafeCoerce #-}
-{-# RULES "fmapfmapcc/coerce" fmap (fmap coerce) = unsafeCoerce #-}
-{-# RULES "doublecoerce" coerce . coerce = coerce #-}
 
 class Carrier c f | c -> f where
     cc :: m (f a) -> c m a
@@ -259,7 +250,7 @@ data Strat = Outer | Reader | State
 class (DerivingStrat strat c ll) => Forward (strat :: Strat) c ll | c -> strat ll
 
 class DerivingStrat strat c ll where
-    
+
     dafwd
         :: (TermMonad m (Sig sig sigs sigl (StratApply strat l ll)))
         => Algebraic sig (c m) (c m a) -> c m a
@@ -293,7 +284,7 @@ instance (Carrier c f, LCarrier ll f, Pointed f) => DerivingStrat 'Outer c ll wh
     dsfwd (Enter op) = cc . con . S . Enter . fmap (fmap (concatM @ll) . unc . fmap unc) $ op
     dlfwd (Node op l st k) = cc $ con $ L $ Node op (cl $ point l) (st' st) k'
       where
-        st' st2 c l' = cl <$> concatM (fmap (unc . st2 c) (unl (l' :: _ ())))
+        st' st2 c l' = cl <$> concatM (fmap (unc . st2 c) (unl l'))
         k' = concatM . fmap (unc . k) . unl
 
 instance (StateCarrier c s, LCarrier ll ((,) s)) => DerivingStrat 'State c ll where

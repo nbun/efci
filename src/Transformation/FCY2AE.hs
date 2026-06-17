@@ -83,8 +83,8 @@ fcyExpr2ae frees expr =
      in case expr of
             AVar _ i -> do
               ptr <- lookupRenaming i
-              let f = if i `elem` frees then fvar else lvar
-              return (f ptr)
+              if i `elem` frees then return $ fvar ptr 
+                                else return $ lvar ptr
             ALit _ l -> return $ lit l
             AComb _ FuncCall (("Prelude", "?"), _) [e1, e2] ->
                 liftM2 (?) (rec e1) (rec e2)
@@ -95,7 +95,7 @@ fcyExpr2ae frees expr =
                 dumpMemory @v >> rec e
             AComb _ FuncCall (("Prelude", "$!"), _) [fe,ee] ->
               let pe = rec ee
-              in fmap eval2HNF pe >> liftM2 apply (rec fe) (fmap single pe)
+              in liftM2 seq' pe (liftM2 apply (rec fe) (fmap single pe))
             AComb _ callType (qn, _) args -> do
                 args' <- mapM rec args
                 case callType of

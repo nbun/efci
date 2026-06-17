@@ -58,7 +58,7 @@ module Effect.General.State (
 
 import Curry.FlatCurry.Annotated.Type (Literal, QName, VarIndex)
 import Data.Kind (Type)
-import Data.List (sortBy, partition, groupBy)
+import Data.List (sortBy, partition)
 import qualified Data.Map as Map
 import Debug (tracingActive)
 import Free
