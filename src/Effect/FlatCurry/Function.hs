@@ -46,6 +46,7 @@ import Effect.General.State
 import Free
 import Signature
 import Type
+import Forwarding
 
 type Functions sig sigs sigl a =
     ( '[Term, Err, IOAction, ConstraintStore, Renaming, ND] :.: sig

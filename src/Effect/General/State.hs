@@ -67,6 +67,7 @@ import GHC.Types.Unique
 import GHC.Types.Unique.Supply
 import Signature
 import Type (Ptr (..), mkPtr)
+import Forwarding
 
 data StateF (tag :: Type) s a
     = Get (s -> a)

@@ -23,6 +23,7 @@ module Effect.General.Error (
 
 import Free
 import Signature
+import Forwarding
 
 newtype Err a = Err String
     deriving (Functor, Show)

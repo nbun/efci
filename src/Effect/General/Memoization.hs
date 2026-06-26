@@ -55,6 +55,7 @@ import System.IO.Unsafe (unsafePerformIO)
 import Type
 import Unsafe.Coerce (unsafeCoerce)
 import Data.Maybe (isJust, fromJust)
+import Forwarding
 
 data Thunking v :: Type -> (Type -> Type) -> Type where
     Thunk :: Ptr -> Thunking v () (OneSub v)

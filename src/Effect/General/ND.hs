@@ -31,6 +31,7 @@ import Effect.General.State (EffectCons, logPrimCall)
 import Free
 import GHC.Conc
 import Signature
+import Forwarding
 
 data ND a = Fail | Or a a
 

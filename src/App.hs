@@ -1,6 +1,6 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE BangPatterns #-}
-module App (main, execute, defaultToolOpts, loadProg, ToolOpts(..), Mode(..), fp2hs) where
+module App (main, execute, defaultToolOpts, loadProg, ToolOpts(..), Mode(..), fp2hs, withoutBindings) where
 
 import Curry.Frontend.Base.Messages (Message, putErrLn)
 import Curry.Frontend.Checks (expandExports)
@@ -68,6 +68,7 @@ import GHC.Stats
 import GHC.Utils.Misc (capitalise)
 import Effect.General.Error (Error(..))
 import InterpFL (runInterpFL)
+import Transformation.AE2Result
 
 data Mode = Tree | Codensity | Monolithic | Smart deriving Show
 

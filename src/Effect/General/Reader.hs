@@ -18,6 +18,7 @@ module Effect.General.Reader (ask, runReaderC) where
 import Effect.General.State (EffectCons, logPrimCall)
 import Free
 import Signature
+import Forwarding
 
 newtype ReaderF tag r a = Ask (r -> a)
     deriving (Functor)

@@ -35,6 +35,7 @@ import Free
 import Signature
 import Type (AEFuncDecl, Module (..), fdclBody, fdclName)
 import Data.Kind (Type)
+import Forwarding
 
 data DeclF v :: Type -> (Type -> Type) -> Type where
     DeclBody :: QName -> DeclF v v NoSub

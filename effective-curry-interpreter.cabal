@@ -12,6 +12,7 @@ library
     other-modules: Free
                    , Type
                    , Transformation.FCY2AE
+                   , Transformation.AE2Result
                    , Effect.FlatCurry.Constructor
                    , Effect.FlatCurry.Function
                    , Effect.FlatCurry.Let
@@ -26,8 +27,8 @@ library
                    , Debug
                    , Data.Union
                    , Signature
-                   , Monolith
                    , InterpFL
+                   , Forwarding
                    
     exposed-modules: App, Pipeline
     build-depends:    

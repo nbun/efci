@@ -67,6 +67,7 @@ import Signature
 import Type
 import Data.Char (ord, chr)
 import GHC.Num (integerFromInt)
+import Forwarding
 
 data Term a
     = TCons QName [Ptr]

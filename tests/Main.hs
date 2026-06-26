@@ -1,6 +1,6 @@
 module Main where
 
-import App (ToolOpts (..), defaultToolOpts, execute)
+import App
 import Curry.FlatCurry.Type
 import Pipeline
 import Test.HUnit.Base

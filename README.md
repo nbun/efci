@@ -40,6 +40,39 @@ stack test effective-curry-interpreter
 stack bench effective-curry-interpreter
 ```
 
+## Repository structure
+
+* [src](src): implementation of the interpreter(s)
+    * [Data.Union](src/Data/Union.hs): open unions used for implementing signatures
+    * [Effect](src/Effect/): implementations of (Curry-specific) effects
+        * [FlatCurry](src/Effect/FlatCurry/): Curry-specific effects
+            * [Constructor](src/Effect/FlatCurry/Constructor.hs): terms and pattern matching effect
+            * [Declarations](src/Effect/FlatCurry/Declarations.hs): function declaration effect
+            * [Function](src/Effect/FlatCurry/Function.hs): Partial application effect
+            * [IO](src/Effect/FlatCurry/IO.hs): input/output effect
+            * [Let](src/Effect/FlatCurry/Let.hs): local bindings effect
+        * [General](src/Effect/General/): commonly known effects
+            * [Error](src/Effect/General/Error.hs): (unexpected) error effect
+            * [Memoization](src/Effect/General/Memoization.hs): lazy evaluation effect
+            * [ND](src/Effect/General/ND.hs): non-determinism effect
+            * [Reader](src/Effect/General/Reader.hs): reader effect (currently unused in favor of declarations effect)
+            * [State](src/Effect/General/State.hs): state effect
+        * [Transformation](src/Transformation/): transformation functions
+            * [AE2Result](src/Transformation/AE2Result.hs): transformation from effects to results
+            * [FCY2AE](src/Transformation/FCY2AE.hs): transformation from FlatCurry to effects
+        * [App](src/App): REPL logic and front end integration
+        * [Debug](src/Debug): flags for toggling debug output
+        * [Forwarding](src/Forwarding): forwarding functions and carrier classes
+        * [Free](src/Free): effect representations (tree-based, continuation-based, smart views)
+        * [InterpFL](src/InterpFL): implementation of [A Monadic Semantics for Core Curry](https://doi.org/10.1016/S1571-0661(04)80691-1)
+        * [Pipeline](src/Pipeline): pipelines for different effect representations
+        * [Signature](src/Signature): adapters, type operators, and injection functions for signatures
+        * [Type](src/Type): auxiliary functions and type definitions
+* [tests/Main.hs](tests/Main.hs): test suite runner
+* [examples](examples): example programs for the test suite
+* [benchmarks](benchmarks): benchmark programs
+    * [Main.hs](benchmarks/Main.hs): benchmark runner
+
 ## Known issues
 * Ambiguous types are not defaulted. For example, `1 + 2` needs to be annotated as `1 + 2 :: Int`.
 * Not all external functions are implemented. 
