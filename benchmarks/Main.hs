@@ -10,7 +10,6 @@ import System.Process (callCommand)
 import Control.Concurrent (setNumCapabilities)
 
 binPAKCS, binKICS :: String
--- binPAKCS = "/home/nbu/.local/pakcs-3.10.0/bin/pakcs"
 binPAKCS  = "/home/nbu/.local/pakcs-3.7.0/bin/pakcs"
 binKICS  = "/home/nbu/.local/kics2-3.5.0-x86_64-linux/bin/kics2"
 
@@ -23,13 +22,13 @@ main = do
   -- mapM_ prepareKics benchmarks
   defaultMainWith (defaultConfig  { timeLimit = 1, csvFile = Just "result/bench.csv", reportFile = Just "result/report.html" })
     [ 
-      -- bgroup "Mono" (map (\(mod, ps, expr) -> bench mod $ whnfIO (execute (setMode Monolithic) (Right (ps, expr)))) progs)
-      -- bgroup "Cod" (map (\(mod, ps, expr) -> bench mod $ whnfIO (execute (setMode Codensity) (Right (ps, expr)))) progs),
-       bgroup "Smart" (map (\(mod, ps, expr) -> bench mod $ whnfIO (execute (setMode Smart) (Right (ps, expr)))) progs)
-      -- bgroup "Prog" (map (\(mod, ps, expr) -> bench mod $ whnfIO (execute (setMode Tree) (Right (ps, expr)))) progs)
-      --  bgroup "pakcs" (map (\(mod, expr) -> bench mod $ whnfIO (callCommand $ "./" ++ mod ++ "-pakcs" )) benchmarks)
-      -- , bgroup "kics" (map (\(mod, expr) -> bench mod $ whnfIO (callCommand $ "./" ++ mod ++ "-kics" )) benchmarks)
-    -- bgroup "pakcs-eval" (map (\(mod, expr) -> bench mod $ whnfIO (runPakcs (mod, expr))) benchmarks)
+      bgroup "Mono" (map (\(mod, ps, expr) -> bench mod $ whnfIO (execute (setMode Monolithic) (Right (ps, expr)))) progs),
+      bgroup "Cod" (map (\(mod, ps, expr) -> bench mod $ whnfIO (execute (setMode Codensity) (Right (ps, expr)))) progs),
+      bgroup "Smart" (map (\(mod, ps, expr) -> bench mod $ whnfIO (execute (setMode Smart) (Right (ps, expr)))) progs),
+      bgroup "Prog" (map (\(mod, ps, expr) -> bench mod $ whnfIO (execute (setMode Tree) (Right (ps, expr)))) progs)
+      -- bgroup "pakcs" (map (\(mod, expr) -> bench mod $ whnfIO (callCommand $ "./" ++ mod ++ "-pakcs" )) benchmarks)
+      -- bgroup "kics" (map (\(mod, expr) -> bench mod $ whnfIO (callCommand $ "./" ++ mod ++ "-kics" )) benchmarks)
+      -- bgroup "pakcs-eval" (map (\(mod, expr) -> bench mod $ whnfIO (runPakcs (mod, expr))) benchmarks)
    ]
   -- mapM_ deleteBinary benchmarks
 
