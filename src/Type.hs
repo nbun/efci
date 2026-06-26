@@ -7,6 +7,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+
 {-# HLINT ignore "Use newtype instead of data" #-}
 
 module Type (
@@ -30,8 +31,8 @@ module Type (
 
 import Curry.FlatCurry.Annotated.Type
 import qualified Curry.FlatCurry.Type as CFT (OpDecl (..))
-import qualified Data.Set as Set
 import Data.Map (Map)
+import qualified Data.Set as Set
 import GHC.StableName
 import GHC.Types.Unique (getKey)
 import GHC.Types.Unique.Supply
@@ -81,11 +82,11 @@ reqFuncs :: forall a. [AProg a] -> AExpr a -> [AProg a]
 reqFuncs ps e = reqFuncs' initial initial
   where
     initial = Set.fromList $ exprFuncs e
-    
+
     reqFuncs' :: Set.Set QName -> Set.Set QName -> [AProg a]
     reqFuncs' acc new
         | Set.null new' = map (filterFuncs acc) ps
-        | otherwise     = reqFuncs' acc' new'
+        | otherwise = reqFuncs' acc' new'
       where
         fset = Set.fromList $ concatMap (declFuncs . findFDcl ps) new
         new' = fset `Set.difference` acc
@@ -150,7 +151,7 @@ freshPtr :: UniqSupply -> String -> (Ptr, UniqSupply)
 freshPtr sup loc =
     let (!u, sup') = takeUniqFromSupply sup
         !i = fromIntegral (getKey u)
-     in (Ptr i loc, sup')
+    in  (Ptr i loc, sup')
 {-# INLINE freshPtr #-}
 
 ptrKey :: Ptr -> VarIndex

@@ -11,9 +11,10 @@ module Pipeline (
     runCurryEffects,
     runCurryEffectsC,
     runSmartCurryEffects,
-    Result (..)
+    Result (..),
 ) where
 
+import Data.Char (chr)
 import qualified Data.Map as Map
 import Effect.FlatCurry.Constructor
 import Effect.FlatCurry.Declarations
@@ -27,10 +28,9 @@ import Free
 import GHC.Plugins (splitUniqSupply)
 import GHC.Types.Unique.Supply (mkSplitUniqSupply)
 import Signature (Id)
-import Transformation.FCY2AE
 import Transformation.AE2Result
+import Transformation.FCY2AE
 import Type (Module, Ptr (..))
-import Data.Char (chr)
 
 runCurryEffects
     :: (Show a)
@@ -93,39 +93,64 @@ type L a =
 
 type M a =
     Cod
-        ( DC (Progs Id a (Cod
-                         (PC
-                            (Cod
-                              (CC
-                                  (Cod
-                                     (MC
+        ( DC
+            ( Progs
+                Id
+                a
+                ( Cod
+                    ( PC
+                        ( Cod
+                            ( CC
+                                ( Cod
+                                    ( MC
                                         (ValueL (ClosureL Id))
                                         a
-                                        (Cod
-                                           (STC
-                                              Rename
-                                                 RState
-                                              (Cod
-                                                 (STC
-                                                    CStore
-                                                    (Map.Map Ptr CValue)
-                                                    (Cod
-                                                       (NDC
-                                                          (Cod
-                                                             (EC
-                                                                (Cod
-                                                                   (STC
-                                                                      Trace
-                                            [TraceInfo]
-                                                                      (Cod
-                                                                         (IOC
-                                                                            (L a))))))))))))))))))))
+                                        ( Cod
+                                            ( STC
+                                                Rename
+                                                RState
+                                                ( Cod
+                                                    ( STC
+                                                        CStore
+                                                        (Map.Map Ptr CValue)
+                                                        ( Cod
+                                                            ( NDC
+                                                                ( Cod
+                                                                    ( EC
+                                                                        ( Cod
+                                                                            ( STC
+                                                                                Trace
+                                                                                [TraceInfo]
+                                                                                ( Cod
+                                                                                    ( IOC
+                                                                                        (L a)
+                                                                                    )
+                                                                                )
+                                                                            )
+                                                                        )
+                                                                    )
+                                                                )
+                                                            )
+                                                        )
+                                                    )
+                                                )
+                                            )
+                                        )
+                                    )
+                                )
+                            )
+                        )
+                    )
+                )
+            )
             ( Cod
                 ( PC
                     ( Cod
                         ( CC
                             ( Cod
-                                ( MC (ValueL (ClosureL Id)) a
+                                ( MC
+                                    (ValueL (ClosureL Id))
+                                    a
                                     ( Cod
                                         ( STC
                                             Rename

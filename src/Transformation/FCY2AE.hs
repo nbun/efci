@@ -9,11 +9,11 @@
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 {-# OPTIONS_GHC -Wno-unused-do-bind #-}
-{-# LANGUAGE TypeApplications #-}
 
 module Transformation.FCY2AE (CurryEffects, fcyProg2ae, fcyRunner2ae) where
 
@@ -41,7 +41,8 @@ import Effect.FlatCurry.Function (
     external,
     fun,
     lambda,
-    partial, unlambda,
+    partial,
+    unlambda,
  )
 import qualified Effect.FlatCurry.Function (CombType (..))
 import Effect.FlatCurry.IO (IOAction)
@@ -52,7 +53,7 @@ import Effect.General.ND (ND, failed, (?))
 import Effect.General.State hiding (get, put)
 import Free
 import Signature
-import Type (AEFuncDecl (..), AEPattern (..), Module (..), Args (..), single)
+import Type (AEFuncDecl (..), AEPattern (..), Args (..), Module (..), single)
 
 data VarKind
     = CombVar
@@ -80,11 +81,12 @@ fcyExpr2ae
     -> m (m v)
 fcyExpr2ae frees expr =
     let rec = fcyExpr2ae frees
-     in case expr of
+    in  case expr of
             AVar _ i -> do
-              ptr <- lookupRenaming i
-              if i `elem` frees then return $ fvar ptr 
-                                else return $ lvar ptr
+                ptr <- lookupRenaming i
+                if i `elem` frees
+                    then return $ fvar ptr
+                    else return $ lvar ptr
             ALit _ l -> return $ lit l
             AComb _ FuncCall (("Prelude", "?"), _) [e1, e2] ->
                 liftM2 (?) (rec e1) (rec e2)
@@ -93,9 +95,9 @@ fcyExpr2ae frees expr =
                 liftM2 apply (rec fe) (fmap single (rec ee))
             AComb _ FuncCall (("Prelude", "dumpMemory"), _) [e] ->
                 dumpMemory @v >> rec e
-            AComb _ FuncCall (("Prelude", "$!"), _) [fe,ee] ->
-              let pe = rec ee
-              in liftM2 seq' pe (liftM2 apply (rec fe) (fmap single pe))
+            AComb _ FuncCall (("Prelude", "$!"), _) [fe, ee] ->
+                let pe = rec ee
+                in  liftM2 seq' pe (liftM2 apply (rec fe) (fmap single pe))
             AComb _ callType (qn, _) args -> do
                 args' <- mapM rec args
                 case callType of
@@ -140,8 +142,8 @@ fcyExpr2ae frees expr =
 
 brVars :: ABranchExpr a -> [(VarIndex, a)]
 brVars (ABranch pat _) = case pat of
-   ALPattern _ _  -> []
-   APattern _ _ bs -> bs
+    ALPattern _ _ -> []
+    APattern _ _ bs -> bs
 
 fcyProg2ae :: (TermMonad m (CurryEffects v)) => AProg TypeExpr -> Module (m v)
 fcyProg2ae (AProg name imports tdecls fdecls opdecls) =
@@ -150,7 +152,7 @@ fcyProg2ae (AProg name imports tdecls fdecls opdecls) =
             Map.fromList
                 (map (\fdecl@(AEFunc qn _ _ _ _) -> (qn, fdecl)) fdecls')
         tdeclmap = Map.fromList (map (\tdecl -> (typeName tdecl, tdecl)) tdecls)
-     in Module name imports tdeclmap fdeclmap opdecls
+    in  Module name imports tdeclmap fdeclmap opdecls
 
 fcyFDecl2ae
     :: (TermMonad m (CurryEffects v)) => AFuncDecl TypeExpr -> AEFuncDecl (m v)

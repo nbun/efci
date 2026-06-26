@@ -25,19 +25,20 @@ module Effect.FlatCurry.IO (
 ) where
 
 import Curry.FlatCurry.Type (Literal (..))
+import Data.Kind (Type)
 import Effect.FlatCurry.Constructor (
     Match (..),
     Term,
     Value (..),
     lit,
     str2prog,
-    val2str, unit,
+    unit,
+    val2str,
  )
 import Effect.General.Memoization (Thunking)
 import Effect.General.State (EffectCons, logPrimCall)
 import Free
 import Signature
-import Data.Kind (Type)
 
 data IOAction a
     = PutChar Char a
@@ -45,9 +46,12 @@ data IOAction a
     | ReadFile FilePath (String -> a)
     | WriteFile FilePath String a
     | AppendFile FilePath String a
-    -- | IOError
-    -- | Catch
-    deriving (Functor)
+    deriving
+        ( Functor
+          {- ^ IOError
+              | Catch
+          -}
+        )
 
 putCharIO
     :: forall sig sigs sigl l m a

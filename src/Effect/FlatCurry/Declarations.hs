@@ -29,13 +29,13 @@ module Effect.FlatCurry.Declarations (
 
 import Control.Monad (void)
 import Curry.FlatCurry.Annotated.Type (QName)
+import Data.Kind (Type)
 import qualified Data.Map as Map
 import Effect.General.State (EffectCons, logPrimCall)
+import Forwarding
 import Free
 import Signature
 import Type (AEFuncDecl, Module (..), fdclBody, fdclName)
-import Data.Kind (Type)
-import Forwarding
 
 data DeclF v :: Type -> (Type -> Type) -> Type where
     DeclBody :: QName -> DeclF v v NoSub
@@ -76,10 +76,13 @@ hDeclSmart
 hDeclSmart = unDC . smartFold point con
 {-# INLINE hDeclSmart #-}
 
-mergeModule :: (ManySub v v -> l () -> DC (Progs l v m) m (l v))
-        -> Module () -> Module (l () -> DC (Progs l v m) m (l v))
+mergeModule
+    :: (ManySub v v -> l () -> DC (Progs l v m) m (l v))
+    -> Module ()
+    -> Module (l () -> DC (Progs l v m) m (l v))
 mergeModule get (Module name imps tds fds opds) = Module name imps tds fds' opds
-    where fds' = Map.map (\fdecl -> get (Many (fdclName fdecl)) <$ fdecl) fds
+  where
+    fds' = Map.map (\fdecl -> get (Many (fdclName fdecl)) <$ fdecl) fds
 
 instance ReaderCarrier (DC (Progs l v m)) (Progs l v m)
 instance Forward 'Reader (DC (Progs l v m)) VoidL
@@ -90,7 +93,7 @@ algDecl
     -> DC (Progs l v m) m a
 algDecl (Node op l st' k') = DC $ \th ->
     let k = unDC . k'
-     in case op of
+    in  case op of
             DeclBody qn -> do
                 lv <- (unDC . fdclBody (moduleLookup (unProgs th) qn)) l th
                 k lv th
@@ -132,7 +135,7 @@ initDecls ps = logPrimCall >> injectL (Init (map void ps) :: DeclF v () (ManySub
 moduleLookup :: [Module a] -> QName -> AEFuncDecl a
 moduleLookup [] qn = error $ "Function declaration not found: " ++ show qn
 moduleLookup (Module name _ _ fdecls _ : ms) qn@(moduleName, _)
-  | name == moduleName = case Map.lookup qn fdecls of
-    Just fdcl -> fdcl
-    Nothing -> error $ "Function " ++ show qn ++ "missing from module " ++ show moduleName
-  | otherwise = moduleLookup ms qn
+    | name == moduleName = case Map.lookup qn fdecls of
+        Just fdcl -> fdcl
+        Nothing -> error $ "Function " ++ show qn ++ "missing from module " ++ show moduleName
+    | otherwise = moduleLookup ms qn

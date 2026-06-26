@@ -1,6 +1,7 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
@@ -9,7 +10,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE DeriveTraversable #-}
 
 module Effect.General.Error (
     Err (..),
@@ -21,9 +21,9 @@ module Effect.General.Error (
     EC,
 ) where
 
+import Forwarding
 import Free
 import Signature
-import Forwarding
 
 newtype Err a = Err String
     deriving (Functor, Show)

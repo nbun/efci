@@ -1,18 +1,22 @@
 import Criterion.Main
 import Criterion.Types
-import           App                  ( execute, loadProg, defaultToolOpts, ToolOpts(..), Mode (..))
-import           Curry.FlatCurry.Annotated.Type
-import           Pipeline
+import App ( execute, loadProg, defaultToolOpts, ToolOpts(..), Mode (..))
+import Curry.FlatCurry.Annotated.Type
+import Pipeline
 import Control.Monad (when)
 import System.Directory (setCurrentDirectory)
 import Debug.Trace (traceShowId)
 import System.Process (callCommand)
 import Control.Concurrent (setNumCapabilities)
 
+-- Paths to binaries of PAKCS or KiCS2, modify as needed
 binPAKCS, binKICS :: String
-binPAKCS  = "/home/nbu/.local/pakcs-3.7.0/bin/pakcs"
+binPAKCS = "/home/nbu/.local/pakcs-3.7.0/bin/pakcs"
 binKICS  = "/home/nbu/.local/kics2-3.5.0-x86_64-linux/bin/kics2"
 
+-- Main benchmarking function
+-- When including external compilers, uncomment the respective lines for
+-- pre-compiling the benchmark programs.
 main :: IO ()
 main = do
   setNumCapabilities 16
@@ -32,26 +36,7 @@ main = do
    ]
   -- mapM_ deleteBinary benchmarks
 
-escapePar :: String -> String
-escapePar = concatMap (\c -> if c == '(' then "\\(" else if c == ')' then "\\)" else [c])
-
-preparePakcs :: (String, String) -> IO ()
-preparePakcs (mod, expr) = do
-  callCommand $ binPAKCS ++ " --nocypm :l " ++ mod ++ ".curry :save " ++ escapePar expr ++ " :q"
-  callCommand $ "mv " ++ mod ++ " " ++ mod ++ "-pakcs"
-
-runPakcs :: (String, String) -> IO ()
-runPakcs (mod, expr) = callCommand $ binPAKCS ++ " --nocypm :l " ++ mod ++ ".curry :eval " ++ escapePar expr ++ " :q"
-
-prepareKics :: (String, String) -> IO ()
-prepareKics (mod, expr) = do
-  callCommand $ binKICS ++ " --nocypm :l " ++ mod ++ ".curry :save " ++ escapePar expr ++ " :q"
-  callCommand $ "mv " ++ mod ++ " " ++ mod ++ "-kics"
-  
-
-deleteBinary :: (String, String) -> IO ()
-deleteBinary (mod, expr) = callCommand ("rm " ++ mod ++ "-pakcs") >> callCommand ("rm " ++ mod ++ "-kics")
-
+-- Benchmark programs and the respective main expressions to evaluate.
 benchmarks :: [(String, String)]
 benchmarks = [
   ("AddNum", "isZero (addSomeNum1 750)"),
@@ -69,6 +54,25 @@ benchmarks = [
   ("YesSharingAcrossND", "let p = at primes 25 in p ? p"),
   ("NoSharingAcrossND", "at primes 25 ? at primes 25")
   ]
+
+escapePar :: String -> String
+escapePar = concatMap (\c -> if c == '(' then "\\(" else if c == ')' then "\\)" else [c])
+
+preparePakcs :: (String, String) -> IO ()
+preparePakcs (mod, expr) = do
+  callCommand $ binPAKCS ++ " --nocypm :l " ++ mod ++ ".curry :save " ++ escapePar expr ++ " :q"
+  callCommand $ "mv " ++ mod ++ " " ++ mod ++ "-pakcs"
+
+runPakcs :: (String, String) -> IO ()
+runPakcs (mod, expr) = callCommand $ binPAKCS ++ " --nocypm :l " ++ mod ++ ".curry :eval " ++ escapePar expr ++ " :q"
+
+prepareKics :: (String, String) -> IO ()
+prepareKics (mod, expr) = do
+  callCommand $ binKICS ++ " --nocypm :l " ++ mod ++ ".curry :save " ++ escapePar expr ++ " :q"
+  callCommand $ "mv " ++ mod ++ " " ++ mod ++ "-kics"
+
+deleteBinary :: (String, String) -> IO ()
+deleteBinary (mod, expr) = callCommand ("rm " ++ mod ++ "-pakcs") >> callCommand ("rm " ++ mod ++ "-kics")
 
 prepare :: ToolOpts -> (String, String) -> IO (String, [AProg TypeExpr], AFuncDecl TypeExpr)
 prepare opts (mod, expr) = loadProg opts (mod ++ ".curry") expr >>= \(Right (ps, expr)) -> return (mod, ps, expr)

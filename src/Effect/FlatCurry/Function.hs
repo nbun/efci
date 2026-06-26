@@ -2,6 +2,7 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
@@ -12,7 +13,6 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE DeriveTraversable #-}
 
 module Effect.FlatCurry.Function (
     apply,
@@ -43,10 +43,10 @@ import Effect.General.Error
 import Effect.General.Memoization
 import Effect.General.ND
 import Effect.General.State
+import Forwarding
 import Free
 import Signature
 import Type
-import Forwarding
 
 type Functions sig sigs sigl a =
     ( '[Term, Err, IOAction, ConstraintStore, Renaming, ND] :.: sig
@@ -61,7 +61,7 @@ fun
     => QName
     -> Args m a
     -> m a
-fun qn args = 
+fun qn args =
     logCallWith (fst qn ++ "." ++ snd qn) False >> do
         newRenamingScope qn
         apply (getBody qn) args
@@ -177,17 +177,14 @@ callExternal f args =
             ("divInt", [px, py]) -> arithInt div px py
             ("modInt", [px, py]) -> arithInt mod px py
             ("remInt", [px, py]) -> arithInt rem px py
-
             ("eqInt", [px, py]) -> compInt (==) px py
             ("ltEqInt", [px, py]) -> compInt (<=) px py
             ("eqFloat", [px, py]) -> compFloat (==) px py
             ("ltEqFloat", [px, py]) -> compFloat (<=) px py
-
             ("plusFloat", [px, py]) -> arithFloat (+) px py
             ("minusFloat", [px, py]) -> arithFloat (-) px py
             ("timesFloat", [px, py]) -> arithFloat (*) px py
             ("divFloat", [px, py]) -> arithFloat (/) px py
-
             ("negateFloat", [px]) -> arithFloat2Float negate px
             ("logFloat", [px]) -> arithFloat2Float log px
             ("expFloat", [px]) -> arithFloat2Float exp px
@@ -206,17 +203,13 @@ callExternal f args =
             ("atanhFloat", [px]) -> arithFloat2Float atanh px
             ("truncateFloat", [px]) -> arithFloat2Int truncate px
             ("roundFloat", [px]) -> arithFloat2Int round px
-
             ("intToFloat", [px]) -> arithInt2Float fromInteger px
-
             ("eqChar", [px, py]) -> compChar (==) px py
             ("ltEqChar", [px, py]) -> compChar (<=) px py
             ("ord", [px]) -> ordChar px
             ("chr", [px]) -> chrChar px
-
-            
             ("returnIO", [px]) -> returnIO px
-            ("bindIO"
+            ( "bindIO"
                 , [px, pf]
                 ) -> bindIO px pf
             ("getChar", []) -> getCharIO
@@ -224,22 +217,18 @@ callExternal f args =
             ("prim_writeFile", [pfp, ps]) -> writeFileIO pfp (normalform ps)
             ("prim_appendFile", [pfp, ps]) -> appendFileIO pfp (normalform ps)
             ("prim_readFile", [pfp]) -> readFileIO pfp
-            
             ("ensureNotFree", [p]) -> eval2HNF p >> p
             ("$##", [pf, px]) -> apply pf (single $ normalform px)
             ("prim_error", [p]) -> err p
             ("=:=", [_, px, py]) -> unify px py
-
             ("prim_showStringLiteral", [ps]) -> ps
             ("prim_showCharLiteral", [pc]) -> showCharLiteral pc
             ("prim_showIntLiteral", [p]) -> showIntLiteral p
             ("prim_showFloatLiteral", [pf]) -> showFloatLiteral pf
-
             ("prim_readCharLiteral", [ps]) -> readCharLiteral ps
             ("prim_readIntLiteral", [ps]) -> readIntLiteral ps
             ("prim_readFloatLiteral", [ps]) -> readFloatLiteral ps
             ("prim_readStringLiteral", [ps]) -> readStringLiteral ps
-
             _ ->
                 error $
                     "Missing definition for "
@@ -247,13 +236,15 @@ callExternal f args =
                         ++ " with arity "
                         ++ show (length args')
 
-returnIO :: (EffectCons m sig sigs sigl Id, Partial :<: sigs, Thunking a :<<<<: sigl, Renaming :<: sig) 
-          => m a -> m a
+returnIO
+    :: (EffectCons m sig sigs sigl Id, Partial :<: sigs, Thunking a :<<<<: sigl, Renaming :<: sig)
+    => m a -> m a
 returnIO = lambda []
 {-# INLINE returnIO #-}
 
-bindIO :: (EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl, Functions sig sigs sigl a) 
-          => m a -> m a -> m a
+bindIO
+    :: (EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl, Functions sig sigs sigl a)
+    => m a -> m a -> m a
 bindIO px pf = eval2HNF px >> apply pf (single (unlambda px))
 {-# INLINE bindIO #-}
 
@@ -280,7 +271,7 @@ instance LCarrier ClosureL Closure where
 instance Carrier PC Closure
 instance Forward 'Outer PC ClosureL
 
-algP :: (Monad m, LCarrier cL Closure, TermAlgebra m (Sig sig sigs sigl (cL l)), Pointed m  ) => Partial (m (Closure (m (Closure a)))) -> m (Closure a)
+algP :: (Monad m, LCarrier cL Closure, TermAlgebra m (Sig sig sigs sigl (cL l)), Pointed m) => Partial (m (Closure (m (Closure a)))) -> m (Closure a)
 algP (PartCall qn combtype args) = return $ Closure qn combtype args
 algP (Apply p k) = do
     clsr <- p
@@ -338,7 +329,7 @@ unify
     -> m a
 unify e1 e2 =
     logPrimCall
-        >> injectS (Match (map (fmap return) [e1,e2]) (return . cnt))
+        >> injectS (Match (map (fmap return) [e1, e2]) (return . cnt))
   where
     cnt :: [Value ()] -> m a
     cnt [HNF qn1 args1, HNF qn2 args2]

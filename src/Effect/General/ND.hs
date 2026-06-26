@@ -1,5 +1,6 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -9,11 +10,10 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RoleAnnotations #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE DeriveFunctor #-}
-{-# LANGUAGE TypeApplications #-}
 
 module Effect.General.ND (
     choose,
@@ -28,19 +28,19 @@ module Effect.General.ND (
 ) where
 
 import Effect.General.State (EffectCons, logPrimCall)
+import Forwarding
 import Free
 import GHC.Conc
 import Signature
-import Forwarding
 
 data ND a = Fail | Or a a
 
 instance Functor ND where
     fmap _ Fail = Fail
-    fmap f (Or l r) = 
+    fmap f (Or l r) =
         let l' = f l
             r' = f r
-         in r' `par` l' `pseq` Or l' r'
+        in  r' `par` l' `pseq` Or l' r'
     {-# INLINE fmap #-}
 
 (?)
@@ -100,7 +100,7 @@ newtype NDC m a = NDC {unNDC :: m [a]} deriving (Functor)
 instance LCarrier ListL [] where
     concatM [] = pure []
     concatM [x] = x
-    concatM (x:xs) = liftA2 (++) x (concatM xs)
+    concatM (x : xs) = liftA2 (++) x (concatM xs)
 
 instance Carrier NDC []
 instance Forward 'Outer NDC ListL

@@ -32,7 +32,7 @@ haddock-style-module: null
 let-style: auto
 
 # How to align the 'in' keyword with respect to the 'let' keyword (choices: left-align, right-align, or no-space)
-in-style: right-align
+in-style: left-align
 
 # Whether to put parentheses around a single constraint (choices: auto, always, or never)
 single-constraint-parens: always

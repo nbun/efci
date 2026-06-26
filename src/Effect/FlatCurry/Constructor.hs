@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
@@ -9,7 +10,6 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE DeriveTraversable #-}
 
 module Effect.FlatCurry.Constructor (
     Match (..),
@@ -55,6 +55,7 @@ module Effect.FlatCurry.Constructor (
 import Control.Monad (void, (>=>))
 import Curry.FlatCurry.Annotated.Type (Literal (..))
 import Curry.FlatCurry.Type (QName)
+import Data.Char (chr, ord)
 import Data.Functor ((<&>))
 import Data.Maybe (mapMaybe)
 import Effect.FlatCurry.Let
@@ -62,12 +63,11 @@ import Effect.General.Error (Err (..))
 import Effect.General.Memoization
 import Effect.General.ND (ND, choose, failed)
 import Effect.General.State
+import Forwarding
 import Free
+import GHC.Num (integerFromInt)
 import Signature
 import Type
-import Data.Char (ord, chr)
-import GHC.Num (integerFromInt)
-import Forwarding
 
 data Term a
     = TCons QName [Ptr]
@@ -171,10 +171,10 @@ match v ps =
 
 val2prog :: (EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl, Term :<: sig, ConstraintStore :<: sig, Renaming :<: sig) => Value () -> m a
 val2prog (NF qn args) = cons qn (Progs $ map val2prog args)
-val2prog (HNF qn ptrs)  = cons qn (Thunks ptrs)
-val2prog (Lit l)        = lit l
-val2prog (Free i)       = fvar i
-val2prog (ValOther ())   = error "val2prog: ValOther () encountered"
+val2prog (HNF qn ptrs) = cons qn (Thunks ptrs)
+val2prog (Lit l) = lit l
+val2prog (Free i) = fvar i
+val2prog (ValOther ()) = error "val2prog: ValOther () encountered"
 
 data Value a
     = NF QName [Value a]
@@ -230,7 +230,7 @@ instance LCarrier ValueL Value where
 instance Carrier CC Value
 instance Forward 'Outer CC ValueL
 
-algCa :: Monad m => Term (m (Value a)) -> m (Value a)
+algCa :: (Monad m) => Term (m (Value a)) -> m (Value a)
 algCa (TCons qn args) = return (HNF qn args)
 algCa (TLit l) = return (Lit l)
 algCa (TFree i) = return (Free i)
@@ -401,7 +401,8 @@ fvar i =
 
 --------
 
-compFloat :: ( Term :<: sig
+compFloat
+    :: ( Term :<: sig
        , Thunking v :<<<<: sigl
        , Term :<: sig
        , Match :<: sigs
@@ -464,7 +465,6 @@ arithInt2Float op x = logPrimCall >> injectS (Match [fmap return x] (return . f)
     f vs = externalError vs
 {-# INLINE arithInt2Float #-}
 
-
 showCharLiteral
     :: (Term :<: sig, Match :<: sigs, EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl)
     => m a
@@ -501,8 +501,9 @@ readCharLiteral
     -> m a
 readCharLiteral x = logPrimCall >> injectS (Match [fmap return x] (return . f))
   where
-    f [r] = let res = read (val2str r)
-            in list2prog $ map (\(c, rest) -> cons ("Prelude", "(,)") (Progs [lit (Charc c), str2prog rest])) res
+    f [r] =
+        let res = read (val2str r)
+        in  list2prog $ map (\(c, rest) -> cons ("Prelude", "(,)") (Progs [lit (Charc c), str2prog rest])) res
     f vs = externalError vs
 {-# INLINE readCharLiteral #-}
 
@@ -512,8 +513,9 @@ readIntLiteral
     -> m a
 readIntLiteral x = logPrimCall >> injectS (Match [fmap return x] (return . f))
   where
-    f [r] = let res = read (val2str r)
-            in list2prog $ map (\(i, rest) -> cons ("Prelude", "(,)") (Progs [lit (Intc i), str2prog rest])) res
+    f [r] =
+        let res = read (val2str r)
+        in  list2prog $ map (\(i, rest) -> cons ("Prelude", "(,)") (Progs [lit (Intc i), str2prog rest])) res
     f vs = externalError vs
 {-# INLINE readIntLiteral #-}
 
@@ -523,8 +525,9 @@ readFloatLiteral
     -> m a
 readFloatLiteral x = logPrimCall >> injectS (Match [fmap return x] (return . f))
   where
-    f [r] = let res = read (val2str r)
-            in list2prog $ map (\(fl, rest) -> cons ("Prelude", "(,)") (Progs [lit (Floatc fl), str2prog rest])) res
+    f [r] =
+        let res = read (val2str r)
+        in  list2prog $ map (\(fl, rest) -> cons ("Prelude", "(,)") (Progs [lit (Floatc fl), str2prog rest])) res
     f vs = externalError vs
 {-# INLINE readFloatLiteral #-}
 

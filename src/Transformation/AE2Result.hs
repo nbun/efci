@@ -2,14 +2,14 @@
 
 module Transformation.AE2Result (Result (..), pretty, declutter, withoutBindings) where
 
-import Effect.General.State
-import Effect.General.Error
-import Effect.FlatCurry.Constructor
-import Effect.FlatCurry.Function
 import Curry.FlatCurry.Annotated.Type hiding (CombType)
-import Type
 import Data.List (intercalate)
 import qualified Data.Map as Map
+import Effect.FlatCurry.Constructor
+import Effect.FlatCurry.Function
+import Effect.General.Error
+import Effect.General.State
+import Type
 
 declutter :: (Show a) => ([TraceInfo], Error [(Constraints, Value (Closure a))]) -> ([TraceInfo], [Result])
 declutter (ti, Error s) = (ti, [RError s])

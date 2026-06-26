@@ -16,9 +16,9 @@
 module Effect.General.Reader (ask, runReaderC) where
 
 import Effect.General.State (EffectCons, logPrimCall)
+import Forwarding
 import Free
 import Signature
-import Forwarding
 
 newtype ReaderF tag r a = Ask (r -> a)
     deriving (Functor)
@@ -42,8 +42,8 @@ runReaderC r p = unRC (runCod var p) r
 {-# INLINE runReaderC #-}
 
 -- hReader
-    -- :: Prog (Sig (ReaderF tag r :+: sig) sigs sigl l) a
-    -- -> (r -> Prog (Sig sig sigs sigl l) a)
+-- :: Prog (Sig (ReaderF tag r :+: sig) sigs sigl l) a
+-- -> (r -> Prog (Sig sig sigs sigl l) a)
 -- hReader = unRC . fold point con
 
 instance ReaderCarrier (RC tag r) r

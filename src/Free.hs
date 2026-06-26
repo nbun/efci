@@ -35,6 +35,7 @@ data Prog k a where
     Call :: k (Prog k) (Prog k a) -> Prog k a
 
 deriving instance (Show (k (Prog k) (Prog k a)), Show a) => Show (Prog k a)
+
 -- deriving instance Functor (k (Prog k)) => Functor (Prog k)
 
 instance (forall f. (Functor f) => Functor (k f)) => Functor (Prog k) where
@@ -155,7 +156,7 @@ data SmartProg k a where
     SmartCall :: k (SmartProg k) (SmartProg k a) -> SmartProg k a
     SmartBind :: SmartProg k a -> (a -> SmartProg k b) -> SmartProg k b
 
-deriving instance Functor (k (SmartProg k)) =>  Functor (SmartProg k)
+deriving instance (Functor (k (SmartProg k))) => Functor (SmartProg k)
 
 instance (HFunctor k) => Applicative (SmartProg k) where
     pure = SmartReturn
@@ -191,4 +192,4 @@ instance (HFunctor sig) => TermAlgebra (SmartProg sig) sig where
         _ -> Nothing
     {-# INLINE peek #-}
 
-instance (HFunctor k) => Pointed (SmartProg k) where
+instance (HFunctor k) => Pointed (SmartProg k)

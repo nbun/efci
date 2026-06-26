@@ -38,10 +38,10 @@ module Forwarding (
     VoidL,
 ) where
 
+import Control.Monad (join)
 import Data.Coerce
 import Data.Kind (Type)
 import Free
-import Control.Monad (join)
 import Signature
 import Unsafe.Coerce (unsafeCoerce)
 
@@ -95,14 +95,14 @@ class LCarrier cL f | cL -> f where
         :: (TermMonad m (Sig sig sigs sigl (cL l)))
         => f (m (f a))
         -> m (f a)
-    default concatM :: (TermMonad m (Sig sig sigs sigl (cL l)), Traversable f, Monad f)
+    default concatM
+        :: (TermMonad m (Sig sig sigs sigl (cL l)), Traversable f, Monad f)
         => f (m (f a))
         -> m (f a)
     {-# INLINE concatM #-}
     concatM = fmap join . sequence
 
 {-# RULES "fmapcc/coerce" fmap coerce = unsafeCoerce #-}
-
 
 type family StratApply (strat :: Strat) (l :: Type -> Type) (ll :: (Type -> Type) -> Type -> Type) :: Type -> Type where
     StratApply 'Outer l ll = ll l
@@ -114,7 +114,6 @@ data Strat = Outer | Reader | State
 class (DerivingStrat strat c ll) => Forward (strat :: Strat) c ll | c -> strat ll
 
 class DerivingStrat strat c ll where
-
     dafwd
         :: (TermMonad m (Sig sig sigs sigl (StratApply strat l ll)))
         => Algebraic sig (c m) (c m a) -> c m a

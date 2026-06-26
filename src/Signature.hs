@@ -130,7 +130,7 @@ instance {-# OVERLAPPABLE #-} (sig :<<<<: sig2) => sig :<<<<: (sig1 :+++: sig2) 
 data LVoid p c deriving (Functor)
 
 data Sig sig sigs sigl l f a = A (Algebraic sig f a) | S (Scoped sigs f a) | L (Latent sigl l f a)
-  deriving (Functor)
+    deriving (Functor)
 
 injectS :: forall sig sigs sigl l m a eff. (eff :<: sigs, TermMonad m (Sig sig sigs sigl l), Functor eff) => eff (m (m a)) -> m a
 injectS = con . S . Enter . inj

@@ -58,16 +58,16 @@ module Effect.General.State (
 
 import Curry.FlatCurry.Annotated.Type (Literal, QName, VarIndex)
 import Data.Kind (Type)
-import Data.List (sortBy, partition)
+import Data.List (partition, sortBy)
 import qualified Data.Map as Map
 import Debug (tracingActive)
+import Forwarding
 import Free
 import GHC.Stack (callStack, getCallStack)
 import GHC.Types.Unique
 import GHC.Types.Unique.Supply
 import Signature
 import Type (Ptr (..), mkPtr)
-import Forwarding
 
 data StateF (tag :: Type) s a
     = Get (s -> a)
@@ -158,14 +158,14 @@ rename vs =
 
 renameFromSupply :: Maybe QName -> [VarIndex] -> UniqSupply -> ([Ptr], UniqSupply)
 renameFromSupply _ [] sup = ([], sup)
-renameFromSupply mqn (v:vs) sup =
+renameFromSupply mqn (v : vs) sup =
     let (!u, sup') = takeUniqFromSupply sup
         !i = fromIntegral (getKey u)
         (is, sup'') = renameFromSupply mqn vs sup'
         loc = case mqn of
-                Just (mdl, fn) -> mdl ++ "." ++ fn ++ " " ++ show v
-                Nothing -> show v
-     in (mkPtr i loc : is, sup'')
+            Just (mdl, fn) -> mdl ++ "." ++ fn ++ " " ++ show v
+            Nothing -> show v
+    in  (mkPtr i loc : is, sup'')
 
 runState
     :: forall tag m sig sigs sigl l s a
@@ -276,11 +276,12 @@ type ConstraintStore = StateF CStore Constraints
 
 -- Tracing
 data TraceInfo = TI {opName :: String, details :: String, primOp :: Bool}
-  deriving (Eq, Ord, Show)
+    deriving (Eq, Ord, Show)
 
 prettyTI :: TraceInfo -> String
-prettyTI (TI op dtls _) | dtls == "" = op
-                        | otherwise = op ++ " (" ++ dtls ++ ")"
+prettyTI (TI op dtls _)
+    | dtls == "" = op
+    | otherwise = op ++ " (" ++ dtls ++ ")"
 
 data Trace
 
@@ -294,8 +295,8 @@ type EffectCons m sig sigs sigl l = (TermMonad m (Sig sig sigs sigl l), Tracing 
 logPrimCall :: (EffectCons m sig sigs sigl l) => m ()
 logPrimCall
     | tracingActive = case getCallStack callStack of
-                        (_ : (name, _) : _)  -> modifyWithoutLog (TI name "" True :)
-                        _ -> return ()
+        (_ : (name, _) : _) -> modifyWithoutLog (TI name "" True :)
+        _ -> return ()
     | otherwise = return ()
   where
     modifyWithoutLog f = injectA (Modify @Trace f (return ()))
@@ -304,8 +305,8 @@ logPrimCall
 logCall :: (EffectCons m sig sigs sigl l) => m ()
 logCall
     | tracingActive = case getCallStack callStack of
-                        (_ : (name, _) : _)  -> modifyWithoutLog (TI name "" False :)
-                        _ -> return ()
+        (_ : (name, _) : _) -> modifyWithoutLog (TI name "" False :)
+        _ -> return ()
     | otherwise = return ()
   where
     modifyWithoutLog f = injectA (Modify @Trace f (return ()))
@@ -314,8 +315,8 @@ logCall
 logCallWith :: (EffectCons m sig sigs sigl l) => String -> Bool -> m ()
 logCallWith s prim
     | tracingActive = case getCallStack callStack of
-                        (_ : (name, _) : _)  -> modifyWithoutLog (TI name s prim :)
-                        _ -> return ()
+        (_ : (name, _) : _) -> modifyWithoutLog (TI name s prim :)
+        _ -> return ()
     | otherwise = return ()
   where
     modifyWithoutLog f = injectA (Modify @Trace f (return ()))

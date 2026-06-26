@@ -46,16 +46,16 @@ import Control.Monad.Primitive
 import qualified Data.IntMap.Strict as IntMap
 import Data.Kind (Type)
 import Data.List (sortBy)
+import Data.Maybe (fromJust, isJust)
 import Debug (ctrace, strace)
 import Effect.General.State (EffectCons, StateL (..), logPrimCall)
+import Forwarding
 import GHC.Types.Unique.Supply
 import GHC.Weak
 import Signature
 import System.IO.Unsafe (unsafePerformIO)
 import Type
 import Unsafe.Coerce (unsafeCoerce)
-import Data.Maybe (isJust, fromJust)
-import Forwarding
 
 data Thunking v :: Type -> (Type -> Type) -> Type where
     Thunk :: Ptr -> Thunking v () (OneSub v)
@@ -88,8 +88,8 @@ store
     -> m v
     -> m Ptr
 store loc t =
-  let res = logPrimCall >> injectL (Store loc) (Id ()) (\One _ -> fmap Id t) (return . unId)
-  in inspect t res return
+    let res = logPrimCall >> injectL (Store loc) (Id ()) (\One _ -> fmap Id t) (return . unId)
+    in  inspect t res return
 {-# INLINE store #-}
 
 thunk
@@ -99,21 +99,22 @@ thunk
     -> m v
     -> m ()
 thunk ptr t =
-  let res = logPrimCall >> injectL (Thunk ptr) (Id ()) (\One _ -> fmap Id t) ((return . unId) :: Id () -> m ())
-  in inspect t res (\ptr' -> redirect @v (ptr, ptr'))
+    let res = logPrimCall >> injectL (Thunk ptr) (Id ()) (\One _ -> fmap Id t) ((return . unId) :: Id () -> m ())
+    in  inspect t res (\ptr' -> redirect @v (ptr, ptr'))
 {-# INLINE thunk #-}
 
-inspect :: forall m sig sigs sigl v a
+inspect
+    :: forall m sig sigs sigl v a
      . (EffectCons m sig sigs sigl Id, Thunking v :<<<<: sigl)
     => m v -> m a -> (Ptr -> m a) -> m a
 inspect p new recycle = case peek p of
-                Nothing -> new
-                Just sig -> case sig of
-                    A (Algebraic _)   -> new
-                    S (Enter _)       -> new
-                    L (Node op _ _ _) -> case prj3 op of
-                        Just (Force _ ptr' :: Thunking v p c) -> recycle ptr'
-                        _ -> new
+    Nothing -> new
+    Just sig -> case sig of
+        A (Algebraic _) -> new
+        S (Enter _) -> new
+        L (Node op _ _ _) -> case prj3 op of
+            Just (Force _ ptr' :: Thunking v p c) -> recycle ptr'
+            _ -> new
 {-# INLINE inspect #-}
 
 force :: (EffectCons m sig sigs sigl Id, Thunking v :<<<<: sigl) => Ptr -> m v
@@ -164,12 +165,12 @@ algLazy
 algLazy (Node op l st' k') = MC $ \ts@(TS sup th) ->
     let k = unMC . k'
         st c' l' = unMC $ st' c' l'
-     in case op of
+    in  case op of
             Thunk ptr -> k l (TS sup (addEntry ptr (Thunked (MC . st One)) th))
             Store loc ->
                 let (!fresh, sup') = freshPtr sup loc
                     th' = if ptrKey fresh `mod` 20000 == 0 then purge th else th
-                 in k (fresh <$ l) (TS sup' (addEntry fresh (Thunked (MC . st One)) th'))
+                in  k (fresh <$ l) (TS sup' (addEntry fresh (Thunked (MC . st One)) th'))
             Eval -> st One l ts >> k l ts
             Force delete p -> fetch p
               where
@@ -178,8 +179,9 @@ algLazy (Node op l st' k') = MC $ \ts@(TS sup th) ->
                         (TS sup' th', lv) <- unMC (t l) (if delete then TS sup (removeEntry ptr th) else ts)
                         let th'' = if delete then removeEntry ptr th' else addEntry ptr (Evaluated lv) th'
                         k lv (TS sup' th'')
-                    Evaluated lv -> let th' = if delete then removeEntry ptr th else th
-                                    in k lv (TS sup th')
+                    Evaluated lv ->
+                        let th' = if delete then removeEntry ptr th else th
+                        in  k lv (TS sup th')
                     Redirected p' -> fetch p'
             Redirect (p, p') -> do
                 let skipRedirects th' ptr = case lookupEntry ptr th' of
@@ -187,8 +189,7 @@ algLazy (Node op l st' k') = MC $ \ts@(TS sup th) ->
                         _ -> ptr
                 k l (TS sup (addEntry p (Redirected (skipRedirects th p')) th))
             -- DumpMemory -> htrace (showTS ts) $ k l ts
-            DumpMemory ->  unsafePerformIO (putStrLn (showTS ts)) `seq` k l ts
-
+            DumpMemory -> unsafePerformIO (putStrLn (showTS ts)) `seq` k l ts
 
 instance (Functor l, EffectMonad m sig sigs sigl (StateL (ThunkStore l v) l), Show (l v)) => TermAlgebra (MC l v m) (Sig sig sigs (Thunking v :+++: sigl) l) where
     con (A op) = afwd op
@@ -269,7 +270,7 @@ showTS (TS _ im) =
         evls = filter (isEvaluated . snd . snd) xs
         thnks = filter (isThunked . snd . snd) xs
         rdrs = filter (isRedirected . snd . snd) xs
-     in concat
+    in  concat
             ( sortBy
                 cmp
                 (map prettyVal xs)
