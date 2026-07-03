@@ -1,8 +1,15 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE TypeApplications #-}
 
+{- | Main application module
+
+This module provides the main entry point and REPL interface for the
+Curry interpreter. It handles loading Curry programs, executing them
+with different optimization modes, and provides an interactive environment.
+-}
 module App (main, execute, defaultToolOpts, loadProg, ToolOpts (..), Mode (..), fp2hs, withoutBindings) where
 
+import Control.Concurrent (setNumCapabilities)
 import Control.Exception (SomeException, try)
 import Control.Monad (unless, when)
 import Curry.Base.Ident (ModuleIdent, moduleName)
@@ -48,10 +55,15 @@ import Data.List (intercalate, sort, (\\))
 import Data.Map (empty, fromList)
 import Data.Maybe (catMaybes)
 import Debug (tracingActive)
+import Effect.General.Error (Error (..))
 import Effect.General.State (TraceInfo, prettyTI, statistics)
 import GHC.GHCi.Helpers (flushAll)
+import GHC.Stats
+import GHC.Utils.Misc (capitalise)
+import InterpFL (runInterpFL)
 import Paths_effective_curry_interpreter (getDataFileName)
 import Pipeline
+import System.Clock (Clock (..), TimeSpec (nsec, sec), getTime)
 import System.Directory (getCurrentDirectory, removeFile)
 import System.FilePath (
     addTrailingPathSeparator,
@@ -61,32 +73,41 @@ import System.FilePath (
     takeDirectory,
  )
 import System.Timeout (timeout)
+import Transformation.AE2Result
 import Transformation.FCY2AE (fcyProg2ae, fcyRunner2ae)
 import Type (fdclBdy, reqFuncs, withoutTDecls)
 
--- import Monolith (runMonolithic)
+{- | Execution mode for the interpreter.
 
-import Control.Concurrent (setNumCapabilities)
-import Effect.General.Error (Error (..))
-import GHC.Stats
-import GHC.Utils.Misc (capitalise)
-import InterpFL (runInterpFL)
-import System.Clock (Clock (..), TimeSpec (nsec, sec), getTime)
-import Transformation.AE2Result
-
+* 'Tree': Uses tree-based representation
+* 'Codensity': Uses codensity monad representation
+* 'Monolithic': Uses monolithic implementation via InterpFL
+* 'Smart': Uses smart view representation
+-}
 data Mode = Tree | Codensity | Monolithic | Smart deriving (Show)
 
+-- | Rotate to the next execution mode in the cycle: Tree -> Codensity -> Monolithic -> Smart -> Tree
 rotateMode :: Mode -> Mode
 rotateMode Tree = Codensity
 rotateMode Codensity = Monolithic
 rotateMode Monolithic = Smart
 rotateMode Smart = Tree
 
+{- | Tool options for the interpreter REPL
+
+* 'showFlatCurryExpr': Whether to display FlatCurry expressions
+* 'mode': The current execution mode
+* 'time': Whether to display execution time
+-}
 data ToolOpts = ToolOpts {showFlatCurryExpr :: Bool, mode :: Mode, time :: Bool} deriving (Show)
 
+-- | Default tool options: FlatCurry expressions hidden, smart mode, timing enabled
 defaultToolOpts :: ToolOpts
 defaultToolOpts = ToolOpts{showFlatCurryExpr = False, mode = Smart, time = True}
 
+{- | Main entry point for the Curry interpreter.
+Sets up the execution environment and starts the REPL loop.
+-}
 main :: IO ()
 main = do
     setNumCapabilities 16
@@ -96,6 +117,7 @@ main = do
             (f : _) -> f
     loop defaultToolOpts file
 
+-- | REPL loop that reads user input and executes commands or expressions
 loop :: ToolOpts -> FilePath -> IO ()
 loop topts file = do
     putStr "λ> "
@@ -127,6 +149,11 @@ loop topts file = do
             mapM_ (putStrLn . pretty) res
             loop topts file
 
+{- | Execute a Curry expression with the given tool options
+
+Takes either a file path and query string, or preloaded programs and runner.
+Returns a list of results after execution with timeout handling.
+-}
 execute
     :: ToolOpts -> Either (FilePath, String) ([AProg TypeExpr], AFuncDecl TypeExpr) -> IO [Result]
 execute topts preloaded = do
@@ -142,11 +169,19 @@ execute topts preloaded = do
         Right (Just res) -> return res
         Right Nothing -> print "Timeout!" >> return []
 
+-- | Retrieve the directory of the Prelude.curry file
 getPreludeDir :: IO FilePath
 getPreludeDir = do
     fn <- getDataFileName "Prelude.curry"
     return (normalise (addTrailingPathSeparator (takeDirectory fn)))
 
+{- | Construct 'Options' for the front end
+
+We use KiCS2 defintions from the Prelude and disable missing signatures
+warnings as our @main@ function has no type signature. Furthermore,
+we instruct the front end to complete pattern matching with explicit
+failures if branches are missing in the source program.
+-}
 buildOpts :: Bool -> [FilePath] -> Options
 buildOpts warn dirs =
     defaultOptions
@@ -173,6 +208,11 @@ buildOpts warn dirs =
             (optOptimizations defaultOptions){optAddFailed = True}
         }
 
+{- | Load a Curry program from a file
+
+Creates a temporary Run module containing the query, compiles it to FlatCurry,
+and returns either an error message or the loaded programs and runner function.
+-}
 loadProg :: ToolOpts -> FilePath -> String -> IO (Either String ([AProg TypeExpr], AFuncDecl TypeExpr))
 loadProg topts file query = do
     let runmod = "Run"
@@ -200,10 +240,15 @@ loadProg topts file query = do
             let progs' = map withoutTDecls (reqFuncs progs (fdclBdy fcyrunner))
             return $ Right (progs', fcyrunner)
 
+{- | Run a main definition
+
+Expects a function declaration without parameters. Its body is evaluated
+using the provided programs and 'ToolOpts'. Besides measuring execution
+time, the function also prints RTS statistics (if enabled) and tracing
+statistics (if enabled).
+-}
 run :: ToolOpts -> [AProg TypeExpr] -> AFuncDecl TypeExpr -> IO [Result]
 run topts progs fcyrunner = do
-    -- writeFile "Progs.hs" (show progs)
-    -- writeFile "Runner.hs" (show fcyrunner)
     start <- getTime Monotonic
     res <- case mode topts of
         Codensity -> do
@@ -222,7 +267,7 @@ run topts progs fcyrunner = do
             let aprogs' = map fcyProg2ae progs
                 runner = fcyRunner2ae (fdclRule fcyrunner)
             runSmartCurryEffects aprogs' runner
-    -- when (showFlatCurryExpr topts) $ print fcyrunner\
+    -- when (showFlatCurryExpr topts) $ print fcyrunner
     end <- getTime Monotonic
     when (time topts) (printTime start end)
     enabled <- getRTSStatsEnabled
@@ -234,6 +279,7 @@ run topts progs fcyrunner = do
     when tracingActive $ printStatistics ti
     return values
 
+-- | Print statistics about primitive and combined operations from trace info
 printStatistics :: [TraceInfo] -> IO ()
 printStatistics ti = do
     let (primStats, combStats) = statistics ti
@@ -250,12 +296,13 @@ printStatistics ti = do
     putStrLn ("Total (combined): " ++ show totalCombSum)
     putStrLn ("Total (all): " ++ show (totalCombSum + totalPrimSum))
 
+-- | Print execution time in seconds
 printTime :: TimeSpec -> TimeSpec -> IO ()
 printTime start end = do
-    -- let diff = fromIntegral (sec end - sec start) +  :: Float
     let diff = fromIntegral (sec end - sec start) + fromIntegral (nsec end - nsec start) / 1e9 :: Float
     putStrLn $ "Time: " ++ show diff ++ "s"
 
+-- | Generate a temporary Run module for executing expressions
 genRun :: Bool -> String -> String -> [String] -> String
 genRun dump name expr imports =
     unlines $
@@ -265,6 +312,7 @@ genRun dump name expr imports =
             -- ++ ["", "main :: IO ()", "main = print (" ++ expr ++ ")"]
             ++ ["", "main = " ++ expr]
 
+-- | Convert a file path to a Haskell module name
 fp2hs :: FilePath -> String
 fp2hs fp = case splitPath fp of
     [fn] -> capitalise $ dropExtension fn
@@ -273,9 +321,11 @@ fp2hs fp = case splitPath fp of
         let (ms, fn) = (map (filter (/= pathSeparator)) (init xs), last xs)
         in  intercalate "." (map capitalise ms) ++ "." ++ capitalise (dropExtension fn)
 
+-- | Retrieve the rule of a function declaration
 fdclRule :: AFuncDecl ann -> ARule ann
 fdclRule (AFunc _ _ _ _ r) = r
 
+-- | Find, load, and generate FlatCurry for a module and its dependencies
 genTAFCY :: Options -> String -> IO [AProg TypeExpr]
 genTAFCY opts s = do
     unless (isPrefix "Run" s) (putStrLn $ "Loading module " ++ s)
@@ -288,6 +338,7 @@ genTAFCY opts s = do
         Left errs -> error $ show errs
         Right deps -> makeCurry opts deps
 
+-- | Compile a single Curry module to FlatCurry
 compileModule :: Options -> ModuleIdent -> FilePath -> IO (AProg TypeExpr)
 compileModule opts m fn = do
     (res, warns) <- runCYIO $
@@ -295,7 +346,6 @@ compileModule opts m fn = do
             mdl <- loadAndCheckModule opts m fn
             mdl' <- expandExports opts mdl
             let qmdl' = qual mdl'
-            -- qmdl' <- dumpWith opts show pPrint DumpFlatCurry $ qual mdl'
             intf <- uncurry (exportInterface opts) qmdl'
             writeInterface opts (fst mdl') intf
             transModule opts qmdl'
@@ -307,7 +357,9 @@ compileModule opts m fn = do
             _ <- dumpWith opts show (pPrint . genFlatCurry) DumpFlatCurry (env, res')
             return res'
 
--- | Compiles the given source modules, which must be in topological order.
+{- | Compiles the given source modules, which must be in topological order.
+Processes each module with pragmas, loads dependencies, and generates FlatCurry.
+-}
 makeCurry :: Options -> [(ModuleIdent, Source)] -> IO [AProg TypeExpr]
 makeCurry opts srcs = mapM process' (zip [(1 :: Int) ..] srcs) <&> catMaybes
   where
@@ -317,18 +369,20 @@ makeCurry opts srcs = mapM process' (zip [(1 :: Int) ..] srcs) <&> catMaybes
         case res of
             Left errs -> error $ show errs
             Right opts' -> do
-                prog <- compileModule opts' m fn -- (adjustOptions (n == total) opts') m fn
+                prog <- compileModule opts' m fn
                 return (Just prog)
     process' (_, (m, _)) =
         putStrLn ("Skipping " ++ moduleName m)
             >> return Nothing
 
+-- | Check whether the first parameter is a prefix of the second
 isPrefix :: String -> String -> Bool
 isPrefix [] _ = True
 isPrefix (x : xs) (y : ys)
     | x == y = isPrefix xs ys
 isPrefix _ _ = False
 
+-- | Find the main function runner in a FlatCurry program
 findRunner :: AProg ann -> Either String (AFuncDecl ann)
 findRunner (AProg _ _ _ fdecls _) =
     case filter (\(AFunc (_, qn') _ _ _ _) -> "main" == qn') fdecls of
@@ -338,6 +392,7 @@ findRunner (AProg _ _ _ fdecls _) =
                 | arity == 0 -> Right f
                 | otherwise -> Left "Expression too general, please provide a (more specific) type."
 
+-- | Print a list of messages
 printMessages :: (Message -> Doc) -> [Message] -> IO ()
 printMessages msgType msgs =
     unless

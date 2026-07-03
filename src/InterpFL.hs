@@ -9,6 +9,13 @@
    and an environment to avoid substitution.  Extended to support free variables, narrowing,
    and non-determinism.  -}
 
+{- | A monolithic interpretation library for Curry
+
+This module contains the implementation of Andrew Tolmach and Sergio Antoy as presented in
+'A Monadic Semantics for Core Curry' (10.1016/S1571-0661(04)80691-1) with some performance-
+related additions. Furthermore, a translation function from FlatCurry to 'Core Curry' is
+provided.
+-}
 module InterpFL where
 
 import Control.Applicative (Alternative (..))
@@ -304,25 +311,39 @@ bfs (Forest ts) = concat (bfs' ts)
     merge xs [] = xs
     merge [] ys = ys
 
--- Translation to FlatCurry
+--- end of the interpretation library ---
 
+{- | Translation from FlatCurry to interpreter expression format
+
+Converts FlatCurry programs and function declarations to the simpler
+'Exp' format used by this interpreter.
+-}
 translate :: [AProg TypeExpr] -> AFuncDecl TypeExpr -> Exp
 translate progs fdecl =
     let funs = concat [fs | AProg _ _ _ fs _ <- progs]
-        funMap = Map.fromList $ (map (\fs@(AFunc qn _ _ _ _) -> (qn, fs))) funs
+        funMap = Map.fromList $ map (\fs@(AFunc qn _ _ _ _) -> (qn, fs)) funs
         expr = case fdecl of
             AFunc _ _ _ _ (ARule _ _ e) -> e
             _ -> error "External function not supported"
     in  translateExpr funMap expr
 
+{- | Function declaration map
+
+Maps qualified names to function declarations for translation.
+-}
 type FDeclMap = Map.Map QName (AFuncDecl TypeExpr)
 
+{- | Translate a function definition to an expression
+
+Converts a function declaration to a lambda expression.
+-}
 transDef :: FDeclMap -> QName -> Exp
 transDef funMap qn = case Map.lookup qn funMap of
     Just (AFunc _ _ _ _ (ARule _ params body)) ->
         foldr (\(v, _) acc -> Abs v acc) (translateExpr funMap body) params
     _ -> error ("Function not found: " ++ show qn)
 
+-- | Translate a FlatCurry expression to interpreter expression
 translateExpr :: FDeclMap -> AExpr TypeExpr -> Exp
 translateExpr funs e = case e of
     AVar _ v -> Var v
@@ -349,14 +370,17 @@ translateExpr funs e = case e of
     ACase _ _ e' brs -> Case (translateExpr funs e') (map (translateBranch funs) brs)
     ATyped _ e' _ -> translateExpr funs e'
 
+-- | Translate a branch expression (pattern + body) to interpreter format
 translateBranch :: FDeclMap -> ABranchExpr TypeExpr -> (Pattern, Exp)
 translateBranch funs (ABranch pat body) = (translatePat pat, translateExpr funs body)
 
+-- | Translate a pattern to interpreter format
 translatePat :: APattern TypeExpr -> Pattern
 translatePat (APattern _ (qn, _) vars) = CPat qn (map fst vars)
 translatePat (ALPattern _ (Intc i)) = LPat (fromInteger i)
 translatePat _ = error $ "unsupported pattern type"
 
+-- | Check if a qualified name is a primitive operation
 isPrimitive :: QName -> Bool
 isPrimitive (m, n) =
     m == "Prelude"
@@ -383,6 +407,11 @@ isPrimitive (m, n) =
                    , "remInt"
                    ]
 
+{- | Run the call-by-need interpreter on a FlatCurry program
+
+Translates the program to 'Exp' format, evaluates it using the heap-based
+interpreter, and returns the results using our 'FC.Value' type.
+-}
 runInterpFL :: [AProg TypeExpr] -> AFuncDecl TypeExpr -> IO [FC.Value (Closure ())]
 runInterpFL progs fdecl = do
     let expr = translate progs fdecl
@@ -394,6 +423,11 @@ runInterpFL progs fdecl = do
     let results = sols (action hempty)
     return (map fst results)
 
+{- | Normal form computation
+
+Converts interpreter values to our value representation, forcing evaluation
+of any remaining thunks and handling logic variables.
+-}
 nf :: Value -> M (FC.Value (Closure ()))
 nf (VInt i) = return (FC.Lit (Intc (toInteger i)))
 nf (VCapp c args) = do

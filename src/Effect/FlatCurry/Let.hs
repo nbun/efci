@@ -9,6 +9,12 @@
 {-# LANGUAGE TypeOperators #-}
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 
+{- |
+Local binding effect
+
+This module provides operations for creating and dereferencing
+local bindings with lazy evaluation semantics.
+-}
 module Effect.FlatCurry.Let (let', lvar) where
 
 import Effect.General.Memoization
@@ -16,17 +22,28 @@ import Effect.General.State
 import Signature
 import Type
 
+{- | Dereference a variable by pointer
+
+Returns the computation stored at the location defined by the 'Ptr' argument.
+-}
 lvar
-    :: (EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl)
+    :: (EffectCons m sig sigs sigl Id, Thunking a :<<: sigl)
     => Ptr
     -> m a
 lvar ptr = do
     logCall >> force ptr
 {-# INLINE lvar #-}
 
+{- | Create local bindings
+
+* Takes a list of pointers (the variables to bind)
+* Takes 'Args' containing the computations (or references) to bind
+* Takes a computation to execute in the extended environment
+* Returns the result of executing the computation
+-}
 let'
     :: forall m sig sigs sigl a
-     . (EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl)
+     . (EffectCons m sig sigs sigl Id, Thunking a :<<: sigl)
     => [Ptr]
     -> Args m a
     -> m a
@@ -37,18 +54,3 @@ let' vs args e =
         Progs ps -> mapM_ (uncurry thunk) (zip vs ps) >> e
         Thunks ptrs -> mapM_ (redirect @a) (zip vs ptrs) >> e
 {-# INLINE let' #-}
-
--- data Let' f a = forall x. Let' (f x) (f x -> a)
-
--- instance Functor (Let' f) where
--- fmap f (Let' x k) = Let' x (f . k)
--- {-# INLINE fmap #-}
-
--- instance HFunctor Let' where
--- hmap f (Let' x k) = error "Error: Let does not commute!" --Let' (f x) k
--- {-# INLINE hmap #-}
-
--- let'' :: forall m sig sigs sigl a. (EffectCons m sig sigs sigl Id, Let sig sigl a)
--- => m a
--- -> m (m a)
--- let'' px = Call (Let' px return)

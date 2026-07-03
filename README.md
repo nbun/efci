@@ -55,7 +55,6 @@ stack bench effective-curry-interpreter
             * [Error](src/Effect/General/Error.hs): (unexpected) error effect
             * [Memoization](src/Effect/General/Memoization.hs): lazy evaluation effect
             * [ND](src/Effect/General/ND.hs): non-determinism effect
-            * [Reader](src/Effect/General/Reader.hs): reader effect (currently unused in favor of declarations effect)
             * [State](src/Effect/General/State.hs): state effect
         * [Transformation](src/Transformation/): transformation functions
             * [AE2Result](src/Transformation/AE2Result.hs): transformation from effects to results
@@ -79,7 +78,7 @@ stack bench effective-curry-interpreter
 
 ## Historic releases
 
-Haskell'24 paper [Making a Curry Interpreter using Effects and Handlers](https://doi.org/10.1145/3677999.3678279).
+Haskell'24 paper [Making a Curry Interpreter using Effects and Handlers](https://doi.org/10.1145/3677999.3678279):
 
 * [4db98c2](https://github.com/nbun/efci/tree/4db98c2cd0f80b27fc2d4cac5f15109417e1b7d5) for the original interpreter
 * [1421632](https://github.com/nbun/efci/tree/1421632a166990b8369bdd7d12a46c6b8b9663c3) for an extended version featuring unification

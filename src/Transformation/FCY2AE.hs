@@ -15,6 +15,10 @@
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 {-# OPTIONS_GHC -Wno-unused-do-bind #-}
 
+{- | FlatCurry to effects transformation
+
+This module transforms FlatCurry programs to an effect-based representation.
+-}
 module Transformation.FCY2AE (CurryEffects, fcyProg2ae, fcyRunner2ae) where
 
 import Control.Monad (join, liftM2)
@@ -55,24 +59,56 @@ import Free
 import Signature
 import Type (AEFuncDecl (..), AEPattern (..), Args (..), Module (..), single)
 
-data VarKind
-    = CombVar
-    | LetVar
-    | FreeVar
-    | CaseVar
-    deriving (Show)
+{- | Algebraic effects for Curry interpretation
 
+Includes core effects: Term, Renaming, ConstraintStore, ND, Err, Trace, IO.
+-}
 type AEffects = '[Term, Renaming, ConstraintStore, ND, Err, StateF Trace [TraceInfo], IOAction]
+
+{- | Scoped effects for Curry interpretation
+
+Includes Partial application and Match effects.
+-}
 type SEffects = '[Partial, Match]
+
+{- | Latent effects for Curry interpretation
+
+Includes Declarations and Memoization effects.
+-}
 type LEffects v = DeclF v :+++: (Thunking v :+++: LVoid)
 
+{- | Complete Curry effects signature
+
+Combines algebraic, scoped, and latent effects with the 'Id' latent carrier.
+-}
 type CurryEffects v = Sig AEffects SEffects (LEffects v) Id
 
--- normalform = id
+{- | Transform a function rule to an effectful computation
+
+Takes a FlatCurry @main@ function rule and converts it to an effectful computation.
+External rules are not supported.
+-}
 fcyRunner2ae :: (TermMonad m (CurryEffects v)) => ARule TypeExpr -> m v
 fcyRunner2ae (AExternal _ _) = undefined
-fcyRunner2ae (ARule _ _ e) = unlambda $ normalform (join $ fcyExpr2ae [] e) -- normalform
+fcyRunner2ae (ARule _ _ e) = unlambda $ normalform (join $ fcyExpr2ae [] e)
 
+{- | Transform a FlatCurry expression to an effectful computation
+
+Main expression transformation function that handles:
+* Variables (with free variable detection)
+* Literals
+* Combinations (function calls, constructors, partial applications)
+* Let expressions
+* Free variables
+* Non-deterministic branching
+* Case expressions
+* Type annotations (ignored)
+
+Takes a list of free variable indices and transforms the expression to
+an effectful computation with a two layers. The purpose of the layers
+lies in providing the ability to rename variables independently of evaluating
+the actual computation.
+-}
 fcyExpr2ae
     :: forall m v
      . (TermMonad m (CurryEffects v))
@@ -109,8 +145,6 @@ fcyExpr2ae frees expr =
                     ConsPartCall i ->
                         return $
                             partial qn (Effect.FlatCurry.Function.ConsPartCall i) args'
-            -- _ -> error
-            -- \$ "FCY2AE.fcyExpr2ae: comb type not supported for " ++ show qn
             ALet _ bs e -> do
                 let ((vs, _), es) = first unzip (unzip bs)
                 vs' <- rename vs
@@ -140,11 +174,25 @@ fcyExpr2ae frees expr =
                 newPat _ (ALPattern _ l) = AELPattern l
             ATyped _ e _ -> rec e -- type annotations not required
 
+{- | Extract variable bindings from a branch expression
+
+Used during case expression transformation to identify which variables
+are bound by each pattern in the case alternatives.
+-}
 brVars :: ABranchExpr a -> [(VarIndex, a)]
 brVars (ABranch pat _) = case pat of
     ALPattern _ _ -> []
     APattern _ _ bs -> bs
 
+{- | Transform a complete FlatCurry program to a Module
+
+Creates a Module containing the transformed function declarations,
+type declarations, and operator declarations.
+
+* Transforms all function declarations using 'fcyFDecl2ae'
+* Creates maps for function and type declarations for efficient lookup
+* Preserves the original program structure (name, imports, operator declarations)
+-}
 fcyProg2ae :: (TermMonad m (CurryEffects v)) => AProg TypeExpr -> Module (m v)
 fcyProg2ae (AProg name imports tdecls fdecls opdecls) =
     let fdecls' = map fcyFDecl2ae fdecls
@@ -154,10 +202,20 @@ fcyProg2ae (AProg name imports tdecls fdecls opdecls) =
         tdeclmap = Map.fromList (map (\tdecl -> (typeName tdecl, tdecl)) tdecls)
     in  Module name imports tdeclmap fdeclmap opdecls
 
+{- | Transform a FlatCurry function declaration to an annotated effectful declaration
+
+Preserves the function name, arity, visibility, and type information
+while transforming the rule body using 'fcyRule2ae'.
+-}
 fcyFDecl2ae
     :: (TermMonad m (CurryEffects v)) => AFuncDecl TypeExpr -> AEFuncDecl (m v)
 fcyFDecl2ae (AFunc qn arity vis ty r) = AEFunc qn arity vis ty (fcyRule2ae r)
 
+{- | Transform a FlatCurry rule to an effectful computation
+
+* For ARule: renames the variables and creates a lambda abstraction with the transformed body
+* For AExternal: creates an external function reference
+-}
 fcyRule2ae :: (TermMonad m (CurryEffects v)) => ARule TypeExpr -> m v
 fcyRule2ae (ARule _ vars e) = do
     vs' <- rename (map fst vars)

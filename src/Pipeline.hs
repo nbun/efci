@@ -7,6 +7,16 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
+{- | Effect pipeline
+
+This module provides the main effect pipelines for executing Curry programs
+with different effect representations. It includes:
+
+* 'runCurryEffects': Tree-based interpretation pipeline
+* 'runCurryEffectsC': Codensity-based interpretation pipeline
+* 'runSmartCurryEffects': Smart interpretation pipeline
+* Result types and pretty-printing utilities
+-}
 module Pipeline (
     runCurryEffects,
     runCurryEffectsC,
@@ -32,6 +42,7 @@ import Transformation.AE2Result
 import Transformation.FCY2AE
 import Type (Module, Ptr (..))
 
+-- | Run Curry effects with tree-based representation
 runCurryEffects
     :: (Show a)
     => [Module (Prog (CurryEffects a) a)]
@@ -53,6 +64,7 @@ runCurryEffects ps e = do
                 . runDecl (Progs [])
     pipeline (initDecls ps >> e)
 
+-- | Run Curry effects with smart representation
 runSmartCurryEffects
     :: [Module (SmartProg (CurryEffects ()) ())]
     -> SmartProg (CurryEffects ()) ()
@@ -73,24 +85,34 @@ runSmartCurryEffects ps e = do
                 . runDeclSmart (Progs [])
     pipeline (initDecls ps >> e)
 
-type L a =
-    StateL
-        [TraceInfo]
-        ( ErrorL
-            ( ListL
-                ( StateL
-                    Constraints
-                    ( StateL
-                        RState
-                        ( StateL
-                            (ThunkStore (ValueL (ClosureL Id)) a)
-                            (ValueL (ClosureL Id))
-                        )
-                    )
-                )
-            )
-        )
+{- | Run Curry effects with 'Codensity' representation
 
+The type aliases 'L' and 'M' are necessary helper types, as type inference
+cannot derive them correctly.
+-}
+runCurryEffectsC
+    :: forall a
+     . (Show a)
+    => [Module ((M a) a)]
+    -> (M a) a
+    -> IO ([TraceInfo], Error [(Constraints, Value (Closure a))])
+runCurryEffectsC ps e = do
+    sup <- mkSplitUniqSupply 'a'
+    let (sup1, sup2) = splitUniqSupply sup
+        pipeline =
+            finish
+                . runStateC @Trace ([] :: [TraceInfo])
+                . runErrorC
+                . runNDC
+                . runStateC @CStore Map.empty
+                . runStateC' @Rename (initRenaming sup1)
+                . runLazyC sup2
+                . runConsC
+                . runPartialC
+                . runDeclC (Progs [])
+    unIOC (pipeline (initDecls ps >> e))
+
+-- | Type alias for the carrier stack
 type M a =
     Cod
         ( DC
@@ -192,28 +214,21 @@ type M a =
             )
         )
 
--- -- {-# SPECIALISE runCurryEffectsC :: [AEProg ((M ()) ())]
--- --                  -> (M ()) ()
--- --                  -> IO (Error [(Constraints, Value (Closure ()))]) #-}
-
-runCurryEffectsC
-    :: forall a
-     . (Show a)
-    => [Module ((M a) a)]
-    -> (M a) a
-    -> IO ([TraceInfo], Error [(Constraints, Value (Closure a))])
-runCurryEffectsC ps e = do
-    sup <- mkSplitUniqSupply 'a'
-    let (sup1, sup2) = splitUniqSupply sup
-        pipeline =
-            finish
-                . runStateC @Trace ([] :: [TraceInfo])
-                . runErrorC
-                . runNDC
-                . runStateC @CStore Map.empty
-                . runStateC' @Rename (initRenaming sup1)
-                . runLazyC sup2
-                . runConsC
-                . runPartialC
-                . runDeclC (Progs [])
-    unIOC (pipeline (initDecls ps >> e))
+-- | Type alias for the latent carrier stack
+type L a =
+    StateL
+        [TraceInfo]
+        ( ErrorL
+            ( ListL
+                ( StateL
+                    Constraints
+                    ( StateL
+                        RState
+                        ( StateL
+                            (ThunkStore (ValueL (ClosureL Id)) a)
+                            (ValueL (ClosureL Id))
+                        )
+                    )
+                )
+            )
+        )

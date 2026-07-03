@@ -1,7 +1,6 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -14,6 +13,16 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 
+{- | Function effect
+
+This module provides effect handlers for function application and
+lambda abstraction in Curry programs. It includes:
+
+* Partial applications and lambda abstractions
+* External function calls
+* Function calls
+* Semantic representations of closures
+-}
 module Effect.FlatCurry.Function (
     apply,
     fun,
@@ -48,13 +57,22 @@ import Free
 import Signature
 import Type
 
+{- | Constraint synonym for function effect requirements
+
+Defines the complete set of effects needed for function interpretation.
+-}
 type Functions sig sigs sigl a =
     ( '[Term, Err, IOAction, ConstraintStore, Renaming, ND] :.: sig
     , '[Partial, Match] :.: sigs
-    , Thunking a :<<<<: sigl
-    , DeclF a :<<<<: sigl
+    , Thunking a :<<: sigl
+    , DeclF a :<<: sigl
     )
 
+{- | Function call operation
+
+Looks up the function declaration by name and applies the function body
+to the provided arguments.
+-}
 fun
     :: forall sig sigs sigl m a
      . (EffectCons m sig sigs sigl Id, Functions sig sigs sigl a)
@@ -67,13 +85,23 @@ fun qn args =
         apply (getBody qn) args
 {-# INLINE fun #-}
 
--- partial functions --
+{- | Type for partial application information
 
+* 'FuncPartCall': Function call missing this many arguments
+* 'ConsPartCall': Constructor call missing this many arguments
+-}
 data CombType
     = FuncPartCall Int
     | ConsPartCall Int
     deriving (Show, Eq)
 
+{- | Partial application representation
+
+* 'PartCall': Partial call to a function/constructor with a list of pointers of already supplied arguments
+* 'Apply': Application of a functional value to an argument
+* 'Abs': Lambda abstraction
+* 'Ext': Call to an externally defined function
+-}
 data Partial a
     = PartCall QName CombType [Ptr]
     | Apply a (Closure () -> a)
@@ -81,6 +109,13 @@ data Partial a
     | Ext String
     deriving (Functor)
 
+{- | Closure representation for function values
+
+* 'Closure': Function closure with name, type, and arguments
+* 'Lambda': Lambda closure with list of bound references and a reference to the body
+* 'External': External function
+* 'Other': Semantic values of other effects
+-}
 data Closure a
     = Closure QName CombType [Ptr]
     | Lambda [Ptr] Ptr
@@ -106,17 +141,30 @@ instance Pointed Closure where
     point = Other
     {-# INLINE point #-}
 
+{- | Create a call to an externally defined function
+
+Used for functions defined within the run-time system.
+-}
 external :: (EffectCons m sig sigs sigl Id, Partial :<: sigs) => String -> m a
 external s = logPrimCall >> injectS (Ext s)
 
-lambda :: (EffectCons m sig sigs sigl Id, Partial :<: sigs, Thunking a :<<<<: sigl) => [Ptr] -> m a -> m a
+{- | Create a lambda abstraction
+
+Create a lambda from a list @vs@ of references bound within the body @e@.
+-}
+lambda :: (EffectCons m sig sigs sigl Id, Partial :<: sigs, Thunking a :<<: sigl) => [Ptr] -> m a -> m a
 lambda vs e =
     logPrimCall >> do
         ptr <- store "lambda" e
         injectS (Abs vs ptr)
 
+{- | Create a partial application
+
+Creates a partial call with the function name, combination type, and argument pointers.
+Used when not all arguments are available for a function/constructor call.
+-}
 partial
-    :: (EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl, Partial :<: sigs)
+    :: (EffectCons m sig sigs sigl Id, Thunking a :<<: sigl, Partial :<: sigs)
     => QName
     -> CombType
     -> [m a]
@@ -126,18 +174,33 @@ partial qn combtype args =
         ptrs <- mapM (store (fst qn ++ "." ++ snd qn ++ ".partial")) args
         injectS $ PartCall qn combtype ptrs
 
+-- | Get the number of missing arguments from a CombType
 missingArgs :: CombType -> Int
 missingArgs (FuncPartCall i) = i
 missingArgs (ConsPartCall i) = i
 
+-- | Decrement the number of missing arguments in a CombType
 decArgs :: CombType -> Int -> CombType
 decArgs (FuncPartCall i) n = FuncPartCall (i - n)
 decArgs (ConsPartCall i) n = ConsPartCall (i - n)
 
+{- | Unwrap a lambda abstraction
+
+Applies a lambda to an empty list of arguments. Used to remove the
+empty lambda abstraction created by 'returnIO'.
+-}
 unlambda :: forall m sig sigs sigl a. (EffectCons m sig sigs sigl Id, Functions sig sigs sigl a) => m a -> m a
 unlambda lam = apply lam (Progs [])
 {-# INLINE unlambda #-}
 
+{- | Function application
+
+Applies a function (lambda) to arguments, handling different cases:
+* Lambda application: creates new let-bindings and evaluates body
+* External functions: delegates implementation to 'callExternal'
+* Partial applications: accumulates arguments until complete
+* The 'Other' case should be handled by the handler
+-}
 apply :: forall m sig sigs sigl a. (EffectCons m sig sigs sigl Id, Functions sig sigs sigl a) => m a -> Args m a -> m a
 apply lam args =
     logPrimCall >> do
@@ -159,6 +222,11 @@ apply lam args =
                 _ -> injectS $ PartCall qn (decArgs combtype n) ptrs'
     k (Other _) = error "apply: Other encountered"
 
+{- | Handle external function calls
+
+Dispatches to the appropriate implementation based on the function name.
+Supports arithmetic, comparison, IO, and other primitive operations.
+-}
 callExternal
     :: forall m sig sigs sigl a
      . (EffectCons m sig sigs sigl Id, Functions sig sigs sigl a)
@@ -217,7 +285,7 @@ callExternal f args =
             ("prim_writeFile", [pfp, ps]) -> writeFileIO pfp (normalform ps)
             ("prim_appendFile", [pfp, ps]) -> appendFileIO pfp (normalform ps)
             ("prim_readFile", [pfp]) -> readFileIO pfp
-            ("ensureNotFree", [p]) -> eval2HNF p >> p
+            ("ensureNotFree", [p]) -> eval p >> p
             ("$##", [pf, px]) -> apply pf (single $ normalform px)
             ("prim_error", [p]) -> err p
             ("=:=", [_, px, py]) -> unify px py
@@ -236,18 +304,31 @@ callExternal f args =
                         ++ " with arity "
                         ++ show (length args')
 
+{- | Return operation for IO monad
+
+Creates a lambda with no arguments to shield the argument from
+evaluation by 'bindIO'.
+-}
 returnIO
-    :: (EffectCons m sig sigs sigl Id, Partial :<: sigs, Thunking a :<<<<: sigl, Renaming :<: sig)
+    :: (EffectCons m sig sigs sigl Id, Partial :<: sigs, Thunking a :<<: sigl, Renaming :<: sig)
     => m a -> m a
 returnIO = lambda []
 {-# INLINE returnIO #-}
 
+{- | Bind operation for IO monad
+
+Sequentially composes two IO actions:
+
+* Evaluates the first action to HNF, triggering side-effects
+* Applies the continuation to the result
+-}
 bindIO
-    :: (EffectCons m sig sigs sigl Id, Thunking a :<<<<: sigl, Functions sig sigs sigl a)
+    :: (EffectCons m sig sigs sigl Id, Thunking a :<<: sigl, Functions sig sigs sigl a)
     => m a -> m a -> m a
-bindIO px pf = eval2HNF px >> apply pf (single (unlambda px))
+bindIO px pf = eval px >> apply pf (single (unlambda px))
 {-# INLINE bindIO #-}
 
+-- | Run partial application effects with tree-based representation
 runPartial
     :: (EffectMonad m sig sigs sigl (ClosureL l))
     => Prog (Sig sig (Partial :+: sigs) sigl l) a
@@ -255,12 +336,24 @@ runPartial
 runPartial = unPC . fold point con
 {-# INLINE runPartial #-}
 
+-- | Run partial application effects with smart views
 runPartialSmart
     :: (EffectMonad m sig sigs sigl (ClosureL l))
     => SmartProg (Sig sig (Partial :+: sigs) sigl l) a
     -> m (Closure a)
 runPartialSmart = unPC . smartFold point con
 {-# INLINE runPartialSmart #-}
+
+{- | Run partial application effects with codensity transformation
+
+Uses runCod to extract the result from the codensity monad
+-}
+runPartialC
+    :: (EffectMonad m sig sigs sigl (ClosureL l))
+    => Cod (PC m) a
+    -> m (Closure a)
+runPartialC = unPC . runCod var
+{-# INLINE runPartialC #-}
 
 instance LCarrier ClosureL Closure where
     concatM (Closure qn ct ptrs) = pure $ Closure qn ct ptrs
@@ -269,8 +362,9 @@ instance LCarrier ClosureL Closure where
     concatM (Other x) = x
 
 instance Carrier PC Closure
-instance Forward 'Outer PC ClosureL
+instance Forward 'Default PC ClosureL
 
+-- | Algebra for handling partial application effect
 algP :: (Monad m, LCarrier cL Closure, TermAlgebra m (Sig sig sigs sigl (cL l)), Pointed m) => Partial (m (Closure (m (Closure a)))) -> m (Closure a)
 algP (PartCall qn combtype args) = return $ Closure qn combtype args
 algP (Apply p k) = do
@@ -281,6 +375,7 @@ algP (Apply p k) = do
 algP (Abs vs ptr) = return $ Lambda vs ptr
 algP (Ext s) = return $ External s
 
+-- | 'TermAlgebra' instance for handling partial application effect
 instance
     (EffectMonad m sig sigs sigl (ClosureL l))
     => TermAlgebra (PC m) (Sig sig (Partial :+: sigs) sigl l)
@@ -294,28 +389,32 @@ instance
         gen'Reader x = return (Other x)
     {-# INLINE var #-}
 
-runPartialC
-    :: (EffectMonad m sig sigs sigl (ClosureL l))
-    => Cod (PC m) a
-    -> m (Closure a)
-runPartialC = unPC . runCod var
-{-# INLINE runPartialC #-}
+{- | Partial application carrier
+
+Combines other carrier types with 'Closure'.
+-}
+newtype PC m a = PC {unPC :: m (Closure a)}
 
 instance (Pointed m) => Pointed (PC m) where
     point x = PC $ point (Other x)
     {-# INLINE point #-}
 
-newtype PC m a = PC {unPC :: m (Closure a)}
-
 instance (Functor m) => Functor (PC m) where
     fmap f (PC x) = PC (fmap (fmap f) x)
     {-# INLINE fmap #-}
 
+{- | Closure latent carrier
+
+Combines a 'Closure' with a latent carrier @l@.
+-}
 newtype ClosureL l a = ClosureL {unClosureL :: Closure (l a)}
     deriving (Functor, Show)
 
--- unification --
+{- | Unify two computations
 
+Constrains two computations to be equal by matching their values
+and adding appropriate constraints to the constraint store.
+-}
 unify
     :: forall sig sigs sigl m a
      . ( EffectCons m sig sigs sigl Id
@@ -355,6 +454,10 @@ unify e1 e2 =
     cnt [Lit l, Free i] = cnt [Free i, Lit l]
     cnt _ = failed
 
+{- | Conjunction of a list of computations
+
+Evaluates all computations and returns the conjunction of the results.
+-}
 ands
     :: (EffectCons m sig sigs sigl Id, Functions sig sigs sigl a)
     => [m a]
