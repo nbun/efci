@@ -111,7 +111,7 @@ data Partial a
 
 {- | Closure representation for function values
 
-* 'Closure': Function closure with name, type, and arguments
+* v'Closure': Function closure with name, type, and arguments
 * 'Lambda': Lambda closure with list of bound references and a reference to the body
 * 'External': External function
 * 'Other': Semantic values of other effects
@@ -344,9 +344,9 @@ runPartialSmart
 runPartialSmart = unPC . smartFold point con
 {-# INLINE runPartialSmart #-}
 
-{- | Run partial application effects with codensity transformation
+{- | Run partial application effects with Codensity transformation
 
-Uses runCod to extract the result from the codensity monad
+Uses runCod to extract the result from the Codensity monad
 -}
 runPartialC
     :: (EffectMonad m sig sigs sigl (ClosureL l))
@@ -391,7 +391,7 @@ instance
 
 {- | Partial application carrier
 
-Combines other carrier types with 'Closure'.
+Combines other carrier types with t'Closure'.
 -}
 newtype PC m a = PC {unPC :: m (Closure a)}
 
@@ -405,7 +405,7 @@ instance (Functor m) => Functor (PC m) where
 
 {- | Closure latent carrier
 
-Combines a 'Closure' with a latent carrier @l@.
+Combines a t'Closure' with a latent carrier @l@.
 -}
 newtype ClosureL l a = ClosureL {unClosureL :: Closure (l a)}
     deriving (Functor, Show)

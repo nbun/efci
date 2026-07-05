@@ -161,7 +161,7 @@ hStateSmart
 hStateSmart = unSTC . smartFold point con
 {-# INLINE hStateSmart #-}
 
--- | Handle state effect with 'Codensity' representation
+-- | Handle state effect with Codensity representation
 runStateC
     :: forall tag m sig sigs sigl s l a
      . (EffectMonad m sig sigs sigl (StateL s l))
@@ -171,7 +171,7 @@ runStateC
 runStateC s p = unSTC (runCod var p) s
 {-# INLINE runStateC #-}
 
-{- | Run a state computation with codensity transformation
+{- | Run a state computation with Codensity transformation
 
 This is a version of 'runState' that omits the final state.
 -}
@@ -296,7 +296,7 @@ getCurrentQName = logCall >> fmap currentQName (get @Rename)
 
 {- | Lookup a variable index in the renaming table
 
-Looks @v@ up in the current renaming table and returns the corresponding 'Ptr'.
+Looks @v@ up in the current renaming table and returns the corresponding t'Ptr'.
 Produces an error if the variable index is not found.
 -}
 lookupRenaming :: (EffectCons m sig sigs sigl l, Renaming :<: sig) => VarIndex -> m Ptr
@@ -356,7 +356,7 @@ A map from pointers to constraint values.
 -}
 type Constraints = Map.Map Ptr CValue
 
-{- | Lookup a 'Ptr' in the constraint store
+{- | Lookup a t'Ptr' in the constraint store
 
 Returns a constraint for a given pointer, if it exists.
 -}

@@ -40,6 +40,12 @@ stack test effective-curry-interpreter
 stack bench effective-curry-interpreter
 ```
 
+## Generate documentation
+
+```
+stack haddock --open effective-curry-interpreter
+```
+
 ## Repository structure
 
 * [src](src): implementation of the interpreter(s)

@@ -25,8 +25,8 @@ the interpreter. It includes:
 * Free monad ('Prog') for building effectful programs
 * Higher-order functors ('HFunctor') for effect interpretation
 * Smart representation ('SmartProg') with optimized view-based interpretation
-* 'Codensity' representation with fusion performance optimization
-* 'TermAalgebra' classe for generic effect creation/handling
+* Codensity representation with fusion performance optimization
+* 'TermAlgebra' class for generic effect creation/handling
 -}
 module Free (
     Prog (..),
@@ -165,7 +165,7 @@ instance (Monad m, TermAlgebra m f, Pointed m) => TermMonad m f
 
 {- | Codensity monad
 
-The codensity monad provides better performance characteristics
+The Codensity monad provides better performance characteristics
 for free monad interpretation by using continuation-passing style.
 -}
 newtype Cod h a = Cod {unCod :: forall x. (a -> h x) -> h x}
@@ -191,17 +191,17 @@ instance (Pointed h, TermAlgebra h f) => TermAlgebra (Cod h) f where
     peek _ = Nothing
     {-# INLINE peek #-}
 
--- | Convert an algebra to work with 'Cod'
+-- | Convert an algebra to work with t'Cod'
 algCod :: forall f h a. (HFunctor f, Pointed h) => (forall x. f h (h x) -> h x) -> (f (Cod h) (Cod h a) -> Cod h a)
 algCod alg !op = Cod (\k -> alg (fmap (\(Cod m) -> m k) (hmap (\(Cod m) -> m point) op)))
 {-# INLINE algCod #-}
 
--- | Run a 'Cod' computation with a given continuation
+-- | Run a t'Cod' computation with a given continuation
 runCod :: (a -> f x) -> Cod f a -> f x
 runCod g m = unCod m g
 {-# INLINE runCod #-}
 
--- | Extract the result from a 'Cod' value using the term algebra's 'var' operation
+-- | Extract the result from a t'Cod' value using the term algebra's 'var' operation
 finish :: (TermAlgebra h f) => Cod h x -> h x
 finish m = unCod m var
 {-# INLINE finish #-}

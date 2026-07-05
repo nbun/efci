@@ -24,7 +24,7 @@ import Type
 
 {- | Dereference a variable by pointer
 
-Returns the computation stored at the location defined by the 'Ptr' argument.
+Returns the computation stored at the location defined by the t'Ptr' argument.
 -}
 lvar
     :: (EffectCons m sig sigs sigl Id, Thunking a :<<: sigl)

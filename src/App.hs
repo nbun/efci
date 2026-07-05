@@ -80,7 +80,7 @@ import Type (fdclBdy, reqFuncs, withoutTDecls)
 {- | Execution mode for the interpreter.
 
 * 'Tree': Uses tree-based representation
-* 'Codensity': Uses codensity monad representation
+* 'Codensity': Uses Codensity monad representation
 * 'Monolithic': Uses monolithic implementation via InterpFL
 * 'Smart': Uses smart view representation
 -}
@@ -175,7 +175,7 @@ getPreludeDir = do
     fn <- getDataFileName "Prelude.curry"
     return (normalise (addTrailingPathSeparator (takeDirectory fn)))
 
-{- | Construct 'Options' for the front end
+{- | Construct t'Options' for the front end
 
 We use KiCS2 defintions from the Prelude and disable missing signatures
 warnings as our @main@ function has no type signature. Furthermore,
@@ -243,7 +243,7 @@ loadProg topts file query = do
 {- | Run a main definition
 
 Expects a function declaration without parameters. Its body is evaluated
-using the provided programs and 'ToolOpts'. Besides measuring execution
+using the provided programs and t'ToolOpts'. Besides measuring execution
 time, the function also prints RTS statistics (if enabled) and tracing
 statistics (if enabled).
 -}

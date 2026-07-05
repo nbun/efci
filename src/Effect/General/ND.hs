@@ -102,7 +102,7 @@ runNDSmart
 runNDSmart = unNDC . smartFold point con
 {-# INLINE runNDSmart #-}
 
--- | Handle non-determinism effect with 'Codensity' representation
+-- | Handle non-determinism effect with Codensity representation
 runNDC :: (EffectMonad m sig sigs sigl (ListL l)) => Cod (NDC m) a -> m [a]
 runNDC = unNDC . runCod var
 {-# INLINE runNDC #-}

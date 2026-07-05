@@ -85,7 +85,7 @@ runSmartCurryEffects ps e = do
                 . runDeclSmart (Progs [])
     pipeline (initDecls ps >> e)
 
-{- | Run Curry effects with 'Codensity' representation
+{- | Run Curry effects with Codensity representation
 
 The type aliases 'L' and 'M' are necessary helper types, as type inference
 cannot derive them correctly.

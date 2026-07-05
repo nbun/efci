@@ -165,7 +165,7 @@ dumpMemory = logPrimCall >> injectL (DumpMemory :: Thunking v () NoSub) (Id ()) 
 
 {- | Evaluate a computation *without* memoization
 
-Used for implementing 'bindIO', where side-effects should not be memoized.
+Used for implementing 'Effect.FlatCurry.Function.bindIO', where side-effects should not be memoized.
 -}
 eval
     :: forall m sig sigs sigl v
@@ -213,7 +213,7 @@ hLazySmart
 hLazySmart = unMC . smartFold point con
 {-# INLINE hLazySmart #-}
 
-{- | Handle memoization effect with 'Codensity' representation
+{- | Handle memoization effect with Codensity representation
 
 Requires a 'UniqSupply' for generating fresh references.
 -}

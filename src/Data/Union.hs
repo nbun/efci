@@ -29,11 +29,11 @@ Represents a list of effect functors that can be combined in a Union.
 -}
 type Effects = [Type -> Type]
 
-{- | Union consisting of a list of effect functors and an 'Index'
+{- | Union consisting of a list of effect functors and an t'Index'
 
 The Union type can hold a value from any functor in the effect list @effs@
 applied to @a@.
-The 'Index' proves that the contained functor is a member of the list at a
+The t'Index' proves that the contained functor is a member of the list at a
 given position.
 -}
 data Union (effs :: Effects) a where
@@ -49,7 +49,7 @@ newtype Index (e :: k) (effs :: [k]) = Index Int
 
 * Takes a function that processes the head element
 * Takes a function that processes the rest list
-* Processes the Union by pattern matching on the 'Index'
+* Processes the Union by pattern matching on the t'Index'
 
 Used to process a Union by applying the appropriate function based on
 which functor is actually present.
@@ -67,7 +67,7 @@ absurd _ = error "empty union"
 
 {- | Type class for proving membership in an effect list
 
-Instances of this class provide an 'Index' proving that effect @f@
+Instances of this class provide an t'Index' proving that effect @f@
 is a member of the effect list @effs@.
 -}
 class Elem (f :: (Type -> Type)) (effs :: Effects) where
@@ -88,8 +88,8 @@ instance (Elem e effs) => Elem e (_e ': effs) where
 
 {- | Inject a value into a union at the appropriate index
 
-* Uses the 'Elem' instance to get the correct 'Index'
-* Wraps the value in a Union with the appropriate 'Index'
+* Uses the 'Elem' instance to get the correct t'Index'
+* Wraps the value in a Union with the appropriate t'Index'
 
 This is the primary way to create union values from effect values.
 -}
@@ -99,7 +99,7 @@ inj = Union elemAt
 
 {- | Project a value from a union if it matches the expected effect type
 
-* Uses the 'Elem' instance to get the correct 'Index'
+* Uses the 'Elem' instance to get the correct t'Index'
 * The projection can fail if the value at hand does not have the expected type
 * Uses 'unsafeCoerce' to convert between types when the index matches
 

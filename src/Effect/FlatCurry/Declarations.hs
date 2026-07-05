@@ -131,7 +131,7 @@ hDeclSmart
 hDeclSmart = unDC . smartFold point con
 {-# INLINE hDeclSmart #-}
 
--- | Handle declarations effects with 'Codensity' representation
+-- | Handle declarations effects with Codensity representation
 runDeclC :: (EffectMonad m sig sigs sigl l) => Progs l v m -> Cod (DC (Progs l v m) m) a -> m a
 runDeclC th p = unDC (runCod var p) th
 {-# INLINE runDeclC #-}

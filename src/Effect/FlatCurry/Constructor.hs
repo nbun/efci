@@ -100,7 +100,7 @@ data Mode = Seq | NormalForm
 
 {- | Effect for pattern matching operations
 
-* 'Match': Operations that match on the 'Value' of one or multiple computations
+* v'Match': Operations that match on the 'Value' of one or multiple computations
 * 'Normalize': Evaluation of computations according to a 'Mode'
 -}
 data Match a
@@ -293,7 +293,7 @@ runConsSmart
 runConsSmart = unCC . smartFold point con
 {-# INLINE runConsSmart #-}
 
--- | Handle constructor effects with 'Codensity' representation
+-- | Handle constructor effects with Codensity representation
 runConsC :: (EffectMonad m sig sigs sigl (ValueL l)) => Cod (CC m) a -> m (Value a)
 runConsC = unCC . runCod var
 {-# INLINE runConsC #-}

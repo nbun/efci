@@ -79,7 +79,7 @@ type LEffects v = DeclF v :+++: (Thunking v :+++: LVoid)
 
 {- | Complete Curry effects signature
 
-Combines algebraic, scoped, and latent effects with the 'Id' latent carrier.
+Combines algebraic, scoped, and latent effects with the t'Id' latent carrier.
 -}
 type CurryEffects v = Sig AEffects SEffects (LEffects v) Id
 

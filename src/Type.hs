@@ -138,7 +138,7 @@ data AEBranchExpr a = AEBranch (APattern a) (AExpr a)
 
 {- | Annotated pattern for pattern matching
 
-* 'AEPattern': Constructor pattern with qualified name and pointer arguments
+* v'AEPattern': Constructor pattern with qualified name and pointer arguments
 * 'AELPattern': Literal pattern
 -}
 data AEPattern

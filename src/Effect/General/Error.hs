@@ -37,7 +37,7 @@ newtype Err a = Err String
 
 {- | Error result type
 
-* 'Error': Represents an error with its message
+* v'Error': Represents an error with its message
 * 'EOther': Semantic values of other effects
 -}
 data Error a = Error String | EOther a
@@ -74,7 +74,7 @@ runErrorSmart
 runErrorSmart = unEC . smartFold point con
 {-# INLINE runErrorSmart #-}
 
--- | Handle error effect with 'Codensity' representation
+-- | Handle error effect with Codensity representation
 runErrorC :: (EffectMonad m sig sigs sigl (ErrorL l)) => Cod (EC m) a -> m (Error a)
 runErrorC = unEC . runCod var
 {-# INLINE runErrorC #-}
@@ -103,7 +103,7 @@ instance (EffectMonad m sig sigs sigl (ErrorL l)) => TermAlgebra (EC m) (Sig (Er
 
 {- | Error carrier newtype
 
-Combines other carrier types with 'Error'.
+Combines other carrier types with t'Error'.
 -}
 newtype EC m a = EC {unEC :: m (Error a)}
 
@@ -117,7 +117,7 @@ instance (Pointed m) => Pointed (EC m) where
 
 {- | Error latent carrier
 
-Combines an 'Error' with a latent carrier @l@.
+Combines an t'Error' with a latent carrier @l@.
 -}
 newtype ErrorL l a = ErrorL {unErrorL :: Error (l a)}
     deriving (Show)
